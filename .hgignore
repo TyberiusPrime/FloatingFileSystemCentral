@@ -1,0 +1,12 @@
+syntax: glob
+*.pyc
+*/__py_cache__/*
+central/zpool_status
+node/node.zip
+node/home/.ssh/authorized_keys
+central/certificates/*
+client/certificates/*
+*.log
+*.log.*
+migration/*
+helpers/star/*
