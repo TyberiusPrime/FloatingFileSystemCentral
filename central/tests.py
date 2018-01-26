@@ -856,17 +856,417 @@ class SnapshotPruningTests(EngineTests):
         
 class ZpoolStatusChecks(EngineTests):
 
+    def ge(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+        })
+        errors = [] 
+        e.error_callback = lambda x: errors.append(x)
+        return e, outgoing_messages, errors
+        #
     def test_all_ok_no_response(self):
-        raise NotImplementedError
+        e, outgoing, errors = self.ge()
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),1)
+        self.assertEqual(outgoing[0], {
+            'msg': 'zpool_status',
+            'to': 'alpha',
+        })
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: ONLINE
+  scan: scrub repaired 0 in 57h36m with 0 errors on Tue Jan 16 10:00:25 2018
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	martha                                              ONLINE       0     0     0
+	  raidz2-0                                          ONLINE       0     0     0
+	    sda        ONLINE       0     0     0
+	    sdb         ONLINE       0     0     0
+	    sdc         ONLINE       0     0     0
+	    sdd         ONLINE       0     0     0
+	    sde         ONLINE       0     0     0
+	    sdf         ONLINE       0     0     0
+	  raidz2-1                                          ONLINE       0     0     0
+	    sdg         ONLINE       0     0     0
+	    sdh         ONLINE       0     0     0
+	    sdi         ONLINE       0     0     0
+	    sdj         ONLINE       0     0     0
+	    sdk         ONLINE       0     0     0
+	    sdl         ONLINE       0     0     0
+	  raidz2-2                                          ONLINE       0     0     0
+	    sdm         ONLINE       0     0     0
+	    sdn         ONLINE       0     0     0
+	    sdo         ONLINE       0     0     0
+	    sdp         ONLINE       0     0     0
+	    sdq         ONLINE       0     0     0
+	    sdr         ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sds         ONLINE       0     0     0
+	    sdt         ONLINE       0     0     0
+	    sdu         ONLINE       0     0     0
+	    sdv         ONLINE       0     0     0
+	    sdw         ONLINE       0     0     0
+	    sdx         ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdy         ONLINE       0     0     0
+	    sdz         ONLINE       0     0     0
+	    sdaa         ONLINE       0     0     0
+	    sdab         ONLINE       0     0     0
+	    sdac         ONLINE       0     0     0
+	    sdad         ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdae         ONLINE       0     0     0
+	    sdaf         ONLINE       0     0     0
+	    sdag   ONLINE       0     0     0
+	    sdah         ONLINE       0     0     0
+	    sdai         ONLINE       0     0     0
+	    sdaj   ONLINE       0     0     0
+	logs
+	  sdak-part6  ONLINE       0     0     0
+	cache
+	  sdak-part7  ONLINE       0     0     0
+'''
+        })
+        self.assertEqual(len(errors), 0)
 
     def test_failure_in_first(self):
-        raise NotImplementedError
+        e, outgoing, errors = self.ge()
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),1)
+        self.assertEqual(outgoing[0], {
+            'msg': 'zpool_status',
+            'to': 'alpha',
+        })
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: DEGRADED
+status: One or more devices could not be used because the label is missing or
+	invalid.  Sufficient replicas exist for the pool to continue
+	functioning in a degraded state.
+action: Replace the device using 'zpool replace'.
+   see: http://zfsonlinux.org/msg/ZFS-8000-4J
+  scan: resilvered 82.8G in 10h24m with 0 errors on Tue Jan 23 19:52:23 2018
+config:
 
-    def test_failure_ongoing(self):
-        raise NotImplementedError
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                DEGRADED     0     0     0
+	  raidz2-0                                          ONLINE       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            ONLINE       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          DEGRADED     0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             ONLINE       0     0     0
+	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             UNAVAIL      0     0     0
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            UNAVAIL      0     0     0
+	  raidz2-2                                          DEGRADED     0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             UNAVAIL      0     0     0
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0    12
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  sdak-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        self.assertEqual(len(errors), 1)
 
-    def test_failure_removed(self):
-        raise NotImplementedError
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),2)
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: DEGRADED
+status: One or more devices could not be used because the label is missing or
+	invalid.  Sufficient replicas exist for the pool to continue
+	functioning in a degraded state.
+action: Replace the device using 'zpool replace'.
+   see: http://zfsonlinux.org/msg/ZFS-8000-4J
+  scan: resilvered 82.8G in 10h24m with 0 errors on Tue Jan 23 19:52:23 2018
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                DEGRADED     0     0     0
+	  raidz2-0                                          ONLINE       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            ONLINE       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          DEGRADED     0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             ONLINE       0     0     0
+	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             UNAVAIL      0     0     0
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            UNAVAIL      0     0     0
+	  raidz2-2                                          DEGRADED     0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             UNAVAIL      0     0     0
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0    12
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  sdak-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        self.assertEqual(len(errors), 1)  #no repetition
+
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),3)
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: DEGRADED
+status: One or more devices could not be used because the label is missing or
+	invalid.  Sufficient replicas exist for the pool to continue
+	functioning in a degraded state.
+action: Replace the device using 'zpool replace'.
+   see: http://zfsonlinux.org/msg/ZFS-8000-4J
+  scan: resilvered 82.8G in 10h24m with 0 errors on Tue Jan 23 19:52:23 2018
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                DEGRADED     0     0     0
+	  raidz2-0                                          DEGRADED       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            DEGRADED       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          DEGRADED     0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             ONLINE       0     0     0
+	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             UNAVAIL      0     0     0
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            UNAVAIL      0     0     0
+	  raidz2-2                                          DEGRADED     0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             UNAVAIL      0     0     0
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0    12
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  sdak-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        self.assertEqual(len(errors), 2)  #DEGRADING something else is another error
+
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),4)
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: UNAVAIL
+status: One or more devices could not be used because the label is missing or
+	invalid.  Sufficient replicas exist for the pool to continue
+	functioning in a degraded state.
+action: Replace the device using 'zpool replace'.
+   see: http://zfsonlinux.org/msg/ZFS-8000-4J
+  scan: resilvered 82.8G in 10h24m with 0 errors on Tue Jan 23 19:52:23 2018
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                DEGRADED     0     0     0
+	  raidz2-0                                          DEGRADED       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            DEGRADED       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          DEGRADED     0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             UNAVAIL       0     0     0
+	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             UNAVAIL      0     0     0
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            UNAVAIL      0     0     0
+	  raidz2-2                                          DEGRADED     0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             UNAVAIL      0     0     0
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0    12
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  sdak-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        self.assertEqual(len(errors), 3)  #failing is most certainly an error again
+
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing),5)
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: ONLINE
+status: One or more devices is currently being resilvered.  The pool will
+	continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Fri Jan 26 17:44:49 2018
+	5.13G scanned out of 65.0T at 9.25M/s, (scan is slow, no estimated time)
+	448M resilvered, 0.01% done
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                ONLINE       0     0     0
+	  raidz2-0                                          ONLINE       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            ONLINE       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          ONLINE       0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             ONLINE       0     0     0
+	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             ONLINE       0     0     0  (resilvering)
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            ONLINE       0     0     0  (resilvering)
+	  raidz2-2                                          ONLINE       0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             ONLINE       0     0     5  (resilvering)
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0     0
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  ata-INTEL_SSDSC2CW120A3_CVCV321604Z5120BGN-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        self.assertEqual(len(errors), 4)  #for now, the all clear also comes via the error reporting mechanism
 
 
 class ChownTests(PostStartupTests):

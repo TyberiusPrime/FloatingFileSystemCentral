@@ -56,6 +56,8 @@ class Engine:
         self.startup_done = False
         self.faulted = False
         self.trigger_message = None
+        self.zpool_stati = {}
+        self.error_callback = lambda x: False
 
     def send(self, node_name, message):
         """allow sending by name"""
@@ -84,6 +86,8 @@ class Engine:
             self.node_pull_done(msg)
         elif msg['msg'] == 'remove_done':
             self.node_remove_done(msg)
+        elif msg['msg'] == 'zpool_status':
+            self.node_zpool_status(msg)
         else:
             self.faulted = "Invalid msg from node"
             self.trigger_message = msg
@@ -629,6 +633,21 @@ class Engine:
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
         del self.model[ffs][node]
+    
+    def node_zpool_status(self, msg):
+        node = msg['from']
+        status = {}
+        for k in ['ONLINE', 'DEGRADED', 'UNAVAIL']:
+            status[k] = msg['status'].count(k)
+        if node in self.zpool_stati:
+            old_status = self.zpool_stati[node]
+            if old_status != status:
+                self.error_callback("Zpool status changed: %s - %s" % (node, status))
+        else:
+            if status['DEGRADED'] or status['UNAVAIL']:
+                self.error_callback("Zpool status: %s - %s" % (node, status))
+        self.zpool_stati[node] = status 
+
 
     @needs_startup
     def prune_snapshots(self):
@@ -647,3 +666,9 @@ class Engine:
                             'ffs': ffs,
                             'snapshot': s
                         })
+
+    def  do_zpool_status_check(self):
+        for node in self.config:
+            self.send(node, {'msg': 'zpool_status'})
+        
+   
