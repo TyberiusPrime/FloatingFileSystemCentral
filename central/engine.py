@@ -208,7 +208,8 @@ class Engine:
         if self.is_ffs_moving(ffs):
             raise MoveInProgress(
                 "This ffs is moving to a different main - you should not have been able to change the files anyhow")
-        self.do_capture(ffs, msg.get('chown_and_chmod', False))
+        postfix = msg.get('postfix', '')
+        self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
 
     def do_capture(self, ffs, chown_and_chmod, postfix = ''):
         snapshot = self._name_snapshot(ffs, postfix)
@@ -569,13 +570,15 @@ class Engine:
         main = self.model[ffs]['_main']
         for node in self.config:
             if node != main and node in self.model[ffs]:
-                self.send(node,
-                          {
-                              'msg': 'pull_snapshot',
-                              'ffs': ffs,
-                              'snapshot': snapshot,
-                              'pull_from': main,
-                          })
+                postfix = self.model[ffs][node]['properties'].get('ffs:postfix_only', True)
+                if postfix is True or snapshot.endswith('-' + postfix):
+                    self.send(node,
+                            {
+                                'msg': 'pull_snapshot',
+                                'ffs': ffs,
+                                'snapshot': snapshot,
+                                'pull_from': main,
+                            })
 
     def node_pull_done(self, msg):
         node = msg['from']

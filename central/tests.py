@@ -20,7 +20,7 @@ class EngineTests(unittest.TestCase):
             'gamma': {},
         })
         """
-        config = {}
+        config = collections.OrderedDict()
         for name in quick_ffs_definition:
             config[name] = {'storage_prefix': '/' + name, 'hostname': name}
 
@@ -533,7 +533,88 @@ class CaptureTest(PostStartupTests):
                          })
         self.assertTrue(snapshot_name in e.model['one']['alpha']['snapshots'])
 
+    def test_capture_with_postfix(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'capture', 'ffs': 'one', 'postfix': 'test'})
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
+            {
+                'to': 'beta',
+                'msg': 'capture',
+                'ffs': 'one'
+            }
+        )
+        self.assertTrue(outgoing_messages[0]['snapshot'].endswith('-test'))
 
+    def test_capture_with_triggers_matching_syncs(self):
+        config = collections.OrderedDict()
+        config['alpha'] = {'_one': ['1']}
+        config['beta'] =  {'one': ['1']}
+        config['gamma'] = {'one': ['1', ('ffs:postfix_only', 'test')]}
+
+        e, outgoing_messages = self.get_engine(config)
+        e.incoming_client({"msg": 'capture', 'ffs': 'one', 'postfix': 'test'})
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
+            {
+                'to': 'alpha',
+                'msg': 'capture',
+                'ffs': 'one'
+            }
+        )
+        snapshot_test = outgoing_messages[0]['snapshot']
+        self.assertTrue(snapshot_test.endswith('-test'))
+        e.incoming_node({
+            'msg': 'capture_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': snapshot_test
+        })
+
+        self.assertEqual(outgoing_messages[1], 
+            {
+                'msg': 'pull_snapshot',
+                'to': 'beta',
+                'pull_from': 'alpha',
+                'ffs': 'one',
+                'snapshot': snapshot_test,
+            }
+        )
+        self.assertEqual(outgoing_messages[2], 
+            {
+                'msg': 'pull_snapshot',
+                'to': 'gamma',
+                'pull_from': 'alpha',
+                'ffs': 'one',
+                'snapshot': snapshot_test
+            }
+        )
+
+        e.incoming_client({"msg": 'capture', 'ffs': 'one'})
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[3]), 
+            {
+                'to': 'alpha',
+                'msg': 'capture',
+                'ffs': 'one'
+            })
+        snapshot_no_test = outgoing_messages[3]['snapshot']
+        outgoing_messages.clear()
+        e.incoming_node({
+            'msg': 'capture_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': snapshot_no_test
+        })
+
+        self.assertEqual(outgoing_messages[0], 
+            {
+                'msg': 'pull_snapshot',
+                'to': 'beta',
+                'pull_from': 'alpha',
+                'ffs': 'one',
+                'snapshot': snapshot_no_test
+            }
+        )
+        self.assertEqual(len(outgoing_messages), 1)
+       
 class RemoveTarget(PostStartupTests):
 
     def test_basic(self):
