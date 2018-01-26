@@ -6,6 +6,57 @@ import engine
 
 class EngineTests(unittest.TestCase):
 
+    def get_engine(self, quick_ffs_definition):
+        """Helper to get a startuped-engine running quickly.
+        Just pass in a definition of
+        {host: {
+            'ffs_name': [snapshot, (property_name, value), snapshot, ...]
+        }}.
+        Mark the main by giving it _ffs_name instead of of ffs_name.
+        Example
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1', ('ffs:test', '2')]},
+            'gamma': {},
+        })
+        """
+        config = {}
+        for name in quick_ffs_definition:
+            config[name] = {'storage_prefix': '/' + name, 'hostname': name}
+
+        outgoing_messages = []
+
+        def send(receiver, msg):
+            msg['to'] = receiver['hostname']
+            outgoing_messages.append(msg)
+        e = engine.Engine(
+            config,
+            send
+        )
+        e.incoming_client({'msg': 'startup', })
+        outgoing_messages.clear()
+        for node_name, ffs_to_snapshots in quick_ffs_definition.items():
+            ffs = {}
+            for ffs_name, snapshots_and_props in ffs_to_snapshots.items():
+                if ffs_name.startswith('_'):
+                    ffs_name = ffs_name[1:]
+                    props = {'ffs:main': 'on', 'readonly': 'off'}
+                else:
+                    props = {'ffs:main': 'off', 'readonly': 'on'}
+                snapshots = []
+                for x in snapshots_and_props:
+                    if isinstance(x, tuple):
+                        props[x[0]] = x[1]
+                    else:
+                        snapshots.append(x)
+                ffs[ffs_name] = {'snapshots': snapshots, 'properties': props}
+            e.incoming_node({'msg': 'ffs_list',
+                             'from': node_name,
+                             'ffs': ffs
+                             })
+        self.assertTrue(e.startup_done)
+        return e, outgoing_messages
+
     def ge(self):
         nodes = collections.OrderedDict()
         nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha'}
@@ -218,7 +269,7 @@ class StartupTests(EngineTests):
         })
 
 
-class PostStartupTests(unittest.TestCase):
+class PostStartupTests(EngineTests):
 
     def ge(self):
         nodes = collections.OrderedDict()
@@ -393,6 +444,12 @@ class NewTests(PostStartupTests):
                          'properties']['readonly'], 'on')
 
 
+def remove_snapshot_from_message(msg):
+    msg = msg.copy()
+    if 'snapshot' in msg:
+        del msg['snapshot']
+    return msg
+
 class CaptureTest(PostStartupTests):
 
     def test_new_raises_on_non_existing(self):
@@ -412,24 +469,24 @@ class CaptureTest(PostStartupTests):
     def test_capture_sends_capture_message(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(outgoing_messages, [
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
             {
                 'to': 'beta',
                 'msg': 'capture',
                 'ffs': 'one'
             }
-        ])
+        )
 
     def test_unexpected_capture_explodes(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(outgoing_messages, [
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
             {
                 'to': 'beta',
                 'msg': 'capture',
                 'ffs': 'one'
             }
-        ])
+        )
         outgoing_messages.clear()
 
         def inner():
@@ -444,18 +501,19 @@ class CaptureTest(PostStartupTests):
     def test_capture_done_triggers_sync(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(outgoing_messages, [
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
             {
                 'to': 'beta',
                 'msg': 'capture',
                 'ffs': 'one'
             }
-        ])
+        )
+        snapshot_name = outgoing_messages[0]['snapshot']
         outgoing_messages.clear()
         e.incoming_node({'msg': 'capture_done',
                          'from': 'beta',
                          'ffs': 'one',
-                         'snapshot': '1'
+                         'snapshot': snapshot_name
                          })
         self.assertEqual(outgoing_messages,
                          [{
@@ -463,7 +521,7 @@ class CaptureTest(PostStartupTests):
                              'msg': 'pull_snapshot',
                              'ffs': 'one',
                              'pull_from': 'beta',
-                             'snapshot': '1',
+                             'snapshot': snapshot_name,
                          }]
 
                          )
@@ -471,9 +529,9 @@ class CaptureTest(PostStartupTests):
         e.incoming_node({'msg': 'pull_done',
                          'from': 'alpha',
                          'ffs': 'one',
-                         'snapshot': '1'
+                         'snapshot': snapshot_name,
                          })
-        self.assertTrue('1' in e.model['one']['alpha']['snapshots'])
+        self.assertTrue(snapshot_name in e.model['one']['alpha']['snapshots'])
 
 
 class RemoveTarget(PostStartupTests):
@@ -529,6 +587,10 @@ class RemoveTarget(PostStartupTests):
 
     def test_remove_while_pulling(self):
         """What will actually happen?"""
+        # I believe the answer is
+        #cannot destroy 'ffs/dataset': dataset already exists
+        # or
+        #cannot destroy 'ffs/dataset': dataset is busy
         raise NotImplementedError()
 
 
@@ -613,47 +675,8 @@ class AddTarget(PostStartupTests):
 
         ])
 
+
 class TestMove(PostStartupTests):
-
-    def get_engine(self, quick_ffs_definition):
-        config = {}
-        for name in quick_ffs_definition:
-            config[name] = {'storage_prefix': '/' + name, 'hostname': name}
-
-        outgoing_messages = []
-        def send(receiver, msg):
-            msg['to'] = receiver['hostname']
-            outgoing_messages.append(msg)
-        e = engine.Engine(
-            config,
-            send
-        )
-        e.incoming_client({'msg': 'startup', })
-        for node_name, ffs_to_snapshots in quick_ffs_definition.items():
-            ffs = {}
-            for ffs_name, snapshots_and_props in ffs_to_snapshots.items():
-                if ffs_name.startswith('_'):
-                    main = True
-                    ffs_name = ffs_name[1:]
-                    props = {'ffs:main': 'on', 'readonly': 'off'}
-                else:
-                    main = False
-                    props = {'ffs:main': 'off', 'readonly': 'on'}
-                snapshots = []
-                for x in snapshots_and_props:
-                    if isinstance(x, tuple):
-                        props[x[0]] = x[1]
-                    else:
-                        snapshots.append(x)
-                ffs[ffs_name] = {'snapshots': snapshots, 'properties': props}
-            e.incoming_node({'msg': 'ffs_list',
-                         'from': node_name,
-                         'ffs': ffs
-                         })
-        self.assertTrue(e.startup_done)
-        outgoing_messages.clear()
-        return e, outgoing_messages
-
 
     def test_move_raises_on_moving_to_main(self):
         engine, outgoing_messages = self.get_engine({
@@ -661,10 +684,13 @@ class TestMove(PostStartupTests):
             'beta':  {'one': ['1', ('ffs:test', '2')]},
             'gamma': {},
         })
-        self.assertEqual(engine.model['one']['beta']['properties']['ffs:test'], '2')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['ffs:test'], '2')
         self.assertEqual(engine.model['one']['_main'], 'alpha')
+
         def inner():
-            engine.incoming_client({"msg": "move_main", 'ffs': 'one', 'target': 'alpha'})
+            engine.incoming_client(
+                {"msg": "move_main", 'ffs': 'one', 'target': 'alpha'})
         self.assertRaises(ValueError, inner)
 
     def test_move_raises_on_moving_to_non_target(self):
@@ -673,10 +699,13 @@ class TestMove(PostStartupTests):
             'beta':  {'one': ['1', ('ffs:test', '2')]},
             'gamma': {},
         })
-        self.assertEqual(engine.model['one']['beta']['properties']['ffs:test'], '2')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['ffs:test'], '2')
         self.assertEqual(engine.model['one']['_main'], 'alpha')
+
         def inner():
-            engine.incoming_client({"msg": "move_main", 'ffs': 'one', 'target': 'gamma'})
+            engine.incoming_client(
+                {"msg": "move_main", 'ffs': 'one', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
 
     def test_move_raises_on_moving_to_non_existing_ffs(self):
@@ -685,10 +714,13 @@ class TestMove(PostStartupTests):
             'beta':  {'one': ['1', ('ffs:test', '2')]},
             'gamma': {},
         })
-        self.assertEqual(engine.model['one']['beta']['properties']['ffs:test'], '2')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['ffs:test'], '2')
         self.assertEqual(engine.model['one']['_main'], 'alpha')
+
         def inner():
-            engine.incoming_client({"msg": "move_main", 'ffs': 'two', 'target': 'gamma'})
+            engine.incoming_client(
+                {"msg": "move_main", 'ffs': 'two', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
 
     def test_move_basic(self):
@@ -697,17 +729,19 @@ class TestMove(PostStartupTests):
             'beta':  {'one': ['1', ('ffs:test', '2')]},
             'gamma': {},
         })
-        #flow is as follows
-        #1 - set ffs:moving=target on old main, set reoad only.
-        #2 - capture on old main
-        #3 - replicate
-        #4 - set ffs:main = False on old main
-        #5 - set main and remove ro on new main
-        #6 - remove ffs:moving on old_main
+        # flow is as follows
+        # 1 - set ffs:moving=target on old main, set reoad only.
+        # 2 - capture on old main
+        # 3 - replicate
+        # 4 - set ffs:main = False on old main
+        # 5 - set main and remove ro on new main
+        # 6 - remove ffs:moving on old_main
 
-        self.assertEqual(engine.model['one']['beta']['properties']['ffs:test'], '2')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['ffs:test'], '2')
         self.assertEqual(engine.model['one']['_main'], 'alpha')
-        engine.incoming_client({"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
+        engine.incoming_client(
+            {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
         self.assertEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
@@ -721,8 +755,8 @@ class TestMove(PostStartupTests):
             'ffs': 'one',
             'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
         })
-        self.assertEqual(len(outgoing_messages), 2) 
-        self.assertEqual(outgoing_messages[1], {
+        self.assertEqual(len(outgoing_messages), 2)
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[1]), {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -731,23 +765,23 @@ class TestMove(PostStartupTests):
             'msg': 'capture_done',
             'from': 'alpha',
             'ffs': 'one',
-            'snapshot': '2',
+            'snapshot': outgoing_messages[1]['snapshot'],
         })
-        self.assertEqual(len(outgoing_messages), 3) 
+        self.assertEqual(len(outgoing_messages), 3)
         self.assertEqual(outgoing_messages[2], {
             'to': 'beta',
             'msg': 'pull_snapshot',
             'ffs': 'one',
             'pull_from': 'alpha',
-            'snapshot': '2',
+            'snapshot': outgoing_messages[1]['snapshot']
         })
         engine.incoming_node({
             'msg': 'pull_done',
             'from': 'beta',
             'ffs': 'one',
-            'snapshot': '2',
+            'snapshot': outgoing_messages[1]['snapshot']
         })
-        self.assertEqual(len(outgoing_messages), 4) 
+        self.assertEqual(len(outgoing_messages), 4)
         self.assertEqual(outgoing_messages[3], {
             'to': 'alpha',
             'msg': 'set_properties',
@@ -760,7 +794,7 @@ class TestMove(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'off'}
         })
-        self.assertEqual(len(outgoing_messages), 5) 
+        self.assertEqual(len(outgoing_messages), 5)
         self.assertEqual(outgoing_messages[4], {
             'to': 'beta',
             'msg': 'set_properties',
@@ -773,7 +807,7 @@ class TestMove(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'on', 'readonly': 'off'}
         })
-        self.assertEqual(len(outgoing_messages), 6) 
+        self.assertEqual(len(outgoing_messages), 6)
         self.assertEqual(outgoing_messages[5], {
             'to': 'alpha',
             'msg': 'set_properties',
@@ -787,16 +821,355 @@ class TestMove(PostStartupTests):
             'properties': {'ffs:moving_to': '-'}
         })
         self.assertEqual(engine.model['one']['_main'], 'beta')
-        self.assertEqual(engine.model['one']['alpha']['properties']['ffs:main'], 'off')
-        self.assertEqual(engine.model['one']['beta']['properties']['ffs:main'], 'on')
-        self.assertEqual(engine.model['one']['alpha']['properties']['readonly'], 'on')
-        self.assertEqual(engine.model['one']['beta']['properties']['readonly'], 'off')
-        self.assertEqual(engine.model['one']['alpha']['properties']['ffs:moving_to'], '-')
+        self.assertEqual(engine.model['one']['alpha'][
+                         'properties']['ffs:main'], 'off')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['ffs:main'], 'on')
+        self.assertEqual(engine.model['one']['alpha'][
+                         'properties']['readonly'], 'on')
+        self.assertEqual(engine.model['one']['beta'][
+                         'properties']['readonly'], 'off')
+        self.assertEqual(engine.model['one']['alpha'][
+                         'properties']['ffs:moving_to'], '-')
         self.assertFalse('_moving' in engine.model['one'])
-  
-  
 
-  
+
+class SnapshotPruningTests(EngineTests):
+
+    def test_simple(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1', '2']},
+            'gamma': {},
+        })
+        #can't have it missing by default, would trigger startup pruning,
+        #and I want to test it...
+        engine.model['one']['alpha']['snapshots'].remove('1')
+        engine.prune_snapshots()
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1',
+            'to': 'beta'
+        })
+        
+class ZpoolStatusChecks(EngineTests):
+
+    def test_all_ok_no_response(self):
+        raise NotImplementedError
+
+    def test_failure_in_first(self):
+        raise NotImplementedError
+
+    def test_failure_ongoing(self):
+        raise NotImplementedError
+
+    def test_failure_removed(self):
+        raise NotImplementedError
+
+
+class ChownTests(PostStartupTests):
+
+    def test_chown_standalone(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1', '2']},
+            'gamma': {},
+        })
+        e.incoming_client({
+            'msg': 'chown_and_chmod',
+            'ffs': 'one'
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'chown_and_chmod',
+            'ffs': 'one',
+            'to': 'alpha'
+        })
+
+
+    def test_capture_and_chown(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1', '2']},
+            'gamma': {},
+        })
+        e.incoming_client({"msg": 'capture', 'ffs': 'one', 'chown_and_chmod': True})
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), 
+            {
+                'to': 'alpha',
+                'msg': 'capture',
+                'ffs': 'one',
+                'chown_and_chmod': True,
+            }
+        )
+
+        pass
+
+
+class TestStartupTriggeringActions(EngineTests):
+
+    def test_missing_snapshot_triggers_pull(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'pull_snapshot',
+            'to': 'beta',
+            'pull_from': 'alpha',
+            'ffs': 'one',
+            'snapshot': '2'
+        })
+        #
+    def test_multiple_missing_snapshots(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': [ ]},
+            'gamma': {},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'pull_snapshot',
+            'to': 'beta',
+            'pull_from': 'alpha',
+            'ffs': 'one',
+            'snapshot': '2'
+        })
+        #
+ 
+    def test_additional_snapshots_on_target_trigger_snapshot_removal(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['2', '1', ]},
+            'gamma': {},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'remove_snapshot',
+            'to': 'beta',
+            'ffs': 'one',
+            'snapshot': '2'
+        })
+
+    def test_move_interrupted_stage_1(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', ('readonly', 'on'), ('ffs:moving_to', 'beta')]},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+            'to': 'alpha',
+            'msg': 'capture',
+            'ffs': 'one',
+        })
+
+    def test_move_interrupted_stage_2_after_capture(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2', ('readonly', 'on'), ('ffs:moving_to', 'beta')]},
+            'beta':  {'one': ['1']},
+            'gamma': {},
+        })
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+            'to': 'alpha',
+            'msg': 'capture',
+            'ffs': 'one',
+        })
+
+    def test_move_interrupted_stage_3_after_replication(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2', ('readonly', 'on'), ('ffs:moving_to', 'beta')]},
+            'beta':  {'one': ['1', '2']},
+            'gamma': {},
+        })
+
+    def test_move_interrupted_stage_4_after_remove_main(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1', '2',
+                              ('ffs:main', 'off'),
+                              ('readonly', 'on'),
+                              ('ffs:moving_to', 'beta')]},
+            'beta':  {'one': ['1', '2']},
+            'gamma': {},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'on', 'readonly': 'off'}
+        })
+
+    def test_move_interrupted_stage_5_after_set_main(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1', '2',
+                              ('ffs:main', 'off'),
+                              ('readonly', 'on'),
+                              ('ffs:moving_to', 'beta')]},
+            'beta':  {'one': ['1', '2',
+                              ('ffs:main', 'on'),
+                              ('readonly', 'off')
+                              ]},
+            'gamma': {},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:moving_to': '-'}
+        })
+
+
+class CrossTalkTest(EngineTests):
+
+    def test_capture_during_move(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1']},
+            'gamma': {},
+        })
+        e.incoming_client(
+            {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
+
+        def inner():
+            e.incoming_client({
+                'msg': 'capture',
+                'ffs': 'one'
+            })
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
+        })
+        snapshot_name = outgoing_messages[-1]['snapshot']
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'capture_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': snapshot_name,
+        })
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'pull_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'snapshot': snapshot_name,
+        })
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'off'}
+        })
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'on', 'readonly': 'off'}
+        })
+        self.assertRaises(engine.MoveInProgress, inner)
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:moving_to': '-'}
+        })
+        # veryify move worked
+        self.assertEqual(e.model['one']['_main'], 'beta')
+        self.assertEqual(e.model['one']['alpha'][
+                         'properties']['ffs:main'], 'off')
+        self.assertEqual(e.model['one']['beta'][
+                         'properties']['ffs:main'], 'on')
+        self.assertEqual(e.model['one']['alpha'][
+                         'properties']['readonly'], 'on')
+        self.assertEqual(e.model['one']['beta'][
+                         'properties']['readonly'], 'off')
+        self.assertEqual(e.model['one']['alpha'][
+                         'properties']['ffs:moving_to'], '-')
+        self.assertFalse('_moving' in e.model['one'])
+        outgoing_messages.clear()
+        e.incoming_client({
+            'msg': 'capture',
+            'ffs': 'one'
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+            'msg': 'capture',
+            'to': 'beta',
+            'ffs': 'one'
+        })
+
+    def test_move_during_capture(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1']},
+            'gamma': {},
+        })
+        e.incoming_client({
+            'msg': 'capture',
+            'ffs': 'one'
+        })
+        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+            'msg': 'capture',
+            'to': 'alpha',
+            'ffs': 'one'
+        })
+        wrong_snapshot_name = outgoing_messages[0]['snapshot']
+        e.incoming_client(
+            {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
+
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
+        })
+        right_snapshot_name = outgoing_messages[-1]['snapshot']
+        e.incoming_node({
+            'msg': 'capture_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': wrong_snapshot_name,
+        })
+        outgoing_messages.clear()
+        e.incoming_node({
+            'msg': 'pull_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'snapshot': wrong_snapshot_name,
+        })
+        #this one is not supposed to trigger the move...
+        self.assertEqual(len(outgoing_messages), 0)
+        e.incoming_node({
+            'msg': 'capture_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': right_snapshot_name,
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        outgoing_messages.clear()
+        e.incoming_node({
+            'msg': 'pull_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'snapshot': right_snapshot_name,
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'off'}
+        })
+
+        # 
 
 
 

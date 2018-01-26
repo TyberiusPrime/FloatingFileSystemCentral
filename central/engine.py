@@ -24,6 +24,10 @@ class InconsistencyError(ManualInterventionNeeded):
     pass
 
 
+class MoveInProgress(ValueError):
+    pass
+
+
 def needs_startup(func):
     def wrapper(self, *args, **kwargs):
         if self.startup_done:
@@ -58,9 +62,9 @@ class Engine:
         self.send_function(self.config[node_name], message)
 
     def incoming_node(self, msg):
-        if not 'msg' in msg:
+        if 'msg' not in msg:
             raise ValueError("No message in msg")
-        if not 'from' in msg:
+        if 'from' not in msg:
             self.trigger_message = msg
             self.faulted = "No from in message - should not happen"
             raise ManualInterventionNeeded(self.faulted)
@@ -97,6 +101,8 @@ class Engine:
             self.client_add_target(msg)
         elif command == 'capture':
             self.client_capture(msg)
+        elif command == 'chown_and_chmod':
+            self.client_chown_and_chmod(msg)
         elif command == 'move_main':
             self.client_move_main(msg)
         else:
@@ -195,12 +201,52 @@ class Engine:
         ffs = msg['ffs']
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
+        if self.is_ffs_moving(ffs):
+            raise MoveInProgress(
+                "This ffs is moving to a different main - you should not have been able to change the files anyhow")
+        self.do_capture(ffs, msg.get('chown_and_chmod', False))
+
+    def do_capture(self, ffs, chown_and_chmod, postfix = ''):
+        snapshot = self._name_snapshot(ffs, postfix)
+        out_msg = {
+            'msg': 'capture',
+            'ffs': ffs,
+            'snapshot': snapshot,
+        }
+        if chown_and_chmod:
+            out_msg['chown_and_chmod'] = True
+        self.send(
+            self.model[ffs]['_main'],
+            out_msg
+        )
+        # so we don't reuse the name. ever
+        node_info = self.model[ffs][self.model[ffs]['_main']]
+        if not 'upcoming_snapshots' in node_info:
+            node_info['upcoming_snapshots'] = []
+        if snapshot in node_info['upcoming_snapshots']:
+            self.faulted = "Adding a snapshot to upcoming snapshot that was already present"
+            raise CodingError(self.faulted)
+        node_info['upcoming_snapshots'].append(snapshot)
+        return snapshot
+
+    @needs_startup
+    def client_chown_and_chmod(self, msg):
+        if 'ffs' not in msg:
+            raise ValueError("No ffs specified")
+        ffs = msg['ffs']
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if self.is_ffs_moving(ffs):
+            raise MoveInProgress(
+                "This ffs is moving to a different main - you should not have been able to change the files anyhow")
         self.send(
             self.model[ffs]['_main'],
             {
-                'msg': 'capture',
-                'ffs': msg['ffs']
+                'msg': 'chown_and_chmod',
+                'ffs': ffs,
             }
+
+
         )
 
     @needs_startup
@@ -235,13 +281,34 @@ class Engine:
         if '_moving' in self.model[ffs]:
             return True
         main = self.model[ffs]['_main']
-        moving_to = self.model[ffs][main]['properties'].get('ffs:moving_to', '-') 
+        moving_to = self.model[ffs][main][
+            'properties'].get('ffs:moving_to', '-')
         if moving_to != '-':
             self.model[ffs]['_moving'] = moving_to
             return True
         return False
-    
+
+    def _name_snapshot(self, ffs, postfix=''):
+        import time
+        t = time.localtime()
+        t = [t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec]
+        t = [str(x) for x in t]
+        res = 'ffs-' + '-'.join(t)
+        if postfix:
+            res += '-' + postfix
+        no = 'a'
+        while (
+            (res in self.model[ffs][self.model[ffs]['_main']]['snapshots']) or
+            (res in self.model[ffs][self.model[ffs]['_main']].get('upcoming_snapshots', []))
+        ):
+            res = 'ffs-' + '-'.join(t)
+            res += '-' + no
+            if postfix:
+                res += '-' + postfix
+            no = chr(ord(no) + 1)
  
+        return res
+
 
     def node_ffs_list(self, ffs_list, sender):
         self.node_ffs_infos[sender] = ffs_list
@@ -269,6 +336,8 @@ class Engine:
             non_ro_count = 0
             ro_count = 0
             last_non_ro = None
+            any_moving_to = None
+            any_moving_from = None
             for node, node_info in node_ffs_info.items():
                 props = node_info['properties']
                 if props.get('readonly', 'off') == 'on':
@@ -283,36 +352,101 @@ class Engine:
                     else:
                         self.faulted = "Multiple mains for %s" % ffs
                         raise ManualInterventionNeeded(self.faulted)
+                if props.get('ffs:moving_to', '-') != '-':
+                    if any_moving_to is not None:
+                        self.faulted = "Multiple moving_to for %s" % ffs
+                        raise ManualInterventionNeeded(self.faulted)
+                    any_moving_to = props['ffs:moving_to']
+                    any_moving_from = node
             if main is None:
                 if non_ro_count == 1:
                     # treat the only non-ro as the man
                     main = last_non_ro
                 else:
-                    self.faulted = "No main, muliple non-readonly for %s" % ffs
-                    raise ManualInterventionNeeded(self.faulted)
-            for node in self.config:  # always in the same order
-                if node in node_ffs_info:
-                    node_info = node_ffs_info[node]
-                    props = node_info['properties']
-                    if node == main:
-                        if props.get('readonly', False) != 'off':
-                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                             'properties': {'readonly': 'off'}})
-
-                        if props.get('ffs:main', 'off') != 'on':
-                            self.send(
-                                node, {'msg': 'set_properties', 'ffs': ffs, 
-                                'properties': {'ffs:main': 'on'}})
+                    if any_moving_to:
+                        main = None # stays None.
                     else:
-                        if props.get('readonly', 'off') != 'on':
-                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                             'properties': {'readonly': 'on'}})
-                        if 'ffs:main' not in props:
-                            self.send(
-                                node, {'msg': 'set_properties', 'ffs': ffs, 
-                                'properties': {'ffs:main': 'off'}})
+                        self.faulted = "No main, muliple non-readonly for %s" % ffs
+                        raise ManualInterventionNeeded(self.faulted)
+            self.model[ffs]['_main'] = main
+            if not any_moving_to:
+                #make sure the right readonly/main properties are set.
+                for node in self.config:  # always in the same order
+                    if node in node_ffs_info:
+                        node_info = node_ffs_info[node]
+                        props = node_info['properties']
+                        if node == main:
+                            if props.get('readonly', False) != 'off':
+                                self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                                'properties': {'readonly': 'off'}})
 
-                node_ffs_info['_main'] = main
+                            if props.get('ffs:main', 'off') != 'on':
+                                self.send(
+                                    node, {'msg': 'set_properties', 'ffs': ffs,
+                                        'properties': {'ffs:main': 'on'}})
+                        else:
+                            if props.get('readonly', 'off') != 'on':
+                                self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                                'properties': {'readonly': 'on'}})
+                            if 'ffs:main' not in props:
+                                self.send(
+                                    node, {'msg': 'set_properties', 'ffs': ffs,
+                                        'properties': {'ffs:main': 'off'}})
+            else: #caught in a move.
+                #step 0 - 
+                move_target = any_moving_to
+                self.model[ffs]['_moving'] = move_target
+                if main is not None: 
+                    if main != any_moving_to:
+                        # we were before step 3, remove main, so we restart with a capture
+                        # and ignore if we had already captured and replicated.
+                        self.do_capture(ffs, False)
+                    else: #main had already been moved
+                        #all that remains is to remove the moving marker
+                        self.send(any_moving_from, {
+                            'msg': 'set_properties',
+                            'ffs': ffs,
+                            'properties': {'ffs:moving_to': '-'}
+                        })
+
+                else: # we had successfully captured and replicated and the main has been removed
+                    # so we continue by setting main=on and readonly=off on the moving target...
+                    self.send(any_moving_to, {
+                        'msg': 'set_properties',
+                        'ffs': ffs,
+                        'properties': {'ffs:main': 'on', 'readonly': 'off'}
+                    })
+                node_ffs_info['_main'] = main # we can deal with main being None until the ffs:moving_to = - job  is done..
+        self._send_pulls_and_removals()
+
+    def _send_pulls_and_removals(self):
+        """Once we have prased the ffs_lists into our model (see _parse_main_and_readonly),
+        we send out pull requests for the missing snapshots
+        and prunes for those that are too many"""
+        for ffs, node_fss_info in self.model.items():
+            if self.is_ffs_moving(ffs):
+                continue
+            main = node_fss_info['_main']
+            main_snapshots = node_fss_info[main]['snapshots']
+            if main_snapshots:
+                latest_snapshot = main_snapshots[-1]
+                for node, node_info in node_fss_info.items():
+                    if not node.startswith('_') and node != main:
+                        if latest_snapshot not in node_info['snapshots']:
+                            self.send(node, {
+                                'msg': 'pull_snapshot',
+                                'pull_from': main,
+                                'ffs': ffs,
+                                'snapshot': latest_snapshot
+                            }
+                            )
+                        for snapshot in reversed(node_info['snapshots']):
+                            if not snapshot in main_snapshots:
+                                self.send(node, {
+                                    'msg': 'remove_snapshot',
+                                    'ffs': ffs,
+                                    'snapshot': snapshot,
+                                })
 
     def node_set_properties_done(self, msg):
         node = msg['from']
@@ -326,32 +460,29 @@ class Engine:
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
         if 'properties' not in msg:
-            self.faulted  = "No properties in set_properties_done msg"
+            self.faulted = "No properties in set_properties_done msg"
             self.trigger_message = msg
             raise CodingError(self.faulted)
         props = msg['properties']
         self.model[ffs][node]['properties'].update(props)
-        if 'ffs:moving_to' in props: # first step in moving to a new main
+        if 'ffs:moving_to' in props:  # first step in moving to a new main
             moving_to = props['ffs:moving_to']
             if moving_to != '-':
                 if not self.is_ffs_moving(ffs):
                     self.faulted = "Received unexpected set_propertes_done for ffs:moving_to"
                     self.trigger_message = msg
                     raise InconsistencyError(self.fault)
-                self.incoming_client({
-                    'msg': 'capture',
-                    'source': 'internal',
-                    'ffs': ffs
-                })
+                self.model[ffs]['_move_snapshot'] = self.do_capture(ffs, False)
+
             else:
                 del self.model[ffs]['_moving']
                 if self.is_ffs_moving(ffs):
                     self.faulted = "Still moving after set_properties moving_to = -, Something is fishy "
                     self.trigger_message = msg
                     raise CodingError(self.fault)
-        elif ( # happens after successful capture & replication.
-            self.is_ffs_moving(ffs) and 
-            props.get('ffs:main', False) == 'off'):
+        elif (  # happens after successful capture & replication.
+                self.is_ffs_moving(ffs) and
+                props.get('ffs:main', False) == 'off'):
             if node != self.model[ffs]['_main']:
                 self.faulted = "Received unexpected set_propertes_done for ffs:main=off for non mainjjj"
                 self.trigger_message = msg
@@ -361,18 +492,15 @@ class Engine:
                 'ffs': ffs,
                 'properties': {'readonly': 'off', 'ffs:main': 'on'},
             })
-        elif ( # happens after ffs:main=off on the old main.
-            self.is_ffs_moving(ffs) and
-            props.get('ffs:main', False) == 'on'):
+        elif (  # happens after ffs:main=off on the old main.
+                self.is_ffs_moving(ffs) and
+                props.get('ffs:main', False) == 'on'):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
                 'properties': {'ffs:moving_to': '-'}
             })
             self.model[ffs]['_main'] = self.model[ffs]['_moving']
-
-        
-
 
     def node_new_done(self, msg):
         node = msg['from']
@@ -381,7 +509,7 @@ class Engine:
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
         ffs = msg['ffs']
-        if not node in self.model[ffs]:
+        if node not in self.model[ffs]:
             self.faulted = ("node_new_done from ffs not on that node")
             pprint.pprint(msg)
             pprint.pprint(self.model)
@@ -431,6 +559,9 @@ class Engine:
             self.faulted = "Snapshot was already in model"
             self.trigger_message = msg
             raise CodingError(self.faulted)
+        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
+            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+
         main = self.model[ffs]['_main']
         for node in self.config:
             if node != main and node in self.model[ffs]:
@@ -469,13 +600,15 @@ class Engine:
             raise CodingError(self.faulted)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
-        if self.is_ffs_moving(ffs) and node == self.model[ffs]['_moving']:
+        if (self.is_ffs_moving(ffs) and 
+            node == self.model[ffs]['_moving'] and 
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+        ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
                 'properties': {'ffs:main': 'off'}
             })
-
 
     def node_remove_done(self, msg):
         node = msg['from']
@@ -497,4 +630,20 @@ class Engine:
             raise InconsistencyError(self.faulted)
         del self.model[ffs][node]
 
-    
+    @needs_startup
+    def prune_snapshots(self):
+        """Pruning means to remove snapshots on target
+        that do not / no longer exist on main"""
+        for ffs in self.model:
+            main = self.model[ffs]['_main']
+            keep = set(self.model[ffs][main]['snapshots'])
+            for target in self.model[ffs]:
+                if target != main and not target.startswith('_'):
+                    to_remove = set(self.model[ffs][target][
+                                    'snapshots']).difference(keep)
+                    for s in to_remove:
+                        self.send(target, {
+                            'msg': 'remove_snapshot',
+                            'ffs': ffs,
+                            'snapshot': s
+                        })
