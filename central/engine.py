@@ -45,7 +45,7 @@ class Engine:
         self.send_function = send_function
         for node in config:
             if node.startswith('_'):
-                raise ValueError("Nod can not start with _")
+                raise ValueError("Node can not start with _")
         self.config = config
         self.node_ffs_infos = {}
         self.model = {}
@@ -70,8 +70,8 @@ class Engine:
             raise ManualInterventionNeeded(self.faulted)
         elif msg['msg'] == 'ffs_list':
             self.node_ffs_list(msg['ffs'], msg['from'])
-        elif msg['msg'] == 'set_property_done':
-            self.node_set_property(msg)
+        elif msg['msg'] == 'set_properties_done':
+            self.node_set_properties_done(msg)
         elif msg['msg'] == 'new_done':
             self.node_new_done(msg)
         elif msg['msg'] == 'capture_done':
@@ -86,16 +86,19 @@ class Engine:
             raise CodingError(self.faulted)
 
     def incoming_client(self, msg):
-        if msg['msg'] == 'startup':
+        command = msg['msg']
+        if command == 'startup':
             self.client_startup()
-        elif msg['msg'] == 'new':
+        elif command == 'new':
             self.client_new(msg)
-        elif msg['msg'] == 'remove_target':
+        elif command == 'remove_target':
             self.client_remove_target(msg)
-        elif msg['msg'] == 'add_target':
+        elif command == 'add_target':
             self.client_add_target(msg)
-        elif msg['msg'] == 'capture':
+        elif command == 'capture':
             self.client_capture(msg)
+        elif command == 'move_main':
+            self.client_move_main(msg)
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -189,15 +192,56 @@ class Engine:
     def client_capture(self, msg):
         if 'ffs' not in msg:
             raise ValueError("No ffs specified")
-        if not msg['ffs'] in self.model:
+        ffs = msg['ffs']
+        if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
         self.send(
-            self.model[msg['ffs']]['_main'],
+            self.model[ffs]['_main'],
             {
                 'msg': 'capture',
                 'ffs': msg['ffs']
             }
         )
+
+    @needs_startup
+    def client_move_main(self, msg):
+        if not 'ffs' in msg:
+            raise ValueError("no ffs specified'")
+        ffs = msg['ffs']
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if not 'target' in msg:
+            raise ValueError("Missing target (=new_main) in msg")
+        target = msg['target']
+        if target.startswith("_"):
+            raise ValueError("Invalid target.")
+        if target not in self.model[ffs]:
+            raise ValueError("Target does not have this ffs")
+        current_main = self.model[ffs]['_main']
+        if target == current_main:
+            raise ValueError("Target is already main")
+        self.model[ffs]['_moving'] = target
+        # self.model[ffs][current_main]['properties']['readonly'] = 'on'
+        self.send(current_main, {
+            'msg': 'set_properties',
+            'ffs': ffs,
+            'properties': {
+                'readonly': 'on',
+                'ffs:moving_to': target,
+            }
+        })
+
+    def is_ffs_moving(self, ffs):
+        if '_moving' in self.model[ffs]:
+            return True
+        main = self.model[ffs]['_main']
+        moving_to = self.model[ffs][main]['properties'].get('ffs:moving_to', '-') 
+        if moving_to != '-':
+            self.model[ffs]['_moving'] = moving_to
+            return True
+        return False
+    
+ 
 
     def node_ffs_list(self, ffs_list, sender):
         self.node_ffs_infos[sender] = ffs_list
@@ -252,38 +296,87 @@ class Engine:
                     props = node_info['properties']
                     if node == main:
                         if props.get('readonly', False) != 'off':
-                            self.send(node, {'msg': 'set_property', 'ffs': ffs,
-                                             'property': 'readonly', 'value': 'off'})
+                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                             'properties': {'readonly': 'off'}})
 
                         if props.get('ffs:main', 'off') != 'on':
                             self.send(
-                                node, {'msg': 'set_property', 'ffs': ffs, 'property': 'ffs:main', 'value': 'on'})
+                                node, {'msg': 'set_properties', 'ffs': ffs, 
+                                'properties': {'ffs:main': 'on'}})
                     else:
                         if props.get('readonly', 'off') != 'on':
-                            self.send(node, {'msg': 'set_property', 'ffs': ffs,
-                                             'property': 'readonly', 'value': 'on'})
+                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                             'properties': {'readonly': 'on'}})
                         if 'ffs:main' not in props:
                             self.send(
-                                node, {'msg': 'set_property', 'ffs': ffs, 'property': 'ffs:main', 'value': 'off'})
+                                node, {'msg': 'set_properties', 'ffs': ffs, 
+                                'properties': {'ffs:main': 'off'}})
 
                 node_ffs_info['_main'] = main
 
-    def node_set_property(self, msg):
+    def node_set_properties_done(self, msg):
         node = msg['from']
-        if not msg['ffs'] in self.model:
-            self.faulted = ("set_property_done from ffs not in model.")
+        if msg['ffs'] not in self.model:
+            self.faulted = ("set_properties_done from ffs not in model.")
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
-        if not node in self.model[msg['ffs']]:
-            self.faulted = ("set_property_done from ffs not on that node")
+        ffs = msg['ffs']
+        if node not in self.model[ffs]:
+            self.faulted = ("set_properties_done from ffs not on that node")
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
-        self.model[msg['ffs']][node]['properties'][
-            msg['property']] = msg['value']
+        if 'properties' not in msg:
+            self.faulted  = "No properties in set_properties_done msg"
+            self.trigger_message = msg
+            raise CodingError(self.faulted)
+        props = msg['properties']
+        self.model[ffs][node]['properties'].update(props)
+        if 'ffs:moving_to' in props: # first step in moving to a new main
+            moving_to = props['ffs:moving_to']
+            if moving_to != '-':
+                if not self.is_ffs_moving(ffs):
+                    self.faulted = "Received unexpected set_propertes_done for ffs:moving_to"
+                    self.trigger_message = msg
+                    raise InconsistencyError(self.fault)
+                self.incoming_client({
+                    'msg': 'capture',
+                    'source': 'internal',
+                    'ffs': ffs
+                })
+            else:
+                del self.model[ffs]['_moving']
+                if self.is_ffs_moving(ffs):
+                    self.faulted = "Still moving after set_properties moving_to = -, Something is fishy "
+                    self.trigger_message = msg
+                    raise CodingError(self.fault)
+        elif ( # happens after successful capture & replication.
+            self.is_ffs_moving(ffs) and 
+            props.get('ffs:main', False) == 'off'):
+            if node != self.model[ffs]['_main']:
+                self.faulted = "Received unexpected set_propertes_done for ffs:main=off for non mainjjj"
+                self.trigger_message = msg
+                raise InconsistencyError(self.fault)
+            self.send(self.model[ffs]['_moving'], {
+                'msg': 'set_properties',
+                'ffs': ffs,
+                'properties': {'readonly': 'off', 'ffs:main': 'on'},
+            })
+        elif ( # happens after ffs:main=off on the old main.
+            self.is_ffs_moving(ffs) and
+            props.get('ffs:main', False) == 'on'):
+            self.send(self.model[ffs]['_main'], {
+                'msg': 'set_properties',
+                'ffs': ffs,
+                'properties': {'ffs:moving_to': '-'}
+            })
+            self.model[ffs]['_main'] = self.model[ffs]['_moving']
+
+        
+
 
     def node_new_done(self, msg):
         node = msg['from']
-        if not msg['ffs'] in self.model:
+        if msg['ffs'] not in self.model:
             self.faulted = ("node_new_done from ffs not in model.")
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
@@ -376,6 +469,14 @@ class Engine:
             raise CodingError(self.faulted)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
+        if self.is_ffs_moving(ffs) and node == self.model[ffs]['_moving']:
+            self.send(self.model[ffs]['_main'], {
+                'msg': 'set_properties',
+                'ffs': ffs,
+                'properties': {'ffs:main': 'off'}
+            })
+
+
     def node_remove_done(self, msg):
         node = msg['from']
         if 'ffs' not in msg:
@@ -395,3 +496,5 @@ class Engine:
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
         del self.model[ffs][node]
+
+    
