@@ -82,8 +82,8 @@ class Engine:
             self.node_new_done(msg)
         elif msg['msg'] == 'capture_done':
             self.node_capture_done(msg)
-        elif msg['msg'] == 'pull_done':
-            self.node_pull_done(msg)
+        elif msg['msg'] == 'send_done':
+            self.node_send_done(msg)
         elif msg['msg'] == 'remove_done':
             self.node_remove_done(msg)
         elif msg['msg'] == 'zpool_status':
@@ -438,9 +438,9 @@ class Engine:
                 for node, node_info in node_fss_info.items():
                     if not node.startswith('_') and node != main:
                         if latest_snapshot not in node_info['snapshots']:
-                            self.send(node, {
-                                'msg': 'pull_snapshot',
-                                'pull_from': main,
+                            self.send(main, {
+                                'msg': 'send_snapshot',
+                                'send_to': node,
                                 'ffs': ffs,
                                 'snapshot': latest_snapshot
                             }
@@ -531,9 +531,9 @@ class Engine:
         }
         main = self.model[ffs]['_main']
         if node != main and self.model[ffs][main]['snapshots']:
-            self.send(node,
-                      {'msg': 'pull_snapshot',
-                       'pull_from': main,
+            self.send(main,
+                      {'msg': 'send_snapshot',
+                       'send_to': node,
                        'ffs': ffs,
                        'snapshot': self.model[ffs][main]['snapshots'][-1]
                        }
@@ -572,16 +572,16 @@ class Engine:
             if node != main and node in self.model[ffs]:
                 postfix = self.model[ffs][node]['properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
-                    self.send(node,
+                    self.send(main,
                             {
-                                'msg': 'pull_snapshot',
+                                'msg': 'send_snapshot',
                                 'ffs': ffs,
                                 'snapshot': snapshot,
-                                'pull_from': main,
+                                'send_to': node,
                             })
 
-    def node_pull_done(self, msg):
-        node = msg['from']
+    def node_send_done(self, msg):
+        main = msg['from']
         if 'ffs' not in msg:
             self.faulted = "missing ffs parameter"
             self.trigger_message = msg
@@ -591,10 +591,10 @@ class Engine:
             self.faulted = "capture_done from ffs not in model."
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
-        main = self.model[ffs]['_main']
+        node = msg['send_to']
         if main == node:
             self.trigger_message = msg
-            self.faulted = "Pull received from main node?!"
+            self.faulted = "Send done from main to main?!"
             raise InconsistencyError(self.faulted)
         if 'snapshot' not in msg:
             self.faulted = "No snapshot in msg"

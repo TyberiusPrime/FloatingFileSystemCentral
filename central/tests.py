@@ -517,18 +517,19 @@ class CaptureTest(PostStartupTests):
                          })
         self.assertEqual(outgoing_messages,
                          [{
-                             'to': 'alpha',
-                             'msg': 'pull_snapshot',
+                             'to': 'beta',
+                             'msg': 'send_snapshot',
                              'ffs': 'one',
-                             'pull_from': 'beta',
+                             'send_to': 'alpha',
                              'snapshot': snapshot_name,
                          }]
 
                          )
         outgoing_messages.clear()
-        e.incoming_node({'msg': 'pull_done',
-                         'from': 'alpha',
+        e.incoming_node({'msg': 'send_done',
+                         'from': 'beta',
                          'ffs': 'one',
+                         'send_to': 'alpha',
                          'snapshot': snapshot_name,
                          })
         self.assertTrue(snapshot_name in e.model['one']['alpha']['snapshots'])
@@ -571,18 +572,18 @@ class CaptureTest(PostStartupTests):
 
         self.assertEqual(outgoing_messages[1], 
             {
-                'msg': 'pull_snapshot',
-                'to': 'beta',
-                'pull_from': 'alpha',
+                'msg': 'send_snapshot',
+                'to': 'alpha',
+                'send_to': 'beta',
                 'ffs': 'one',
                 'snapshot': snapshot_test,
             }
         )
         self.assertEqual(outgoing_messages[2], 
             {
-                'msg': 'pull_snapshot',
-                'to': 'gamma',
-                'pull_from': 'alpha',
+                'msg': 'send_snapshot',
+                'to': 'alpha',
+                'send_to': 'gamma',
                 'ffs': 'one',
                 'snapshot': snapshot_test
             }
@@ -606,9 +607,9 @@ class CaptureTest(PostStartupTests):
 
         self.assertEqual(outgoing_messages[0], 
             {
-                'msg': 'pull_snapshot',
-                'to': 'beta',
-                'pull_from': 'alpha',
+                'msg': 'send_snapshot',
+                'to': 'alpha',
+                'send_to': 'beta',
                 'ffs': 'one',
                 'snapshot': snapshot_no_test
             }
@@ -746,10 +747,10 @@ class AddTarget(PostStartupTests):
                          })
         self.assertEqual(outgoing_messages, [
             {
-                'msg': 'pull_snapshot',
+                'msg': 'send_snapshot',
                 'ffs': 'one',
-                'to': 'gamma',
-                'pull_from': 'beta',
+                'to': 'beta',
+                'send_to': 'gamma',
                 'snapshot': '1'
             }
 
@@ -850,15 +851,16 @@ class TestMove(PostStartupTests):
         })
         self.assertEqual(len(outgoing_messages), 3)
         self.assertEqual(outgoing_messages[2], {
-            'to': 'beta',
-            'msg': 'pull_snapshot',
+            'to': 'alpha',
+            'msg': 'send_snapshot',
             'ffs': 'one',
-            'pull_from': 'alpha',
+            'send_to': 'beta',
             'snapshot': outgoing_messages[1]['snapshot']
         })
         engine.incoming_node({
-            'msg': 'pull_done',
-            'from': 'beta',
+            'msg': 'send_done',
+            'from': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': outgoing_messages[1]['snapshot']
         })
@@ -1398,9 +1400,9 @@ class TestStartupTriggeringActions(EngineTests):
         })
         self.assertEqual(len(outgoing_messages), 1)
         self.assertEqual(outgoing_messages[0], {
-            'msg': 'pull_snapshot',
-            'to': 'beta',
-            'pull_from': 'alpha',
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': '2'
         })
@@ -1413,9 +1415,9 @@ class TestStartupTriggeringActions(EngineTests):
         })
         self.assertEqual(len(outgoing_messages), 1)
         self.assertEqual(outgoing_messages[0], {
-            'msg': 'pull_snapshot',
-            'to': 'beta',
-            'pull_from': 'alpha',
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': '2'
         })
@@ -1536,8 +1538,9 @@ class CrossTalkTest(EngineTests):
         })
         self.assertRaises(engine.MoveInProgress, inner)
         e.incoming_node({
-            'msg': 'pull_done',
-            'from': 'beta',
+            'msg': 'send_done',
+            'from': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': snapshot_name,
         })
@@ -1621,8 +1624,9 @@ class CrossTalkTest(EngineTests):
         })
         outgoing_messages.clear()
         e.incoming_node({
-            'msg': 'pull_done',
-            'from': 'beta',
+            'msg': 'send_done',
+            'from': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': wrong_snapshot_name,
         })
@@ -1637,8 +1641,9 @@ class CrossTalkTest(EngineTests):
         self.assertEqual(len(outgoing_messages), 1)
         outgoing_messages.clear()
         e.incoming_node({
-            'msg': 'pull_done',
-            'from': 'beta',
+            'msg': 'send_done',
+            'from': 'alpha',
+            'send_to': 'beta',
             'ffs': 'one',
             'snapshot': right_snapshot_name,
         })
