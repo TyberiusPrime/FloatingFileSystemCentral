@@ -68,6 +68,31 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(read_file(os.path.join(target_path, 'file1')), 'hello')
 
+    def test_sub_dirs(self):
+        source_path = '/tmp/RPsTests/simple_from'
+        target_path = '/tmp/RPsTests/simple_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join('source_path', '1'))
+        os.makedirs(os.path.join('source_path', '2'))
+        write_file(os.path.join(source_path, 'file1'), 'hello')
+        write_file(os.path.join(source_path, '1', 'file1'), 'hello1')
+        write_file(os.path.join(source_path, '2', 'file1'), 'hello2')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': 'localhost',
+            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_user': 'ffs',
+            'chown_user': 'finkernagel',
+            'chown_group': 'zti',
+            'chmod_rights': 'o+rwX,g+rwX,a-rwx'
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(read_file(os.path.join(target_path, 'file1')), 'hello')
+        self.assertEqual(read_file(os.path.join(target_path, '1', 'file1')), 'hello1')
+        self.assertEqual(read_file(os.path.join(target_path, '2', 'file1')), 'hello2')
+
 
 if __name__ == '__main__':
     unittest.main()
