@@ -18,7 +18,7 @@ def print_usage(error):
             'target_ssh_cmd': ['ssh', '-p', '223'],
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
-            'chmod_rights': 'o+rwX,g+rwX,a-rwx',
+            'chmod_rights': 'u+rwX,g+rwX,o-rwx',
             'cores': 2
         }
     """)
@@ -29,12 +29,34 @@ def print_usage(error):
 def chown_chmod_and_rsync(args):
     """the actual work horse"""
     sub_dir, recursive, cmd = args
+    source_dir_path = os.path.abspath(os.path.join(cmd['source_path'], sub_dir))
+    for c_cmd, c_opt in [
+        ('chown',  cmd['chown_user'] + ':' + cmd['chown_group']),
+        ('chmod',  cmd['chmod_rights']),
+    ]:
+        c_command = ['sudo', c_cmd, c_opt]
+        if recursive:
+            c_command.append(source_dir_path )
+            c_command.append('-R')
+        else:
+            for f in os.listdir(source_dir_path):
+                c_command.append(f)
+        
+        p = subprocess.Popen(c_command, cwd=source_dir_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE )
+        stdout, stderr = p.communicate()
+        if p.returncode != 0:
+            return c_cmd, p.returncode, stdout, stderr
+    
     rsync_cmd = ['rsync',
         '--rsync-path=rprsync',
         '--delete',
         '--delay-updates',
         '--omit-dir-times',
         '-ltx',  # copy symlinks, times, don't cross file-systems
+        '-perms',
+        #'--super',
+        #'--owner',
+        '--chmod=' + cmd['chmod_rights'],
         ]
     if recursive:
         rsync_cmd.append('--recursive')
@@ -45,7 +67,7 @@ def chown_chmod_and_rsync(args):
             '-e',
             " ".join(cmd['target_ssh_cmd']) 
         ])
-    rsync_cmd.append(os.path.join(cmd['source_path'], sub_dir))
+    rsync_cmd.append(source_dir_path + '/')
     rsync_cmd.append("%s@%s:%s" % (
          cmd['target_user'],
          cmd['target_host'],
@@ -55,24 +77,27 @@ def chown_chmod_and_rsync(args):
                        stderr=subprocess.PIPE)
     stdout, stderr=p.communicate()
     stdout += ("\n" + " ".join(rsync_cmd)).encode('utf8')
-    return p.returncode, stdout, stderr
+    stdout += (b"\n rsync returncode: %i" % p.returncode)
+    return 'rsync', p.returncode, stdout, stderr
 
 
 def parallel_chown_chmod_and_rsync(cmd):
     def iter_subdirs():
+        yield '.', False, cmd
         for d in os.listdir(cmd['source_path']):
             fd=os.path.join(cmd['source_path'], d)
             if os.path.isdir(fd):
-                yield d, True, cmd
-        yield '.', False, cmd
-    #p=multiprocessing.Pool(cmd.get('cores', 2))
-    #result=p.map(chown_chmod_and_rsync, iter_subdirs())
-    result = map(chown_chmod_and_rsync, list(iter_subdirs()))
-    #p.join()
+                yield d + '/', True, cmd
+    p=multiprocessing.Pool(cmd.get('cores', 2))
+    result=p.map(chown_chmod_and_rsync, iter_subdirs())
+    p.close()
+    p.join()
+    #result = map(chown_chmod_and_rsync, list(iter_subdirs()))
     rc=0
-    for rsync_return_code, stdout, stderr in result:
+    for return_mode, rsync_return_code, stdout, stderr in result:
         if rsync_return_code != 0:
             rc=2
+            sys.stderr.write(return_mode + "\n")
             sys.stderr.write(stdout.decode('utf8'))
             sys.stderr.write(stderr.decode('utf8'))
     if rc == 0:
@@ -90,6 +115,8 @@ def main():
             print_usage("target_ssh_cmd must be a list")
     except ValueError:
         print_usage('not valid json')
+    if not 'chmod_rights' in cmd:
+        cmd['chmod_rights'] = 'u+rwX,g+rwX,o+rwX'
 
     parallel_chown_chmod_and_rsync(cmd)
 
