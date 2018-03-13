@@ -40,7 +40,7 @@ def find_ffs_prefix():
 
 def list_ffs(strip_prefix=False, include_testing=False):
     res = [x for x in list_zfs() if x.startswith(find_ffs_prefix()) and (not x.startswith(
-        find_ffs_prefix() + '.') or x.startswith(find_ffs_prefix() + '.testing'))]
+        find_ffs_prefix() + '.') or x.startswith(find_ffs_prefix() + '.ffs_testing'))]
     if strip_prefix:
         ffs_prefix = find_ffs_prefix()
         res = [x[len(ffs_prefix):] for x in res]
