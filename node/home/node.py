@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 
 
@@ -79,7 +80,6 @@ def check_property_name_and_value(name, value):
     two portions such as module : property, but this namespace is not
     enforced by ZFS. User property names can be at most 256 characters, and
     cannot begin with a dash (-)."""
-    import re
     if not re.match("^[a-z0-9:._-]+$", name):
         raise ValueError("invalid property name")
     if len(value) > 1024:  # straight from the docs as well
@@ -130,6 +130,9 @@ def msg_capture(msg):
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
     if combined in list_snapshots():
         raise ValueError("Snapshot already exists")
+    if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
+        msg_chown_and_chmod(msg) # fields do match
+
     subprocess.check_call(
         ['sudo', 'zfs', 'snapshot', combined])
     return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name}
@@ -162,6 +165,29 @@ def msg_zpool_status(msg):
     status = subprocess.check_output(['sudo','zpool','status']).decode('utf-8')
     return {'msg': 'zpool_status', 'status': status}
 
+def list_all_users():
+    import pwd
+    return [x.pw_name for x in pwd.getpwall()]
+
+def msg_chown_and_chmod(msg):
+    ffs = msg['ffs']
+    full_ffs_path = find_ffs_prefix() + ffs
+    if full_ffs_path not in list_ffs(False, True):
+        raise ValueError("invalid ffs")
+    if not 'user' in msg:
+        raise ValueError("no user set")
+    user = msg['user']
+    if user not in list_all_users():
+        raise ValueError("invalid user")
+    if 'rights' not in msg:
+        raise ValueError("no rights set")
+    if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa][+=-][rwxXst]*)+$", msg['rights']):
+        raise ValueError("invalid rights - needs to look like 0777")
+    subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path, '-R'])
+    subprocess.check_call(['sudo', 'chmod', msg['rights'], '/' + full_ffs_path, '-R'])
+    return {'msg': 'chmod_and_chown_done', 'ffs': ffs}
+
+ 
 
 
 def dispatch(msg):
@@ -180,6 +206,9 @@ def dispatch(msg):
             result = msg_remove_snapshot(msg)
         elif msg['msg'] == 'zpool_status':
             result = msg_zpool_status(msg)
+        elif msg['msg'] == 'chown_and_chmod':
+            result = msg_chown_and_chmod(msg)
+
         else:
             result = {'error': 'message_not_understood'}
     except Exception as e:

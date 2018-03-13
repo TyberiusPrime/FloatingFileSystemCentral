@@ -7,7 +7,11 @@ import shutil
 import tempfile
 import json
 import stat
+import pwd
+import grp
 import node
+
+target_ssh_cmd = ['ssh', '-p', '223', '-i', '/home/ffs/.ssh/id_rsa']
 
 
 def run_rsync(cmd, encode=True, show_errors=True):
@@ -32,12 +36,27 @@ def write_file(filename, content):
         op.write(content)
 
 
+def get_file_rights(filename):
+    return os.stat(filename)[stat.ST_MODE]
+
+
+def get_file_user(filename):
+    return pwd.getpwuid(os.stat(filename).st_uid).pw_name
+
+
+def get_file_group(filename):
+    return grp.getgrgid(os.stat(filename).st_gid).gr_name
+
+
 def chmod(filename, bits):
     subprocess.check_call(['sudo', 'chmod', bits, filename])
 
 
-def chown(filename, owner):
-    subprocess.check_call(['sudo', 'chown', owner, filename])
+def chown(filename, owner, group=None):
+    if group:
+        subprocess.check_call(['sudo', 'chown', "%s:%s" % (owner, group), filename])
+    else:
+        subprocess.check_call(['sudo', 'chown', owner, filename])
 
 
 class RPsTests(unittest.TestCase):
@@ -54,6 +73,7 @@ class RPsTests(unittest.TestCase):
                 shutil.rmtree(path)
             except PermissionError:
                 subprocess.check_call(['sudo', 'chown', 'ffs', path, '-R'])
+                subprocess.check_call(['sudo', 'chmod', '+rwX', path, '-R'])
                 shutil.rmtree(path)
         os.makedirs(path)
         self.paths.add(path)
@@ -79,8 +99,8 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -102,8 +122,8 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -126,13 +146,13 @@ class RPsTests(unittest.TestCase):
         write_file(os.path.join(source_path, 'file1'), 'hello')
         write_file(os.path.join(source_path, '1', 'file2'), 'hello1')
         write_file(os.path.join(source_path, '2', 'file3'), 'hello2')
-        chmod(os.path.join(source_path, '2', 'file3'), '0700')
+        chmod(os.path.join(source_path, '2', 'file3'), '0744')
         chown(os.path.join(source_path, '2', 'file3'), 'nobody')
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -142,6 +162,10 @@ class RPsTests(unittest.TestCase):
             read_file(os.path.join(target_path, 'file1')), 'hello')
         self.assertEqual(read_file(os.path.join(
             target_path, '1', 'file2')), 'hello1')
+        #file should have been chowned, since we set chown_user
+        self.assertEqual(get_file_user(os.path.join(target_path, '2', 'file3')), 'finkernagel')
+        self.assertEqual(get_file_group(os.path.join(target_path, '2', 'file3')), 'zti')
+        self.assertEqual(get_file_rights(os.path.join(target_path, '2', 'file3')) & 0o777, 0o744)
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
 
@@ -155,13 +179,13 @@ class RPsTests(unittest.TestCase):
         write_file(os.path.join(source_path, 'file1'), 'hello')
         write_file(os.path.join(source_path, '1', 'file2'), 'hello1')
         write_file(os.path.join(source_path, '2', 'file3'), 'hello2')
-        chmod(os.path.join(source_path, '2'), '0600')
+        chmod(os.path.join(source_path, '2'), '0650')
         chown(os.path.join(source_path, '2'), 'nobody')
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -171,6 +195,10 @@ class RPsTests(unittest.TestCase):
             read_file(os.path.join(target_path, 'file1')), 'hello')
         self.assertEqual(read_file(os.path.join(
             target_path, '1', 'file2')), 'hello1')
+        self.assertEqual(get_file_user(os.path.join(target_path, '2',)), 'finkernagel')
+        self.assertEqual(get_file_group(os.path.join(target_path, '2',)), 'zti')
+        self.assertEqual(get_file_rights(os.path.join(target_path, '2')) & 0o777, 0o650)
+
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
 
@@ -191,11 +219,12 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
+            'chmod_before': True,
         })
         self.assertEqual(rc, 0)
         self.assertEqual(
@@ -223,8 +252,8 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -235,7 +264,7 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(
             target_path, '1', 'file2')), 'hello1')
         self.assertEqual(read_file(os.path.join(
-            target_path, '2', 'file3')), 'hello2')
+            target_path, '2', '2', 'file3')), 'hello2')
 
     def test_target_unwritable_dir_deletion(self):
         source_path = '/tmp/RPsTests/test_target_unwritable_dir_from'
@@ -254,8 +283,8 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -287,8 +316,8 @@ class RPsTests(unittest.TestCase):
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
             'target_path': target_path,
-            'target_host': 'localhost',
-            'target_ssh_cmd': ['ssh', '-p', '223'],
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
             'target_user': 'ffs',
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
@@ -301,82 +330,125 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
 
-        mode = os.stat(os.path.join(target_path, '2', 'file3'))[stat.ST_MODE]
-        # make sure the files are readable afterwards...
-        self.assertTrue(mode & stat.S_IRUSR)
-        self.assertTrue(mode & stat.S_IRGRP)
-        self.assertTrue(mode & stat.S_IROTH)
-        self.assertTrue(mode & stat.S_IWUSR)
-        self.assertTrue(mode & stat.S_IWGRP)
-        self.assertTrue(mode & stat.S_IWOTH)
+        should_rights = get_file_rights(os.path.join(source_path, '2', 'file3'))
+        mode = get_file_rights(os.path.join(target_path, '2', 'file3'))
+        self.assertEqual(mode & 0o777, should_rights & 0o777) # just as unreadable as it was before...
 
-        def test_executable_stays(self):
-            source_path = '/tmp/RPsTests/test_executable_stays_from'
-            target_path = '/tmp/RPsTests/test_executable_stays_to'
-            self.ensure_path(source_path)
-            self.ensure_path(target_path)
-            os.makedirs(os.path.join(source_path, '1'))
-            os.makedirs(os.path.join(source_path, '2'))
-            write_file(os.path.join(source_path, 'file1'), 'hello')
-            write_file(os.path.join(source_path, '1', 'file2'), 'hello1')
-            write_file(os.path.join(source_path, '2', 'file3'), 'hello2')
-            chmod(os.path.join(source_path, '2'), 'o=x,g=x,a=x')
-            chown(os.path.join(source_path, '2'), 'nobody')
-            rc, stdout, stderr = run_rsync({
-                'source_path': source_path,
-                'target_path': target_path,
-                'target_host': 'localhost',
-                'target_ssh_cmd': ['ssh', '-p', '223'],
-                'target_user': 'ffs',
-                'chown_user': 'finkernagel',
-                'chown_group': 'zti',
-            })
-            self.assertEqual(rc, 0)
-            self.assertEqual(
-                read_file(os.path.join(target_path, 'file1')), 'hello')
-            self.assertEqual(read_file(os.path.join(
-                target_path, '1', 'file2')), 'hello1')
-            self.assertEqual(read_file(os.path.join(
-                target_path, '2', 'file3')), 'hello2')
-            mode = os.stat(os.path.join(target_path, '2', 'file3'))[
-                stat.ST_MODEO]
-            self.assertTrue(mode & stat.S_IXUSR)
-            self.assertTrue(mode & stat.S_IXGRP)
-            self.assertTrue(mode & stat.S_IXOTH)
+    def test_executable_stays(self):
+        source_path = '/tmp/RPsTests/test_executable_stays_from'
+        target_path = '/tmp/RPsTests/test_executable_stays_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join(source_path, '1'))
+        os.makedirs(os.path.join(source_path, '2'))
+        write_file(os.path.join(source_path, 'file1'), 'hello')
+        write_file(os.path.join(source_path, '1', 'file2'), 'hello1')
+        write_file(os.path.join(source_path, '2', 'file3'), 'hello2')
+        chmod(os.path.join(source_path, '2', 'file3'), 'o=rx,g=rx,a=rx')
+        chown(os.path.join(source_path, '2', 'file3'), 'nobody')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+            'chown_user': 'finkernagel',
+            'chown_group': 'zti',
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            read_file(os.path.join(target_path, 'file1')), 'hello')
+        self.assertEqual(read_file(os.path.join(
+            target_path, '1', 'file2')), 'hello1')
+        self.assertEqual(read_file(os.path.join(
+            target_path, '2', 'file3')), 'hello2')
+        mode = get_file_rights(os.path.join(target_path, '2', 'file3'))
+        self.assertTrue(mode & stat.S_IXUSR)
+        self.assertTrue(mode & stat.S_IXGRP)
+        self.assertTrue(mode & stat.S_IXOTH)
 
-        def test_cant_read_source_dir():
-            raise NotImplementedError()
+    def test_cant_read_source_dir(self):
+        source_path = '/tmp/RPsTests/test_cant_read_source_dir_from'
+        target_path = '/tmp/RPsTests/test_cant_read_source_dir_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        write_file(os.path.join(source_path, 'file1'), 'hello')
+        chmod(source_path, "0")
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(get_file_rights(target_path) & 0o777, 0)
+        chmod(target_path, '+rX')
+        self.assertEqual(read_file(os.path.join(target_path, 'file1')), 'hello')
 
-        def test_x_survives_wrong_user(self):
-            raise NotImplementedError()
-            pass
 
-        def test_over_9000_files(self):
-            # mostly a test of the chown expansion...
-            source_path = '/tmp/RPsTests/test_over_9000_from'
-            target_path = '/tmp/RPsTests/test_over_9000_to'
-            self.ensure_path(source_path)
-            self.ensure_path(target_path)
-            for i in xrange(0, 9000):
-                write_file(os.path.join(source_path, str(i)), str(i))
-            rc, stdout, stderr = run_rsync({
-                'source_path': source_path,
-                'target_path': target_path,
-                'target_host': 'localhost',
-                'target_ssh_cmd': ['ssh', '-p', '223'],
-                'target_user': 'ffs',
-                'chown_user': 'finkernagel',
-                'chown_group': 'zti',
-            })
-            self.assertEqual(rc, 0)
-            self.assertEqual(len(os.listdir(target_path)), 9000)
+    def test_over_9000_files(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_over_9000_from'
+        target_path = '/tmp/RPsTests/test_over_9000_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        for i in range(0, 9000):
+            write_file(os.path.join(source_path, str(i)), str(i))
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+            'chown_user': 'finkernagel',
+            'chown_group': 'zti',
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(os.listdir(target_path)), 9000)
 
     def test_at_in_target_raises(self):
-        raise NotImplementedError()
+        source_path = '/tmp/RPsTests/test_source@in_target'
+        target_path = '/tmp/RPsTests/test_target@in_target'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+            'chown_user': 'finkernagel',
+            'chown_group': 'zti',
+        }, show_errors=False)
+        self.assertEqual(rc, 1)
 
     def test_other_side_user_correct_afterwards(self):
-        raise NotImplementedError()
-        pass
+        source_path = '/tmp/RPsTests/test_user_correct_source'
+        target_path = '/tmp/RPsTests/test_user_correct_target'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        fn = os.path.join(source_path, 'file1')
+        write_file(fn, 'hello')
+        os.chmod(fn, 0o765)
+        self.assertEqual(get_file_rights(fn) & 0o777, 0o765)
+        nobody = pwd.getpwnam('nobody')
+        chown(fn, 'nobody', 'nogroup')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        }, show_errors=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(get_file_rights(fn) & 0o777, 0o765)
+        fn_target = os.path.join(target_path, 'file1')
+        self.assertEqual(get_file_rights(fn_target) & 0o777, 0o765)
+        self.assertEqual(get_file_user(fn_target), 'nobody')
+        self.assertEqual(get_file_group(fn_target), 'nogroup')
+
+
 
 def touch(filename):
     with open(filename, 'w'):
@@ -394,17 +466,28 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(['sudo', 'zfs', 'create', test_prefix + '/one'])
         subprocess.check_call(
             ['sudo', 'zfs', 'set', 'ffs:test=one', test_prefix + '/one'])
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', test_prefix + '/one@a'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', test_prefix + '/one@a'])
         subprocess.check_call(['sudo', 'zfs', 'create', test_prefix + '/two'])
         subprocess.check_call(
             ['sudo', 'zfs', 'create', test_prefix + '/three'])
-        subprocess.check_call(['sudo','chmod','777', '/' + test_prefix + '/three'])
+        subprocess.check_call(['sudo', 'zfs', 'create', test_prefix + '/cac'])
+        subprocess.check_call(['sudo', 'zfs', 'create', test_prefix + '/cac2'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + test_prefix + '/three'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + test_prefix + '/cac'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + test_prefix + '/cac2'])
         touch('/' + test_prefix + '/three/file_a')
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', test_prefix + '/three@a'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', test_prefix + '/three@a'])
         touch('/' + test_prefix + '/three/file_b')
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', test_prefix + '/three@b'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', test_prefix + '/three@b'])
         touch('/' + test_prefix + '/three/file_c')
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', test_prefix + '/three@c'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', test_prefix + '/three@c'])
 
     @classmethod
     def get_prefix(cls):
@@ -428,7 +511,7 @@ class NodeTests(unittest.TestCase):
         out_msg = node.dispatch(in_msg)
         self.assertEqual(out_msg['msg'], 'ffs_list')
         zfs_list = subprocess.check_output(
-            ['sudo', '-u', 'ffs', 'zfs', 'list', '-H']).decode('utf-8').strip().split("\n")
+            ['zfs', 'list', '-H']).decode('utf-8').strip().split("\n")
         zfs_list = [x.split("\t")[0] for x in zfs_list]
         zfs_list = [x for x in zfs_list if '/ffs/' in x and not '/ffs/.' in x]
         zfs_list = [x[x.find('/ffs/') + len('/ffs/'):] for x in zfs_list]
@@ -507,7 +590,8 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('creation' in out_msg['properties'])
 
     def get_snapshots(self):
-        snapshot_list = subprocess.check_output(['sudo','zfs','list','-t', 'snapshot', '-H']).decode("utf-8").strip().split("\n")
+        snapshot_list = subprocess.check_output(
+            ['sudo', 'zfs', 'list', '-t', 'snapshot', '-H']).decode("utf-8").strip().split("\n")
         return [x.split("\t")[0] for x in snapshot_list]
 
     def assertSnapshot(self, ffs, snapshot):
@@ -520,32 +604,31 @@ class NodeTests(unittest.TestCase):
         sn = self.get_snapshots()
         self.assertFalse(full_path in sn)
 
-
     def test_capture(self):
         in_msg = {'msg': 'capture', 'ffs': '.testing/one', 'snapshot': 'b'}
-        self.assertNotSnapshot('.testing/one','b')
+        self.assertNotSnapshot('.testing/one', 'b')
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
-        self.assertSnapshot('.testing/one','b')
+        self.assertSnapshot('.testing/one', 'b')
         self.assertEqual(out_msg['msg'], 'capture_done')
         self.assertEqual(out_msg['ffs'], '.testing/one')
         self.assertEqual(out_msg['snapshot'], 'b')
 
-
     def test_snapshot_exists(self):
         in_msg = {'msg': 'capture', 'ffs': '.testing/one', 'snapshot': 'a'}
-        self.assertSnapshot('.testing/one','a')
+        self.assertSnapshot('.testing/one', 'a')
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue('already exists' in out_msg['content'])
 
     def test_snapshot_invalid_ffs(self):
-        in_msg = {'msg': 'capture', 'ffs': '.testing/doesnotexist', 'snapshot': 'a'}
+        in_msg = {'msg': 'capture',
+                  'ffs': '.testing/doesnotexist', 'snapshot': 'a'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
 
     def test_remove(self):
-        in_msg = {'msg': 'remove', 'ffs': '.testing/two' }
+        in_msg = {'msg': 'remove', 'ffs': '.testing/two'}
         self.assertTrue('.testing/two' in node.list_ffs(True, True))
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
@@ -553,49 +636,53 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['msg'], 'remove_done')
         self.assertEqual(out_msg['ffs'], '.testing/two')
 
-
     def test_remove_invalid_ffs(self):
-        in_msg = {'msg': 'remove', 'ffs': '.testing/does_not_exist' }
-        self.assertFalse('.testing/does_not_exist' in node.list_ffs(True, True))
+        in_msg = {'msg': 'remove', 'ffs': '.testing/does_not_exist'}
+        self.assertFalse(
+            '.testing/does_not_exist' in node.list_ffs(True, True))
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
 
     def test_remove_snapshot(self):
-        in_msg = {'msg': 'remove_snapshot', 'ffs': '.testing/three', 'snapshot': 'c'}
-        self.assertSnapshot('.testing/three','a')
-        self.assertSnapshot('.testing/three','b')
-        self.assertSnapshot('.testing/three','c')
+        in_msg = {'msg': 'remove_snapshot',
+                  'ffs': '.testing/three', 'snapshot': 'c'}
+        self.assertSnapshot('.testing/three', 'a')
+        self.assertSnapshot('.testing/three', 'b')
+        self.assertSnapshot('.testing/three', 'c')
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
         self.assertEqual(out_msg['msg'], 'remove_snapshot_done')
         self.assertEqual(out_msg['ffs'], '.testing/three')
         self.assertEqual(out_msg['snapshots'], ['a', 'b'],)
-        self.assertSnapshot('.testing/three','a')
-        self.assertSnapshot('.testing/three','b')
-        self.assertNotSnapshot('.testing/three','c')
+        self.assertSnapshot('.testing/three', 'a')
+        self.assertSnapshot('.testing/three', 'b')
+        self.assertNotSnapshot('.testing/three', 'c')
 
-        in_msg = {'msg': 'remove_snapshot', 'ffs': '.testing/three', 'snapshot': 'a'}
+        in_msg = {'msg': 'remove_snapshot',
+                  'ffs': '.testing/three', 'snapshot': 'a'}
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
         self.assertEqual(out_msg['snapshots'], ['b'],)
-        self.assertNotSnapshot('.testing/three','a')
-        self.assertSnapshot('.testing/three','b')
-        self.assertNotSnapshot('.testing/three','c')
+        self.assertNotSnapshot('.testing/three', 'a')
+        self.assertSnapshot('.testing/three', 'b')
+        self.assertNotSnapshot('.testing/three', 'c')
 
     def test_remove_snapshot_invalid_snapshot(self):
-        in_msg = {'msg': 'remove_snapshot', 'ffs': '.testing/three', 'snapshot': 'no_such_snapshot'}
+        in_msg = {'msg': 'remove_snapshot',
+                  'ffs': '.testing/three', 'snapshot': 'no_such_snapshot'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue("invalid snapshot" in out_msg['content'])
 
     def test_remove_snapshot_invalid_ffs(self):
-        in_msg = {'msg': 'remove_snapshot', 'ffs': '.testing/three_no_exists', 'snapshot': 'c'}
+        in_msg = {'msg': 'remove_snapshot',
+                  'ffs': '.testing/three_no_exists', 'snapshot': 'c'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue("invalid ffs" in out_msg['content'])
 
     def test_zpool_status(self):
-        in_msg = {'msg': 'zpool_status',}
+        in_msg = {'msg': 'zpool_status', }
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
         self.assertTrue('status' in out_msg)
@@ -603,20 +690,80 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('state:' in out_msg['status'])
         self.assertTrue('status:' in out_msg['status'])
 
+    def test_chown_and_chmod(self):
+        in_msg = {'msg': 'chown_and_chmod', 'ffs': '.testing/cac',
+                  'user': 'nobody', 'rights': '0567'}
+        fn = '/' + NodeTests.get_prefix() + '.testing/cac/file_one'
+        touch(fn)
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertEqual(get_file_user(fn), 'nobody')
+        self.assertEqual(get_file_rights(fn) & 0o567, 0o567)
+        self.assertEqual(out_msg['msg'], 'chmod_and_chown_done')
 
+    def test_chown_and_chmod_rgwx(self):
+        in_msg = {'msg': 'chown_and_chmod', 'ffs': '.testing/cac',
+                  'user': 'nobody', 'rights': 'o+rwX'}
+        fn = '/' + NodeTests.get_prefix() + '.testing/cac/two/file_two'
+        os.mkdir(os.path.dirname(fn))
+        touch(fn)
+        os.chmod(fn, 0o000)
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertEqual(get_file_user(fn), 'nobody')
+        self.assertEqual(get_file_user(os.path.dirname(fn)), 'nobody')
+        self.assertEqual(get_file_rights(fn) & 0o006, 0o006)
+        self.assertEqual(get_file_rights(os.path.dirname(fn)) & 0o007, 0o007)
+        self.assertEqual(out_msg['msg'], 'chmod_and_chown_done')
 
-        
+    def test_chown_and_chmod_invalid_ffs(self):
+        in_msg = {'msg': 'chown_and_chmod', 'ffs': '.testing/cac_not_existant',
+                  'user': 'nobody', 'rights': '0567'}
+        out_msg = node.dispatch(in_msg)
+        self.assertError(out_msg)
+        self.assertTrue('invalid ffs' in out_msg['content'])
+
+    def test_chown_and_chmod_invalid_user(self):
+        in_msg = {'msg': 'chown_and_chmod', 'ffs': '.testing/cac',
+                  'user': 'not_present_here', 'rights': '0567'}
+        out_msg = node.dispatch(in_msg)
+        self.assertError(out_msg)
+        self.assertTrue('invalid user' in out_msg['content'])
+
+    def test_chown_and_chmod_invalid_rights(self):
+        in_msg = {'msg': 'chown_and_chmod', 'ffs': '.testing/cac',
+                  'user': 'nobody', 'rights': '+nope'}
+        out_msg = node.dispatch(in_msg)
+        self.assertError(out_msg)
+        self.assertTrue('invalid rights' in out_msg['content'])
+
+    def test_chown_and_chmod_within_capture(self):
+        in_msg = {'msg': 'capture', 'ffs': '.testing/cac2', 'snapshot': 'a',
+                  'chown_and_chmod': True, 'user': 'nobody', 'rights': '0567'}
+        self.assertNotSnapshot('.testing/cac2', 'b')
+        fn = '/' + NodeTests.get_prefix() + '.testing/cac2/file_one'
+        touch(fn)
+        os.chmod(fn, 0o000)
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertSnapshot('.testing/cac2', 'a')
+        self.assertEqual(out_msg['msg'], 'capture_done')
+        self.assertEqual(out_msg['ffs'], '.testing/cac2')
+        self.assertEqual(out_msg['snapshot'], 'a')
+        self.assertEqual(get_file_user(fn), 'nobody')
+        self.assertEqual(get_file_rights(fn) & 0o567, 0o567)
 
     def test_send_snapshot(self):
         raise NotImplemented()
 
     def test_send_snapshot_invalid_ffs(self):
         raise NotImplemented()
+
     def test_send_snapshot_invalid_snapshot(self):
         raise NotImplemented()
+
     def test_send_snapshot_invalid_target(self):
         raise NotImplemented()
-
 
 
 if __name__ == '__main__':

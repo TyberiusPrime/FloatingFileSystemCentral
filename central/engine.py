@@ -249,6 +249,8 @@ class Engine:
             {
                 'msg': 'chown_and_chmod',
                 'ffs': ffs,
+                'user': self.config['_chown_user']
+                'rights': self.config['_chmod_rights']
             }
 
 

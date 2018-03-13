@@ -23,6 +23,8 @@ class EngineTests(unittest.TestCase):
         config = collections.OrderedDict()
         for name in quick_ffs_definition:
             config[name] = {'storage_prefix': '/' + name, 'hostname': name}
+        config['_chown_user'] = 'nobody'
+        config['_chmod_rights'] = '0777'
 
         outgoing_messages = []
 
@@ -1368,6 +1370,8 @@ class ChownTests(PostStartupTests):
             'msg': 'chown_and_chmod',
             'ffs': 'one',
             'to': 'alpha'
+            'user': e.config['_chown_user'],
+            'rights': e.config['_chmod_rights'],
         })
 
 
@@ -1384,7 +1388,9 @@ class ChownTests(PostStartupTests):
                 'msg': 'capture',
                 'ffs': 'one',
                 'chown_and_chmod': True,
-            }
+                'user': e.config['_chown_user'],
+                'rights': e.config['_chmod_rights'],
+        }
         )
 
         pass
