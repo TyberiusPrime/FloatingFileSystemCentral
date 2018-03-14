@@ -1,5 +1,8 @@
 import pprint
+import shutil
+import os
 import re
+from collections import OrderedDict
 
 
 class StartupNotDone(Exception):
@@ -42,15 +45,31 @@ def needs_startup(func):
 
 class Engine:
 
-    def __init__(self, config, send_function):
+    def __init__(self, config, send_function, debug_logger=None, error_logger=None,
+        non_node_config = None):
         """Config is a dictionary node_name -> node info
         send_function handles sending  messages to nodes
         and get's the node_info and a message passed"""
         self.send_function = send_function
         for node in config:
             if node.startswith('_'):
-                raise ValueError("Node can not start with _")
-        self.config = config
+                raise ValueError("Node can not start with _: %s" % node)
+        self.node_config = config
+        if non_node_config is None:
+            non_node_config = {}
+        self.non_node_config = non_node_config
+        allowed_options = {'chown_user', 'chmod_rights'}
+        too_many_options = set(non_node_config).difference(allowed_options)
+        if too_many_options:
+            raise ValueError("Invalid option set: %s" % (too_many_options, ))
+        if debug_logger is None:
+            import logging
+            debug_logger = logging.NullHandler()
+        if error_logger is None:
+            import logging
+            error_logger = logging.NullHandler()
+        self.debug_logger = debug_logger
+        self.error_logger = error_logger
         self.node_ffs_infos = {}
         self.model = {}
         self.startup_done = False
@@ -58,10 +77,29 @@ class Engine:
         self.trigger_message = None
         self.zpool_stati = {}
         self.error_callback = lambda x: False
+        self.write_authorized_keys()
+        self.deployment_zip_filename = os.path.join('node', 'node.zip')
+        self.build_deployment_zip()
+
+    def write_authorized_keys(self):
+        if not os.path.exists(os.path.join('node', 'home', '.ssh')):
+            os.makedirs(os.path.join('node', 'home', '.ssh'))
+        fn = os.path.join('node', 'home', '.ssh', 'authorized_keys')
+        if os.path.exists(fn):
+            os.unlink(fn)
+        with open(fn, 'w') as op:
+            for node in self.node_config:
+                pub_key = self.node_config[node]['public_key']
+                op.write('command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n' %
+                         pub_key)
+
+    def build_deployment_zip(self):
+        shutil.make_archive(self.deployment_zip_filename[
+                            :-4], 'zip', os.path.join('node', 'home'))
 
     def send(self, node_name, message):
         """allow sending by name"""
-        self.send_function(self.config[node_name], message)
+        self.send_function(self.node_config[node_name], message)
 
     def incoming_node(self, msg):
         if 'msg' not in msg:
@@ -70,10 +108,12 @@ class Engine:
             self.trigger_message = msg
             self.faulted = "No from in message - should not happen"
             raise ManualInterventionNeeded(self.faulted)
-        if msg['from'] not in self.config:
+        if msg['from'] not in self.node_config:
             self.faulted = "Invalid sender"
             self.trigger_message = msg
             raise ManualInterventionNeeded(self.faulted)
+        elif msg['msg'] == 'deploy_done':
+            self.node_deploy_done(msg['from'])
         elif msg['msg'] == 'ffs_list':
             self.node_ffs_list(msg['ffs'], msg['from'])
         elif msg['msg'] == 'set_properties_done':
@@ -96,26 +136,34 @@ class Engine:
     def incoming_client(self, msg):
         command = msg['msg']
         if command == 'startup':
-            self.client_startup()
+            return self.client_startup()
         elif command == 'new':
-            self.client_new(msg)
+            return self.client_new(msg)
         elif command == 'remove_target':
-            self.client_remove_target(msg)
+            return self.client_remove_target(msg)
         elif command == 'add_target':
-            self.client_add_target(msg)
+            return self.client_add_target(msg)
         elif command == 'capture':
-            self.client_capture(msg)
+            return self.client_capture(msg)
         elif command == 'chown_and_chmod':
-            self.client_chown_and_chmod(msg)
+            return self.client_chown_and_chmod(msg)
         elif command == 'move_main':
-            self.client_move_main(msg)
+            return self.client_move_main(msg)
+        elif command == 'deploy':
+            return self.client_deploy()
         else:
             raise ValueError("invalid message from client, ignoring")
 
+    def client_deploy(self):
+        import base64
+        with open(self.deployment_zip_filename, 'rb') as op:
+            d = op.read()
+            return {'node.zip': base64.b64encode(d).decode('utf-8')}
+
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
-        for node_info in self.config.values():
-            msg = {'msg': 'list_ffs'}
+        for node_info in self.node_config.values():
+            msg = {'msg': 'deploy'}
             self.send_function(node_info, msg)
 
     def check_ffs_name(self, path):
@@ -133,12 +181,12 @@ class Engine:
         if not msg['targets']:
             raise CodingError("Targets empty")
         for x in msg['targets']:
-            if not x in self.config:
+            if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
         if ffs in self.model:
             raise ValueError("Already present, can't create as new")
         main = msg['targets'][0]
-        for node in self.config:
+        for node in self.node_config:
             if node in msg['targets']:
                 if main == node:
                     props = {'ffs:main': 'on',
@@ -211,7 +259,7 @@ class Engine:
         postfix = msg.get('postfix', '')
         self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
 
-    def do_capture(self, ffs, chown_and_chmod, postfix = ''):
+    def do_capture(self, ffs, chown_and_chmod, postfix=''):
         snapshot = self._name_snapshot(ffs, postfix)
         out_msg = {
             'msg': 'capture',
@@ -220,6 +268,8 @@ class Engine:
         }
         if chown_and_chmod:
             out_msg['chown_and_chmod'] = True
+            out_msg['user'] = self.non_node_config['chown_user']
+            out_msg['rights'] = self.non_node_config['chmod_rights']
         self.send(
             self.model[ffs]['_main'],
             out_msg
@@ -249,8 +299,8 @@ class Engine:
             {
                 'msg': 'chown_and_chmod',
                 'ffs': ffs,
-                'user': self.config['_chown_user']
-                'rights': self.config['_chmod_rights']
+                'user': self.non_node_config['chown_user'],
+                'rights': self.non_node_config['chmod_rights']
             }
 
 
@@ -306,20 +356,24 @@ class Engine:
         no = 'a'
         while (
             (res in self.model[ffs][self.model[ffs]['_main']]['snapshots']) or
-            (res in self.model[ffs][self.model[ffs]['_main']].get('upcoming_snapshots', []))
+            (res in self.model[ffs][self.model[ffs][
+             '_main']].get('upcoming_snapshots', []))
         ):
             res = 'ffs-' + '-'.join(t)
             res += '-' + no
             if postfix:
                 res += '-' + postfix
             no = chr(ord(no) + 1)
- 
+
         return res
 
+    def node_deploy_done(self, sender):
+        msg = {'msg': 'list_ffs'}
+        self.send_function(self.node_config[sender], msg)
 
     def node_ffs_list(self, ffs_list, sender):
         self.node_ffs_infos[sender] = ffs_list
-        if len(self.node_ffs_infos) == len(self.config):
+        if len(self.node_ffs_infos) == len(self.node_config):
             self.build_model()
             self.startup_done = True
 
@@ -371,59 +425,62 @@ class Engine:
                     main = last_non_ro
                 else:
                     if any_moving_to:
-                        main = None # stays None.
+                        main = None  # stays None.
                     else:
                         self.faulted = "No main, muliple non-readonly for %s" % ffs
                         raise ManualInterventionNeeded(self.faulted)
             self.model[ffs]['_main'] = main
             if not any_moving_to:
-                #make sure the right readonly/main properties are set.
-                for node in self.config:  # always in the same order
+                # make sure the right readonly/main properties are set.
+                for node in self.node_config:  # always in the same order
                     if node in node_ffs_info:
                         node_info = node_ffs_info[node]
                         props = node_info['properties']
                         if node == main:
                             if props.get('readonly', False) != 'off':
                                 self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                                'properties': {'readonly': 'off'}})
+                                                 'properties': {'readonly': 'off'}})
 
                             if props.get('ffs:main', 'off') != 'on':
                                 self.send(
                                     node, {'msg': 'set_properties', 'ffs': ffs,
-                                        'properties': {'ffs:main': 'on'}})
+                                           'properties': {'ffs:main': 'on'}})
                         else:
                             if props.get('readonly', 'off') != 'on':
                                 self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                                'properties': {'readonly': 'on'}})
+                                                 'properties': {'readonly': 'on'}})
                             if 'ffs:main' not in props:
                                 self.send(
                                     node, {'msg': 'set_properties', 'ffs': ffs,
-                                        'properties': {'ffs:main': 'off'}})
-            else: #caught in a move.
-                #step 0 - 
+                                           'properties': {'ffs:main': 'off'}})
+            else:  # caught in a move.
+                # step 0 -
                 move_target = any_moving_to
                 self.model[ffs]['_moving'] = move_target
-                if main is not None: 
+                if main is not None:
                     if main != any_moving_to:
                         # we were before step 3, remove main, so we restart with a capture
                         # and ignore if we had already captured and replicated.
                         self.do_capture(ffs, False)
-                    else: #main had already been moved
-                        #all that remains is to remove the moving marker
+                    else:  # main had already been moved
+                        # all that remains is to remove the moving marker
                         self.send(any_moving_from, {
                             'msg': 'set_properties',
                             'ffs': ffs,
                             'properties': {'ffs:moving_to': '-'}
                         })
 
-                else: # we had successfully captured and replicated and the main has been removed
-                    # so we continue by setting main=on and readonly=off on the moving target...
+                else:  # we had successfully captured and replicated and the main has been removed
+                    # so we continue by setting main=on and readonly=off on the
+                    # moving target...
                     self.send(any_moving_to, {
                         'msg': 'set_properties',
                         'ffs': ffs,
                         'properties': {'ffs:main': 'on', 'readonly': 'off'}
                     })
-                node_ffs_info['_main'] = main # we can deal with main being None until the ffs:moving_to = - job  is done..
+                # we can deal with main being None until the ffs:moving_to = -
+                # job  is done..
+                node_ffs_info['_main'] = main
         self._send_pulls_and_removals()
 
     def _send_pulls_and_removals(self):
@@ -570,17 +627,18 @@ class Engine:
             self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
 
         main = self.model[ffs]['_main']
-        for node in self.config:
+        for node in self.node_config:
             if node != main and node in self.model[ffs]:
-                postfix = self.model[ffs][node]['properties'].get('ffs:postfix_only', True)
+                postfix = self.model[ffs][node][
+                    'properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
                     self.send(main,
-                            {
-                                'msg': 'send_snapshot',
-                                'ffs': ffs,
-                                'snapshot': snapshot,
-                                'send_to': node,
-                            })
+                              {
+                                  'msg': 'send_snapshot',
+                                  'ffs': ffs,
+                                  'snapshot': snapshot,
+                                  'send_to': node,
+                              })
 
     def node_send_done(self, msg):
         main = msg['from']
@@ -609,10 +667,10 @@ class Engine:
             raise CodingError(self.faulted)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
-        if (self.is_ffs_moving(ffs) and 
-            node == self.model[ffs]['_moving'] and 
-            msg['snapshot'] == self.model[ffs]['_move_snapshot']
-        ):
+        if (self.is_ffs_moving(ffs) and
+                    node == self.model[ffs]['_moving'] and
+                    msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -638,7 +696,7 @@ class Engine:
             self.trigger_message = msg
             raise InconsistencyError(self.faulted)
         del self.model[ffs][node]
-    
+
     def node_zpool_status(self, msg):
         node = msg['from']
         status = {}
@@ -647,12 +705,12 @@ class Engine:
         if node in self.zpool_stati:
             old_status = self.zpool_stati[node]
             if old_status != status:
-                self.error_callback("Zpool status changed: %s - %s" % (node, status))
+                self.error_callback(
+                    "Zpool status changed: %s - %s" % (node, status))
         else:
             if status['DEGRADED'] or status['UNAVAIL']:
                 self.error_callback("Zpool status: %s - %s" % (node, status))
-        self.zpool_stati[node] = status 
-
+        self.zpool_stati[node] = status
 
     @needs_startup
     def prune_snapshots(self):
@@ -672,8 +730,6 @@ class Engine:
                             'snapshot': s
                         })
 
-    def  do_zpool_status_check(self):
-        for node in self.config:
+    def do_zpool_status_check(self):
+        for node in self.node_config:
             self.send(node, {'msg': 'zpool_status'})
-        
-   

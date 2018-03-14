@@ -807,6 +807,9 @@ class NodeTests(unittest.TestCase):
     def test_send_snapshot_invalid_target(self):
         raise NotImplemented()
 
+    def test_rsync_respects_filesystem_boundaries(self):
+        raise NotImplemented()
+
 
 if __name__ == '__main__':
     unittest.main()

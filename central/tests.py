@@ -22,9 +22,10 @@ class EngineTests(unittest.TestCase):
         """
         config = collections.OrderedDict()
         for name in quick_ffs_definition:
-            config[name] = {'storage_prefix': '/' + name, 'hostname': name}
-        config['_chown_user'] = 'nobody'
-        config['_chmod_rights'] = '0777'
+            config[name] = {'storage_prefix': '/' + name, 'hostname': name, 'public_key': '#no such key'}
+        non_node_config = {}
+        non_node_config['chown_user'] = 'nobody'
+        non_node_config['chmod_rights'] = '0777'
 
         outgoing_messages = []
 
@@ -33,9 +34,12 @@ class EngineTests(unittest.TestCase):
             outgoing_messages.append(msg)
         e = engine.Engine(
             config,
-            send
+            send,
+            non_node_config=non_node_config
         )
         e.incoming_client({'msg': 'startup', })
+        for node_name, ffs_to_snapshots in quick_ffs_definition.items():
+            e.incoming_node({'msg': 'deploy_done', 'from': node_name})
         outgoing_messages.clear()
         for node_name, ffs_to_snapshots in quick_ffs_definition.items():
             ffs = {}
@@ -61,8 +65,8 @@ class EngineTests(unittest.TestCase):
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta'}
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'b'}
         outgoing_messages = []
 
         def send(receiver, msg):
@@ -78,7 +82,7 @@ class StartupTests(EngineTests):
 
     def test_nodes_may_not_start_with_dash(self):
         nodes = {}
-        nodes['_alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha'}
+        nodes['_alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
 
         def ignore(*args, **kwargs):
             pass
@@ -90,12 +94,26 @@ class StartupTests(EngineTests):
             )
         self.assertRaises(ValueError, inner)
 
-    def test_startup_sends_list_ffs(self):
+    def test_startup_sends_deployment_followed_by_list_ffs(self):
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
         self.assertTrue(len(outgoing_messages), 2)
+        self.assertEqual(outgoing_messages[0],
+                         {
+            'to': 'alpha',
+            'msg': 'deploy'
+        })
+        self.assertEqual(outgoing_messages[1],
+                         {
+            'to': 'beta',
+            'msg': 'deploy'
+        })
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'deploy_done', 'from': 'alpha'})
+        e.incoming_node({'msg': 'deploy_done', 'from': 'beta'})
+        self.assertFalse(e.startup_done)
         self.assertEqual(outgoing_messages[0],
                          {
             'to': 'alpha',
@@ -107,6 +125,7 @@ class StartupTests(EngineTests):
             'msg': 'list_ffs'
         })
         outgoing_messages.clear()
+ 
         e.incoming_node({'msg': 'ffs_list',
                          'from': 'beta',
                          'ffs': {}
@@ -275,8 +294,8 @@ class PostStartupTests(EngineTests):
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta'}
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'a'}
         outgoing_messages = []
 
         def send(receiver, msg):
@@ -682,9 +701,9 @@ class AddTarget(PostStartupTests):
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta'}
-        nodes['gamma'] = {'storage_prefix': '/gamma', 'hostname': 'gamma'}
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'a'}
+        nodes['gamma'] = {'storage_prefix': '/gamma', 'hostname': 'gamma', 'public_key': 'a'}
         outgoing_messages = []
 
         def send(receiver, msg):
@@ -1369,9 +1388,9 @@ class ChownTests(PostStartupTests):
         self.assertEqual(outgoing_messages[0], {
             'msg': 'chown_and_chmod',
             'ffs': 'one',
-            'to': 'alpha'
-            'user': e.config['_chown_user'],
-            'rights': e.config['_chmod_rights'],
+            'to': 'alpha',
+            'user': e.non_node_config['chown_user'],
+            'rights': e.non_node_config['chmod_rights'],
         })
 
 
@@ -1388,8 +1407,8 @@ class ChownTests(PostStartupTests):
                 'msg': 'capture',
                 'ffs': 'one',
                 'chown_and_chmod': True,
-                'user': e.config['_chown_user'],
-                'rights': e.config['_chmod_rights'],
+                'user': e.non_node_config['chown_user'],
+                'rights': e.non_node_config['chmod_rights'],
         }
         )
 

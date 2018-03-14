@@ -269,6 +269,9 @@ def msg_send_snapshot(msg):
 
     finally:
         clean_up_clones()
+    
+def msg_deploy(msg):
+    pass
 
 
 def dispatch(msg):
@@ -291,6 +294,9 @@ def dispatch(msg):
             result = msg_chown_and_chmod(msg)
         elif msg['msg'] == 'send_snapshot':
             result = msg_send_snapshot(msg)
+        elif msg['msg'] == 'deploy':
+            result = msg_deploy(msg)
+
         else:
             result = {'error': 'message_not_understood'}
     except Exception as e:
