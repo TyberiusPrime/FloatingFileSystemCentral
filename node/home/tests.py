@@ -464,9 +464,15 @@ class NodeTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-r'],
+        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
         subprocess.check_call(['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
+
+    @classmethod
+    def tearDownClass(cls):
+        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+ 
 
     @classmethod
     def get_prefix(cls):
@@ -774,8 +780,23 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_1@a'])
  
+        self.assertSnapshot('.ffs_testing/from_1', 'a')
         self.assertFalse(os.path.exists('/' + NodeTests.get_test_prefix()  + 'to_1/one'))
         self.assertTrue(os.path.exists('/' + NodeTests.get_test_prefix()  + 'from_1/one'))
+        in_msg = {'msg': 'send_snapshot', 
+            'ffs': '.ffs_testing/from_1', 
+            'snapshot': 'a',
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': ['ssh', '-p', '223', '-i', '/home/ffs/.ssh/id_rsa'],
+            'target_path': '/' + NodeTests.get_test_prefix() + 'to_1',
+            'target_ffs': '.ffs_testing/to_1',
+            'target_user': 'ffs',
+        }
+        self.assertNotSnapshot('.ffs_testing/to_1', 'a')
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertTrue(os.path.exists('/' + NodeTests.get_test_prefix()  + 'to_1/one'))
+        self.assertSnapshot('.ffs_testing/to_1', 'a')
 
     def test_send_snapshot_invalid_ffs(self):
         raise NotImplemented()

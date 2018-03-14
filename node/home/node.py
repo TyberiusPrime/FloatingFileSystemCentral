@@ -1,6 +1,9 @@
 import json
+import os
 import re
 import subprocess
+import time
+import hashlib
 
 
 def zfs_output(cmd_line):
@@ -37,6 +40,8 @@ def find_ffs_prefix():
         raise KeyError()
     return _cached_ffs_prefix
 
+clone_dir = find_ffs_prefix() + '.ffs_sync_clones'
+
 
 def list_ffs(strip_prefix=False, include_testing=False):
     res = [x for x in list_zfs() if x.startswith(find_ffs_prefix()) and (not x.startswith(
@@ -46,15 +51,17 @@ def list_ffs(strip_prefix=False, include_testing=False):
         res = [x[len(ffs_prefix):] for x in res]
     return res
 
+
 def list_snapshots():
     return [x.split("\t")[0] for x in zfs_output(['zfs', 'list', '-t', 'snapshot', '-H']).strip().split("\n")]
+
 
 def get_snapshots(ffs):
     all_snapshots = list_snapshots()
     prefix = find_ffs_prefix() + ffs + '@'
-    matching = [x[x.find("@") + 1:] for x in all_snapshots if x.startswith(prefix)]
+    matching = [x[x.find("@") + 1:]
+                for x in all_snapshots if x.startswith(prefix)]
     return matching
-
 
 
 def msg_list_ffs():
@@ -131,11 +138,12 @@ def msg_capture(msg):
     if combined in list_snapshots():
         raise ValueError("Snapshot already exists")
     if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
-        msg_chown_and_chmod(msg) # fields do match
+        msg_chown_and_chmod(msg)  # fields do match
 
     subprocess.check_call(
         ['sudo', 'zfs', 'snapshot', combined])
     return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name}
+
 
 def msg_remove(msg):
     ffs = msg['ffs']
@@ -144,8 +152,9 @@ def msg_remove(msg):
         raise ValueError("invalid ffs")
     if not '/ffs' in full_ffs_path:
         raise ValueError("Unexpected")
-    subprocess.check_call(['sudo','zfs','destroy', full_ffs_path])
+    subprocess.check_call(['sudo', 'zfs', 'destroy', full_ffs_path])
     return {"msg": 'remove_done', 'ffs': ffs}
+
 
 def msg_remove_snapshot(msg):
     ffs = msg['ffs']
@@ -158,16 +167,20 @@ def msg_remove_snapshot(msg):
         raise ValueError("invalid snapshot")
     if not '/ffs' in full_ffs_path:
         raise ValueError("Unexpected")
-    subprocess.check_call(['sudo','zfs','destroy', combined])
+    subprocess.check_call(['sudo', 'zfs', 'destroy', combined])
     return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs)}
 
+
 def msg_zpool_status(msg):
-    status = subprocess.check_output(['sudo','zpool','status']).decode('utf-8')
+    status = subprocess.check_output(
+        ['sudo', 'zpool', 'status']).decode('utf-8')
     return {'msg': 'zpool_status', 'status': status}
+
 
 def list_all_users():
     import pwd
     return [x.pw_name for x in pwd.getpwall()]
+
 
 def msg_chown_and_chmod(msg):
     ffs = msg['ffs']
@@ -184,10 +197,78 @@ def msg_chown_and_chmod(msg):
     if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa][+=-][rwxXst]*)+$", msg['rights']):
         raise ValueError("invalid rights - needs to look like 0777")
     subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path, '-R'])
-    subprocess.check_call(['sudo', 'chmod', msg['rights'], '/' + full_ffs_path, '-R'])
+    subprocess.check_call(
+        ['sudo', 'chmod', msg['rights'], '/' + full_ffs_path, '-R'])
     return {'msg': 'chmod_and_chown_done', 'ffs': ffs}
 
- 
+
+def clean_up_clones():
+    for fn in os.listdir('/' + clone_dir):
+        cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn]
+        #p = subprocess.Popen(cmd).communicate()
+        print(cmd)
+
+
+def msg_send_snapshot(msg):
+    ffs_from = msg['ffs']
+    full_ffs_path = find_ffs_prefix() + ffs_from
+    if full_ffs_path not in list_ffs(False, True):
+        raise ValueError("invalid ffs")
+    target_host = msg['target_host']
+    target_user = msg['target_user']
+    target_ssh_cmd = msg['target_ssh_cmd']
+    target_path = msg['target_path']
+    target_ffs = msg['target_ffs']
+    snapshot = msg['snapshot']
+    my_hash = hashlib.md5()
+    my_hash.update(ffs_from.encode('utf-8'))
+    my_hash.update(target_path.encode('utf-8'))
+    my_hash.update(target_host.encode('utf-8'))
+    my_hash = my_hash.hexdigest()
+    clone_name = "%f_%s" % (time.time(), my_hash)
+    try:
+        subprocess.Popen(['sudo', 'zfs', 'create', clone_dir], stderr=subprocess.PIPE).communicate()
+        subprocess.check_call(
+            ['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name])
+        rsync_cmd = {
+            'source_path': '/' + clone_dir + '/' + clone_name,
+            'target_path': target_path,
+            'target_host': target_host,
+            'target_user': target_user,
+            'target_ssh_cmd': target_ssh_cmd,
+            'cores': -1,
+        }
+        p = subprocess.Popen(['./robust_parallel_rsync.py'],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        rsync_stdout, rsync_stderr = p.communicate(json.dumps(rsync_cmd).encode('utf-8'))
+        rc = p.returncode
+        if rc != 0:
+            return {
+                'error': 'rsync_failure',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (rsync_stdout, rsync_stderr)
+            }
+        cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
+        print(cmd)
+        p = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        stdout, stderr = p.communicate(json.dumps({
+            'msg': 'capture',
+            'ffs': target_ffs,
+            'snapshot': snapshot
+        }).encode('utf-8'))
+        if p.returncode != 0:
+            return {
+                'error': 'snapshot_after_rsync',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+            }
+        return {
+            'msg': 'send_snapshot_done',
+            'target_host': target_host,
+            'ffs': ffs_from
+        }
+
+    finally:
+        clean_up_clones()
 
 
 def dispatch(msg):
@@ -208,7 +289,8 @@ def dispatch(msg):
             result = msg_zpool_status(msg)
         elif msg['msg'] == 'chown_and_chmod':
             result = msg_chown_and_chmod(msg)
-
+        elif msg['msg'] == 'send_snapshot':
+            result = msg_send_snapshot(msg)
         else:
             result = {'error': 'message_not_understood'}
     except Exception as e:
