@@ -9,9 +9,10 @@ from twisted.internet import reactor, task, error
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqREPConnection
 import hashlib
 import logging
-logger = logging.getLogger(__name__)
 from central import config
+logger = config.logger
 from central import engine
+from central import ssh_message_que
 from twisted.python import log
 import pwd
 import atexit
@@ -43,7 +44,11 @@ def check_if_changed():
     file_changed_hash = h.hexdigest()
 
 
+sender = None
+
 def on_shutdown():
+    if sender:
+        sender.shutdown()
     logger.info("Shutdown")
 
 
@@ -97,8 +102,9 @@ def main():
         e = ZmqEndpoint('bind', 'tcp://*:%s' % config.zmq_port)
         s = EncryptedZmqREPConnection(zf, e)
 
-        our_engine = engine.Engine(config.nodes, lambda node_info, msg: None,
-            config.debug_logger, config.error_logger
+        sender = ssh_message_que.OutgoingMessages(config.logger)
+        our_engine = engine.Engine(config.nodes, sender.send_message,
+           config.logger 
         )
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)

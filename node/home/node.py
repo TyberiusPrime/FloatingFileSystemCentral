@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import re
 import subprocess
 import time
@@ -11,7 +12,7 @@ def zfs_output(cmd_line):
 
 
 def _get_zfs_properties(zfs_name):
-    lines = zfs_output(['zfs', 'get', 'all', zfs_name, '-H']
+    lines = zfs_output(['sudo', 'zfs', 'get', 'all', zfs_name, '-H']
                        ).strip().split("\n")
     lines = [x.split("\t") for x in lines]
     result = {x[1]: x[2] for x in lines}
@@ -23,7 +24,7 @@ def get_zfs_property(zfs_name, property_name):
 
 
 def list_zfs():
-    zfs_list = zfs_output(['zfs', 'list', '-H']).strip().split("\n")
+    zfs_list = zfs_output(['sudo', 'zfs', 'list', '-H']).strip().split("\n")
     zfs_list = [x.split("\t")[0] for x in zfs_list]
     return zfs_list
 
@@ -53,7 +54,7 @@ def list_ffs(strip_prefix=False, include_testing=False):
 
 
 def list_snapshots():
-    return [x.split("\t")[0] for x in zfs_output(['zfs', 'list', '-t', 'snapshot', '-H']).strip().split("\n")]
+    return [x.split("\t")[0] for x in zfs_output(['sudo', 'zfs', 'list', '-t', 'snapshot', '-H']).strip().split("\n")]
 
 
 def get_snapshots(ffs):
@@ -271,7 +272,37 @@ def msg_send_snapshot(msg):
         clean_up_clones()
     
 def msg_deploy(msg):
-    pass
+    return {"ok": True}
+
+
+def shell_cmd_rprsync(cmd_line):
+    """The receiving end of an rsync sync"""
+    def path_ok(target_path):
+        if '@' in target_path:
+            raise ValueError("invalid path")
+        if target_path.startswith('/tmp/RPsTests'):
+            return True
+        if target_path.startswith('/mf/scb'):
+            return True
+        if target_path.startswith('/' + find_ffs_prefix()):
+            return True
+        return False
+
+    target_path = cmd_line[cmd_line.find('/'):]
+    path_ok(target_path)
+    reset_rights = False
+    if target_path.endswith('/.'):
+        try:
+            org_rights = os.stat(target_path)[stat.ST_MODE]
+        except PermissionError: # target directory is without +X
+            subprocess.check_call(['sudo','chmod', 'oug+rwX', target_path])
+            reset_rights = True
+    real_cmd = cmd_line.replace('rprsync', 'sudo rsync')
+    p = subprocess.Popen(real_cmd, shell=True)
+    p.communicate()
+    #if reset_rights:
+            #subprocess.check_call(['sudo','chmod', '%.3o'  % (org_rights & 0o777), target_path])
+
 
 
 def dispatch(msg):
@@ -296,7 +327,6 @@ def dispatch(msg):
             result = msg_send_snapshot(msg)
         elif msg['msg'] == 'deploy':
             result = msg_deploy(msg)
-
         else:
             result = {'error': 'message_not_understood'}
     except Exception as e:

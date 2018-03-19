@@ -1,10 +1,29 @@
 import unittest
+import shutil
 from pprint import pprint
 import collections
-import engine
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from central import engine
 
+class FakeMessageSender():
+
+    def __init__(self):
+        self.outgoing = []
+    
+    def send_message(self, receiver, receiver_info, msg):
+        msg['to'] = receiver
+        self.outgoing.append(msg)
 
 class EngineTests(unittest.TestCase):
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            shutil.rmtree('node')
+        except OSError:
+            pass
 
     def get_engine(self, quick_ffs_definition):
         """Helper to get a startuped-engine running quickly.
@@ -22,25 +41,21 @@ class EngineTests(unittest.TestCase):
         """
         config = collections.OrderedDict()
         for name in quick_ffs_definition:
-            config[name] = {'storage_prefix': '/' + name, 'hostname': name, 'public_key': '#no such key'}
+            config[name] = {'storage_prefix': '/' + name, 'hostname': name, 'public_key': b'#no such key'}
         non_node_config = {}
         non_node_config['chown_user'] = 'nobody'
         non_node_config['chmod_rights'] = '0777'
 
-        outgoing_messages = []
-
-        def send(receiver, msg):
-            msg['to'] = receiver['hostname']
-            outgoing_messages.append(msg)
+        fm = FakeMessageSender()
         e = engine.Engine(
             config,
-            send,
+            fm,
             non_node_config=non_node_config
         )
         e.incoming_client({'msg': 'startup', })
         for node_name, ffs_to_snapshots in quick_ffs_definition.items():
             e.incoming_node({'msg': 'deploy_done', 'from': node_name})
-        outgoing_messages.clear()
+        fm.outgoing.clear()
         for node_name, ffs_to_snapshots in quick_ffs_definition.items():
             ffs = {}
             for ffs_name, snapshots_and_props in ffs_to_snapshots.items():
@@ -61,28 +76,25 @@ class EngineTests(unittest.TestCase):
                              'ffs': ffs
                              })
         self.assertTrue(e.startup_done)
-        return e, outgoing_messages
+        return e, fm.outgoing
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'b'}
-        outgoing_messages = []
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': b'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': b'b'}
+        fm = FakeMessageSender()
 
-        def send(receiver, msg):
-            msg['to'] = receiver['hostname']
-            outgoing_messages.append(msg)
         return engine.Engine(
             nodes,
-            send
-        ), outgoing_messages
+            fm
+        ), fm.outgoing
 
 
 class StartupTests(EngineTests):
 
     def test_nodes_may_not_start_with_dash(self):
         nodes = {}
-        nodes['_alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
+        nodes['_alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': b'a'}
 
         def ignore(*args, **kwargs):
             pass
@@ -294,16 +306,12 @@ class PostStartupTests(EngineTests):
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'a'}
-        outgoing_messages = []
-
-        def send(receiver, msg):
-            msg['to'] = receiver['hostname']
-            outgoing_messages.append(msg)
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': b'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': b'a'}
+        fm = FakeMessageSender()
         e = engine.Engine(
             nodes,
-            send
+            fm
         )
         e.incoming_client({'msg': 'startup', })
         e.incoming_node({'msg': 'ffs_list',
@@ -326,8 +334,8 @@ class PostStartupTests(EngineTests):
                              }
                          }
                          })
-        outgoing_messages.clear()
-        return e, outgoing_messages
+        fm.outgoing.clear()
+        return e, fm.outgoing
 
 
 class PreStartupRaisesTests(EngineTests):
@@ -701,17 +709,14 @@ class AddTarget(PostStartupTests):
 
     def ge(self):
         nodes = collections.OrderedDict()
-        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': 'a'}
-        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': 'a'}
-        nodes['gamma'] = {'storage_prefix': '/gamma', 'hostname': 'gamma', 'public_key': 'a'}
-        outgoing_messages = []
+        nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': b'a'}
+        nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': b'a'}
+        nodes['gamma'] = {'storage_prefix': '/gamma', 'hostname': 'gamma', 'public_key': b'a'}
+        fm = FakeMessageSender()
 
-        def send(receiver, msg):
-            msg['to'] = receiver['hostname']
-            outgoing_messages.append(msg)
         e = engine.Engine(
             nodes,
-            send
+            fm
         )
         e.incoming_client({'msg': 'startup', })
         e.incoming_node({'msg': 'ffs_list',
@@ -739,8 +744,8 @@ class AddTarget(PostStartupTests):
                          'ffs': {}
                          })
 
-        outgoing_messages.clear()
-        return e, outgoing_messages
+        fm.outgoing.clear()
+        return e, fm.outgoing
 
     def test_basic(self):
         e, outgoing_messages = self.ge()
@@ -1682,6 +1687,9 @@ class CrossTalkTest(EngineTests):
 
         # 
 
+
+    def test_error_return_from_node(self):
+        raise NotImplemented()
 
 
 

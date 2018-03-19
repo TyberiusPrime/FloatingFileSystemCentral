@@ -3,6 +3,7 @@ import shutil
 import os
 import re
 from collections import OrderedDict
+from . import ssh_message_que
 
 
 class StartupNotDone(Exception):
@@ -45,12 +46,19 @@ def needs_startup(func):
 
 class Engine:
 
-    def __init__(self, config, send_function, debug_logger=None, error_logger=None,
+    def __init__(self, config, sender=None, logger=None, 
         non_node_config = None):
         """Config is a dictionary node_name -> node info
         send_function handles sending  messages to nodes
         and get's the node_info and a message passed"""
-        self.send_function = send_function
+        if logger is None:
+            import logging
+            logger = logging.Logger(name='Dummy')
+            logger.addHandler(logging.NullHandler())
+        self.logger = logger
+        if sender is None:
+            sender = ssh_message_que.OutgoingMessages(logger, self, non_node_config['ssh_cmd'])
+        self.sender = sender
         for node in config:
             if node.startswith('_'):
                 raise ValueError("Node can not start with _: %s" % node)
@@ -62,14 +70,6 @@ class Engine:
         too_many_options = set(non_node_config).difference(allowed_options)
         if too_many_options:
             raise ValueError("Invalid option set: %s" % (too_many_options, ))
-        if debug_logger is None:
-            import logging
-            debug_logger = logging.NullHandler()
-        if error_logger is None:
-            import logging
-            error_logger = logging.NullHandler()
-        self.debug_logger = debug_logger
-        self.error_logger = error_logger
         self.node_ffs_infos = {}
         self.model = {}
         self.startup_done = False
@@ -87,10 +87,10 @@ class Engine:
         fn = os.path.join('node', 'home', '.ssh', 'authorized_keys')
         if os.path.exists(fn):
             os.unlink(fn)
-        with open(fn, 'w') as op:
+        with open(fn, 'wb') as op:
             for node in self.node_config:
                 pub_key = self.node_config[node]['public_key']
-                op.write('command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n' %
+                op.write(b'command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n' %
                          pub_key)
 
     def build_deployment_zip(self):
@@ -99,7 +99,7 @@ class Engine:
 
     def send(self, node_name, message):
         """allow sending by name"""
-        self.send_function(self.node_config[node_name], message)
+        self.sender.send_message(node_name, self.node_config[node_name], message)
 
     def incoming_node(self, msg):
         if 'msg' not in msg:
@@ -162,9 +162,9 @@ class Engine:
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
-        for node_info in self.node_config.values():
+        for node_name, node_info in self.node_config.items():
             msg = {'msg': 'deploy'}
-            self.send_function(node_info, msg)
+            self.sender.send_message(node_name, node_info, msg)
 
     def check_ffs_name(self, path):
         if not re.match("^[a-z0-9][A-Za-z0-9/_-]*$", path):
@@ -369,7 +369,7 @@ class Engine:
 
     def node_deploy_done(self, sender):
         msg = {'msg': 'list_ffs'}
-        self.send_function(self.node_config[sender], msg)
+        self.sender.send_message(sender, self.node_config[sender], msg)
 
     def node_ffs_list(self, ffs_list, sender):
         self.node_ffs_infos[sender] = ffs_list
