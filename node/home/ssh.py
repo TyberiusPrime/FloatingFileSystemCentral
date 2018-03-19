@@ -76,11 +76,11 @@ if True:
         try:
             j = json.loads(json_input)
             result = node.dispatch(j)
-            sys.stdout.buffer.write(json.dumps(reply).encode('utf-8'))
+            sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
             sys.exit(0)
         except Exception as e:  # pylint: disable=W0703
             import traceback
             tb = traceback.format_exc()
-            reply = {"error": 'exception', 'content': str(e), 'traceback': tb}
-            sys.stdout.buffer.write(json.dumps(reply).encode('utf-8'))
+            result = {"error": 'exception', 'content': str(e), 'traceback': tb}
+            sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
             sys.exit(1)

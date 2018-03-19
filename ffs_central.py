@@ -27,7 +27,7 @@ file_changed_hash = None
 def check_if_changed():
     global restart
     excluded = ['cmd.py']
-    included = [__file__, 'node/home/node.py']
+    included = [__file__, 'node/home/node.py', 'node/home/ssh.py']
     included.extend([os.path.join('central', x)
                      for x in os.listdir("central") if x.endswith('.py')])
     global file_changed_hash
@@ -46,6 +46,7 @@ def check_if_changed():
 
 sender = None
 
+
 def on_shutdown():
     if sender:
         sender.shutdown()
@@ -60,7 +61,7 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
         self.key_filename = os.path.join(self.keys_dir, "server.key_secret")
         self.make_keys()
         public_key, secret_key = self.load_keys()
-        logger.debug("server public key %s" % public_key )
+        logger.debug("server public key %s" % public_key)
         self.socket.curve_publickey = public_key
         self.socket.curve_secretkey = secret_key
         self.socket.curve_server = True
@@ -101,11 +102,15 @@ def main():
 
         e = ZmqEndpoint('bind', 'tcp://*:%s' % config.zmq_port)
         s = EncryptedZmqREPConnection(zf, e)
+        non_node_config = {}
+        non_node_config['chmod_rights'] = config.chmod_rights
+        non_node_config['chown_user'] = config.chown_user
+        non_node_config['ssh_cmd'] = config.ssh_cmd
 
-        sender = ssh_message_que.OutgoingMessages(config.logger)
-        our_engine = engine.Engine(config.nodes, sender.send_message,
-           config.logger 
-        )
+        our_engine = engine.Engine(config.nodes, None,
+                                   config.logger,
+                                   non_node_config
+                                   )
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)
         l.start(1.0)  # call every second
@@ -113,7 +118,6 @@ def main():
         # l3.start(config.zpool_check_frequency)
 
         reactor.addSystemEventTrigger('before', 'shutdown', on_shutdown)
-
 
         def handle_message(msgId, *args):
             try:

@@ -150,7 +150,7 @@ class StartupTests(EngineTests):
         # no ffs info -> nothing happens
         self.assertEqual(len(outgoing_messages), 0)
 
-    def test_restoring_ro_from_main(self):
+    def test_restoring_main_from_ro(self):
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
@@ -195,6 +195,92 @@ class StartupTests(EngineTests):
                          'properties']['readonly'], 'off')
         self.assertEqual(e.model['one']['beta'][
                          'properties']['ffs:main'], 'on')
+
+    def test_no_main_multiple_one_rw_main_restauration(self):
+        e, outgoing_messages = self.ge()
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertTrue(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'readonly': 'off',
+                             }
+                             }
+                         }
+                         })
+
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                            'from': 'alpha',
+                            'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'readonly': 'on',
+                                }
+                                }
+                            }
+                            })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'off'}
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'on'}
+        })
+
+    def test_main_restores_readonly(self):
+        e, outgoing_messages = self.ge()
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertTrue(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                             }
+                             }
+                         }
+                         })
+
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                            'from': 'alpha',
+                            'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'ffs:main': 'on',
+                                    'readonly': 'on'
+                                }
+                                }
+                            }
+                            })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'readonly': 'off'}
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'readonly': 'on'}
+        })
+
 
     def test_no_main_multiple_non_ro_raises_inconsistency(self):
         e, outgoing_messages = self.ge()

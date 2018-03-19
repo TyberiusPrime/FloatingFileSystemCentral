@@ -142,6 +142,9 @@ def decide_snapshots_to_keep(dummy_ffs_name, snapshots):
     return keep
 
 
+chown_user = 'finkernagel'
+chmod_rights = 'uog+rwX'
+
 ssh_cmd = ['ssh', '-p', '223', '-o', 'StrictHostKeyChecking=no', ]  # default ssh command
 ssh_concurrent_connection_limit = 5
 zpool_check_frequency = 60 * 15  # in seconds

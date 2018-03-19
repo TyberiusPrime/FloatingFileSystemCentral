@@ -24,12 +24,12 @@ class OutgoingMessages():
         self.ssh_cmd = ssh_cmd
 
     def send_message(self, node_name, node_info, msg):
-        if msg['msg'] not in ('deploy', 'list_ffs'):
+        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties'):
             self.logger.info(
-                "Msgfiltered to %s (%s): %s", node_name, node_info, msg)
+                "Msgfiltered to %s: %s", node_name, msg)
             return
-        self.logger.info("Outgoing to %s (%s): %s",
-                               node_name, node_info, msg)
+        self.logger.info("Outgoing to %s: %s",
+                               node_name, msg)
         if node_name not in self.outgoing:
             self.outgoing[node_name] = []
         self.outgoing[node_name].append(
@@ -55,8 +55,8 @@ class OutgoingMessages():
                         break
 
     def do_send(self, msg):
-        self.logger.info("Sending to %s(%s): %s",
-                               msg.node_name, msg.node_info, msg.msg)
+        self.logger.info("Sending to %s: %s",
+                               msg.node_name,  msg.msg)
         ssh_cmd = self.ssh_cmd + \
             [msg.node_info['hostname'], '/home/ffs/ssh.py']
         msg.job_id = self.job_id
@@ -90,7 +90,7 @@ class OutgoingMessages():
         except Exception as e:
             import traceback
             self.logger.error(
-                "Node processing error in job_id return %s %s %s", job_id, result, e)
+                "Node processing error in job_id return %s %s %s, outgoing was: %s", job_id, result, e, m.msg)
             self.logger.error(traceback.format_exc())
 
     def shutdown(self):

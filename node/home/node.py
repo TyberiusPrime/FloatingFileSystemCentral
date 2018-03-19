@@ -94,7 +94,7 @@ def check_property_name_and_value(name, value):
         raise ValueError("invalid property value")
 
 
-def msg_set_property(msg):
+def msg_set_properties(msg):
     ffs = msg['ffs']
     full_ffs_path = find_ffs_prefix() + ffs
     if full_ffs_path not in list_ffs(False, True):
@@ -272,7 +272,18 @@ def msg_send_snapshot(msg):
         clean_up_clones()
     
 def msg_deploy(msg):
-    return {"ok": True}
+    import base64
+    import zipfile
+    subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/', '-R'])
+    subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/.ssh', '-R'])
+    with open("/home/ffs/node.zip", 'wb') as op:
+        op.write(
+            base64.decodestring(msg['node.zip'].encode('utf-8'))
+        )
+    with zipfile.ZipFile("/home/ffs/node.zip") as zf:
+        zf.extractall()
+
+    return {"msg": 'deploy_done'}
 
 
 def shell_cmd_rprsync(cmd_line):
@@ -309,8 +320,8 @@ def dispatch(msg):
     try:
         if msg['msg'] == 'list_ffs':
             result = msg_list_ffs()
-        elif msg['msg'] == 'set_property':
-            result = msg_set_property(msg)
+        elif msg['msg'] == 'set_properties':
+            result = msg_set_properties(msg)
         elif msg['msg'] == 'new':
             result = msg_new(msg)
         elif msg['msg'] == 'capture':

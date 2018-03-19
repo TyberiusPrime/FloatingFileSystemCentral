@@ -1,3 +1,4 @@
+import base64
 import pprint
 import shutil
 import os
@@ -56,9 +57,6 @@ class Engine:
             logger = logging.Logger(name='Dummy')
             logger.addHandler(logging.NullHandler())
         self.logger = logger
-        if sender is None:
-            sender = ssh_message_que.OutgoingMessages(logger, self, non_node_config['ssh_cmd'])
-        self.sender = sender
         for node in config:
             if node.startswith('_'):
                 raise ValueError("Node can not start with _: %s" % node)
@@ -66,10 +64,13 @@ class Engine:
         if non_node_config is None:
             non_node_config = {}
         self.non_node_config = non_node_config
-        allowed_options = {'chown_user', 'chmod_rights'}
+        allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd'}
         too_many_options = set(non_node_config).difference(allowed_options)
         if too_many_options:
             raise ValueError("Invalid option set: %s" % (too_many_options, ))
+        if sender is None:
+            sender = ssh_message_que.OutgoingMessages(logger, self, non_node_config['ssh_cmd'])
+        self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
         self.startup_done = False
@@ -155,15 +156,17 @@ class Engine:
             raise ValueError("invalid message from client, ignoring")
 
     def client_deploy(self):
-        import base64
         with open(self.deployment_zip_filename, 'rb') as op:
             d = op.read()
             return {'node.zip': base64.b64encode(d).decode('utf-8')}
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
+        msg = {'msg': 'deploy'}
+        with open(self.deployment_zip_filename, 'rb') as op:
+            d = op.read()
+            msg['node.zip'] =  base64.b64encode(d).decode('utf-8')
         for node_name, node_info in self.node_config.items():
-            msg = {'msg': 'deploy'}
             self.sender.send_message(node_name, node_info, msg)
 
     def check_ffs_name(self, path):

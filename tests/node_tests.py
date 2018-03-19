@@ -522,7 +522,7 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', self.get_test_prefix() + 'one@a'])
  
-        in_msg = {'msg': 'set_property', 'ffs': '.ffs_testing/one',
+        in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/one',
                   'properties': {'ffs:test': 'two'}}
         self.assertEqual(node.get_zfs_property(
             NodeTests.get_test_prefix() + 'one', 'ffs:test'), 'one')
@@ -539,7 +539,7 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('creation' in out_msg['properties'])
 
     def test_set_properties_invalid_ffs(self):
-        in_msg = {'msg': 'set_property', 'ffs': '.ffs_testing/does_not_exist',
+        in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/does_not_exist',
                   'properties': {'ffs:test': 'two'}}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
@@ -547,7 +547,7 @@ class NodeTests(unittest.TestCase):
 
     def test_set_properties_invalid_property_name(self):
         subprocess.check_call(['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneB'])
-        in_msg = {'msg': 'set_property', 'ffs': '.ffs_testing/oneB',
+        in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/oneB',
                   'properties': {' ffs:test': 'two'}}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
@@ -556,7 +556,7 @@ class NodeTests(unittest.TestCase):
     def test_set_properties_invalid_value(self):
         # max length is 1024
         subprocess.check_call(['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneC'])
-        in_msg = {'msg': 'set_property', 'ffs': '.ffs_testing/oneC',
+        in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/oneC',
                   'properties': {'ffs:test': 't' * 1025}}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
