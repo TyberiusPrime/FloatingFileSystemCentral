@@ -1,4 +1,5 @@
 import json
+import pprint
 from twisted.internet import reactor, protocol, error
 import time
 
@@ -10,6 +11,13 @@ class MessageInProgress:
         self.node_info = node_info
         self.msg = msg
         self.status = 'unsent'
+
+
+def format_msg(msg):
+    x = msg.copy()
+    if 'node.zip' in x:
+        x['node.zip'] = '...base64 encoded data...'
+    return pprint.pformat(x)
 
 
 class OutgoingMessages():
@@ -26,10 +34,10 @@ class OutgoingMessages():
     def send_message(self, node_name, node_info, msg):
         if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties'):
             self.logger.info(
-                "Msgfiltered to %s: %s", node_name, msg)
+                "Msgfiltered to %s: %s", node_name, format_msg(msg))
             return
         self.logger.info("Outgoing to %s: %s",
-                               node_name, msg)
+                         node_name, format_msg(msg))
         if node_name not in self.outgoing:
             self.outgoing[node_name] = []
         self.outgoing[node_name].append(
@@ -56,7 +64,7 @@ class OutgoingMessages():
 
     def do_send(self, msg):
         self.logger.info("Sending to %s: %s",
-                               msg.node_name,  msg.msg)
+                         msg.node_name,  format_msg(msg.msg))
         ssh_cmd = self.ssh_cmd + \
             [msg.node_info['hostname'], '/home/ffs/ssh.py']
         msg.job_id = self.job_id
@@ -90,7 +98,7 @@ class OutgoingMessages():
         except Exception as e:
             import traceback
             self.logger.error(
-                "Node processing error in job_id return %s %s %s, outgoing was: %s", job_id, result, e, m.msg)
+                "Node processing error in job_id return %s %s %s, outgoing was: %s", job_id, result, e, format_msg(m.msg))
             self.logger.error(traceback.format_exc())
 
     def shutdown(self):
@@ -127,7 +135,7 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
 
     def connectionMade(self):
         self.logger.debug(
-            "Process started: %s, job_id=%s", self.cmd, self.job_id)
+            "Process started: %s, job_id=%s", format_msg(self.cmd), self.job_id)
         self.transport.write(json.dumps(self.cmd).encode('utf-8'))
         self.transport.closeStdin()  # tell them we're done
 
@@ -139,11 +147,12 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
 
     def processEnded(self, reason):
         self.logger.debug(
-            "Process ended,  %s, job_id=%s", self.cmd, self.job_id)
+            "Process ended,  %s, job_id=%s", format_msg(self.cmd), self.job_id)
         try:
             self.running_processes.remove(self)
         except ValueError as e:
-            self.logger.error("ValueError when removing running proccess: %s", e)
+            self.logger.error(
+                "ValueError when removing running proccess: %s", e)
 
         exit_code = reason.value.exitCode
         # logger.debug("Result: %s" % repr(self.stdout)[:30])
@@ -151,10 +160,10 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
             result = json.loads(self.stdout.decode('utf-8'))
         except json.decoder.JSONDecodeError:
             self.logger.warning(
-                "Non json result: %s - cmd was :%s", repr(self.stdout), self.cmd)
+                "Non json result: %s - cmd was :%s", repr(self.stdout), format_msg(self.cmd))
             result = {'error': 'non_json',
                       'stdout': self.stdout, 'stderr': self.stderr}
         result['ssh_process_return_code'] = exit_code
         self.logger.debug(
-            "Process ended, return code 0, %s, job_id=%s, result: %s", self.cmd, self.job_id, result)
+            "Process ended, return code 0, %s, job_id=%s, result: %s", format_msg(self.cmd), self.job_id, format_msg(result))
         self.job_done_calleback(self.job_id, result)
