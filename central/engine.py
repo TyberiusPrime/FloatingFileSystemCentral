@@ -404,6 +404,7 @@ class Engine:
             self.non_node_config['inform']("Startup completed, sending syncs.")
 
     def build_model(self):
+        self.logger.info("All list_ffs returned")
         self.model = {}
         for node, ffs_list in self.node_ffs_infos.items():
             for ffs, ffs_info in ffs_list.items():
@@ -537,6 +538,7 @@ class Engine:
             main_snapshots = node_fss_info[main_node]['snapshots']
             keep_snapshots = self.non_node_config[
                 'decide_snapshots_to_keep'](ffs, main_snapshots)
+            self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
             remove_from_main = [
                 x for x in main_snapshots if x not in keep_snapshots]
             for snapshot in remove_from_main:

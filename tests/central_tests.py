@@ -5,7 +5,7 @@ import collections
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from central import engine
+from central import engine, ssh_message_que
 
 class FakeMessageSender():
 
@@ -2042,6 +2042,107 @@ class CrossTalkTest(EngineTests):
     def test_error_return_from_node(self):
         raise NotImplementedError()
 
+
+class MockEngine:
+    def __init__(self):
+        self.node_messages = []
+
+    def incoming_node(self, msg):
+        self.node_messages.append(message)
+
+class OutgoingMessageForTesting(ssh_message_que.OutgoingMessages):
+    def __init__(self):
+        engine = MockEngine
+        ssh_cmd = 'shu'
+        import logging
+        logger = logging.Logger(name='Dummy')
+        logger.addHandler(logging.NullHandler())
+        super().__init__(logger, engine, ssh_cmd)
+
+    def do_send(self, msg):
+        pass
+
+class OutgoingMessageTests(unittest.TestCase):
+
+    def test_max_per_host(self):
+        m = {'msg': 'deploy'}
+        om = OutgoingMessageForTesting()
+        for i in range(om.max_per_host + 1):
+            mx = m.copy()
+            mx['i'] = i
+            om.send_message('alpha', {}, mx)
+        out = om.outgoing['alpha']
+        self.assertEqual(len(out), om.max_per_host + 1)
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), om.max_per_host)
+        self.assertEqual(len(unsent), 1)
+        s = set()
+        for x in sent:
+            s.add(x.msg['i'])
+        self.assertEqual(s, set(range(om.max_per_host)))
+        self.assertEqual(unsent[0].msg['i'], om.max_per_host)
+        om.job_returned(out[0].job_id, {'msg': 'deploy_done'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), om.max_per_host)
+        self.assertEqual(len(unsent), 0)
+  
+    def test_max_one_send_snapshot(self):
+        m = {'msg': 'send_snapshot'}
+        om = OutgoingMessageForTesting()
+        self.assertTrue(om.max_per_host > 1)
+        for i in range(om.max_per_host + 1):
+            mx = m.copy()
+            mx['i'] = i
+            om.send_message('alpha', {}, mx)
+        out = om.outgoing['alpha']
+        self.assertEqual(len(out), om.max_per_host + 1)
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(unsent), om.max_per_host)
+        self.assertEqual(unsent[0].msg['i'], 1)
+        om.job_returned(out[0].job_id, {'msg': 'send_snapshot_done'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(unsent), om.max_per_host -1)
+    
+    def test_mixed(self):
+        om = OutgoingMessageForTesting()
+        self.assertTrue(om.max_per_host > 1)
+        om.send_message('alpha', {}, {'msg': 'send_snapshot'})
+        om.send_message('alpha', {}, {'msg': 'deploy'})
+        om.send_message('alpha', {}, {'msg': 'deploy'})
+        out = om.outgoing['alpha']
+        self.assertEqual(len(out), 3)
+
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 3)
+        self.assertEqual(len(unsent), 0)
+
+        om.send_message('alpha', {}, {'msg': 'send_snapshot'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 3)
+        self.assertEqual(len(unsent), 1)
+   
+        om.send_message('alpha', {}, {'msg': 'deploy'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 4)
+        self.assertEqual(len(unsent), 1)
+        self.assertEqual(unsent[0].msg['msg'], 'send_snapshot')
+
+        om.job_returned(out[0].job_id, {'msg': 'send_snapshot_done'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 4)
+        self.assertEqual(len(unsent), 0)
+        self.assertEqual(sent[2].msg['msg'], 'send_snapshot') # this reflects the submission order, not the send order!
+    
 
 
 

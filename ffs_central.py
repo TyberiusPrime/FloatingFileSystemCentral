@@ -110,6 +110,8 @@ def main():
         non_node_config['inform'] = config.inform
         non_node_config['complain'] = config.complain
         non_node_config['enforced_properties'] = config.enforced_properties
+        non_node_config['decide_snapshots_to_keep'] = config.decide_snapshots_to_keep
+        non_node_config['decide_snapshots_to_send'] = config.decide_snapshots_to_send
 
         our_engine = engine.Engine(config.nodes, None,
                                    config.logger,

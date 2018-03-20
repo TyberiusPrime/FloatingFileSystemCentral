@@ -32,7 +32,7 @@ class OutgoingMessages():
         self.ssh_cmd = ssh_cmd
 
     def send_message(self, node_name, node_info, msg):
-        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties'):
+        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties', 'send_snapshot'):
             self.logger.info(
                 "Msgfiltered to %s: %s", node_name, format_msg(msg))
             return
@@ -49,16 +49,21 @@ class OutgoingMessages():
             unsent = [x for x in outbox if x.status == 'unsent']
             in_progress = [x for x in outbox if x.status == 'in_progress']
             transfers_in_progress = [
-                x for x in in_progress if x.msg == 'send_snapshot']
+                x for x in in_progress if x.msg['msg'] == 'send_snapshot']
             if unsent:
                 for x in unsent:
                     if len(in_progress) < self.max_per_host:
                         if (
-                            (x.msg == 'send_snapshot' and not transfers_in_progress) or
-                            (x.msg != 'send_snapshot')
+                            (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
+                            (x.msg['msg'] != 'send_snapshot')
                         ):
+                            x.job_id = self.job_id
+                            self.job_id += 1
                             self.do_send(x)
                             in_progress.append(x)
+                            x.status = 'in_progress'
+                            if x.msg['msg'] == 'send_snapshot':
+                                transfers_in_progress.append(x)
                     else:
                         break
 
@@ -67,14 +72,10 @@ class OutgoingMessages():
                          msg.node_name,  format_msg(msg.msg))
         ssh_cmd = self.ssh_cmd + \
             [msg.node_info['hostname'], '/home/ffs/ssh.py']
-        msg.job_id = self.job_id
-        self.job_id += 1
         m = msg.msg.copy()
         m['to'] = msg.node_name
-
         p = LoggingProcessProtocol(m, msg.job_id, self.job_returned,
                                    self.logger, self.running_processes)
-        msg.status = 'in_progress'
         self.running_processes.append(p)
         reactor.spawnProcess(p, ssh_cmd[0], ssh_cmd, {})
 
@@ -103,6 +104,8 @@ class OutgoingMessages():
             self.logger.error(
                 "Node processing error in job_id return %s %s %s, outgoing was: %s", job_id, result, e, format_msg(m.msg))
             self.logger.error(traceback.format_exc())
+        self.outgoing[m.node_name].remove(m)
+        self.send_if_possible()
 
     def shutdown(self):
         for p in self.running_processes:
