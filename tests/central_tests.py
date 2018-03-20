@@ -13,6 +13,7 @@ class FakeMessageSender():
         self.outgoing = []
     
     def send_message(self, receiver, receiver_info, msg):
+        msg = msg.copy()
         msg['to'] = receiver
         self.outgoing.append(msg)
 
@@ -25,7 +26,7 @@ class EngineTests(unittest.TestCase):
         except OSError:
             pass
 
-    def get_engine(self, quick_ffs_definition):
+    def get_engine(self, quick_ffs_definition, non_node_config=None):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -42,7 +43,8 @@ class EngineTests(unittest.TestCase):
         config = collections.OrderedDict()
         for name in quick_ffs_definition:
             config[name] = {'storage_prefix': '/' + name, 'hostname': name, 'public_key': b'#no such key'}
-        non_node_config = {}
+        if non_node_config is None:
+            non_node_config = {}
         non_node_config['chown_user'] = 'nobody'
         non_node_config['chmod_rights'] = '0777'
 
@@ -78,7 +80,7 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(e.startup_done)
         return e, fm.outgoing
 
-    def ge(self):
+    def ge(self, non_node_config=None):
         nodes = collections.OrderedDict()
         nodes['alpha'] = {'storage_prefix': '/alpha', 'hostname': 'alpha', 'public_key': b'a'}
         nodes['beta'] = {'storage_prefix': '/beta', 'hostname': 'beta', 'public_key': b'b'}
@@ -86,7 +88,8 @@ class EngineTests(unittest.TestCase):
 
         return engine.Engine(
             nodes,
-            fm
+            fm,
+            non_node_config=non_node_config
         ), fm.outgoing
 
 
@@ -107,20 +110,28 @@ class StartupTests(EngineTests):
         self.assertRaises(ValueError, inner)
 
     def test_startup_sends_deployment_followed_by_list_ffs(self):
+        def strip_node_zip(msg):
+            if 'node.zip' in msg:
+                import base64
+                base64.decodebytes(msg['node.zip'].encode('utf-8')) # make sure it decodes
+                msg['node.zip'] = '...base64...'
+            return msg
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
         self.assertTrue(len(outgoing_messages), 2)
-        self.assertEqual(outgoing_messages[0],
-                         {
+        self.assertEqual(strip_node_zip(outgoing_messages[0]),
+            {
             'to': 'alpha',
-            'msg': 'deploy'
+            'msg': 'deploy',
+            'node.zip': '...base64...',
         })
-        self.assertEqual(outgoing_messages[1],
+        self.assertEqual(strip_node_zip(outgoing_messages[1]),
                          {
             'to': 'beta',
-            'msg': 'deploy'
+            'msg': 'deploy',
+            'node.zip': '...base64...',
         })
         outgoing_messages.clear()
         e.incoming_node({'msg': 'deploy_done', 'from': 'alpha'})
@@ -387,6 +398,147 @@ class StartupTests(EngineTests):
             'properties': {'readonly': 'off'}
         })
 
+    def test_enforced_properties_set_if_unset(self):
+        e, outgoing_messages = self.ge({'enforced_properties': {'ffs:test': 'shu'}})
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertTrue(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                                 'readonly': 'on',
+                             }
+                             }
+                         }
+                         })
+
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                            'from': 'alpha',
+                            'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'ffs:main': 'on',
+                                    'readonly': 'off'
+                                }
+                                }
+                            }
+                            })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:test': 'shu'}
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:test': 'shu'}
+        })
+
+    def test_enforced_properties_set_if_wrong_not_set_if_unchanged(self):
+        e, outgoing_messages = self.ge({'enforced_properties': {'ffs:test': 'shu'}})
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertTrue(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                                 'readonly': 'on',
+                                 'ffs:test': 'shu',
+                             }
+                             }
+                         }
+                         })
+
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                            'from': 'alpha',
+                            'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'ffs:main': 'on',
+                                    'ffs:test': 'sha',
+                                    'readonly': 'off'
+                                }
+                                }
+                            }
+                            })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:test': 'shu'}
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+
+    def test_enforced_properties_during_readonly(self):
+        e, outgoing_messages = self.ge({'enforced_properties': {'ffs:test': 'shu'}})
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertTrue(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                             }
+                             }
+                         }
+                         })
+
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                            'from': 'alpha',
+                            'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'ffs:main': 'on',
+                                    'readonly': 'on'
+                                }
+                                }
+                            }
+                            })
+        self.assertEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'readonly': 'off' }
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'readonly': 'on'}
+        })
+        self.assertEqual(outgoing_messages[2], {
+            'to': 'alpha',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:test': 'shu'}
+        })
+        self.assertEqual(outgoing_messages[3], {
+            'to': 'beta',
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:test': 'shu'}
+        })
+        self.assertEqual(len(outgoing_messages), 4)
+
 
 class PostStartupTests(EngineTests):
 
@@ -422,7 +574,6 @@ class PostStartupTests(EngineTests):
                          })
         fm.outgoing.clear()
         return e, fm.outgoing
-
 
 class PreStartupRaisesTests(EngineTests):
 
@@ -1508,7 +1659,7 @@ class ChownTests(PostStartupTests):
 
 class TestStartupTriggeringActions(EngineTests):
 
-    def test_missing_snapshot_triggers_pull(self):
+    def test_missing_snapshot_triggers_send(self):
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1', '2']},
             'beta':  {'one': ['1', ]},
@@ -1525,11 +1676,11 @@ class TestStartupTriggeringActions(EngineTests):
         #
     def test_multiple_missing_snapshots(self):
         engine, outgoing_messages = self.get_engine({
-            'alpha': {'_one': ['1', '2']},
+            'alpha': {'_one': ['2', '1']}, # thes that we stick to this order. Nodes return snapshots in creation order!
             'beta':  {'one': [ ]},
             'gamma': {},
         })
-        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(len(outgoing_messages), 2)
         self.assertEqual(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'to': 'alpha',
@@ -1537,6 +1688,14 @@ class TestStartupTriggeringActions(EngineTests):
             'ffs': 'one',
             'snapshot': '2'
         })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'send_to': 'beta',
+            'ffs': 'one',
+            'snapshot': '1'
+        })
+        #
         #
  
     def test_additional_snapshots_on_target_trigger_snapshot_removal(self):
@@ -1619,6 +1778,88 @@ class TestStartupTriggeringActions(EngineTests):
             'ffs': 'one',
             'properties': {'ffs:moving_to': '-'}
         })
+
+    def test_purge_snapshots(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1','2']},
+            'gamma': {},
+        }, non_node_config = {'decide_snapshots_to_keep': 
+            lambda a, b: ['2']
+        })
+        self.assertEqual(outgoing_messages[0], { 
+            'to': 'alpha',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(outgoing_messages[1], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(len(outgoing_messages), 2)
+
+
+    def test_snapshot_on_target_too_much(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['0', '1','2']},
+            'gamma': {},
+        }, non_node_config = {'decide_snapshots_to_keep': 
+            lambda a, b: ['2']
+        })
+        self.assertEqual(outgoing_messages[0], { 
+            'to': 'alpha',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(outgoing_messages[1], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '0'})
+        self.assertEqual(outgoing_messages[2], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(len(outgoing_messages), 3)
+
+
+    def test_purge_and_send_combined(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2', '3',]},
+            'beta':  {'one': ['0', '1','2']},
+            'gamma': {},
+        }, non_node_config = {'decide_snapshots_to_keep': 
+            lambda a, b: ['2', '3']
+        })
+        self.assertEqual(outgoing_messages[0], { 
+            'to': 'alpha',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(outgoing_messages[1], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '0'})
+        self.assertEqual(outgoing_messages[2], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(outgoing_messages[3], { 
+            'to': 'alpha',
+            'msg': 'send_snapshot',
+            'ffs': 'one',
+            'snapshot': '3',
+            'send_to': 'beta',
+            })
+        self.assertEqual(len(outgoing_messages), 4)
+
+
+
 
 
 class CrossTalkTest(EngineTests):

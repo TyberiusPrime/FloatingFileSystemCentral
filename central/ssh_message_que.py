@@ -9,7 +9,7 @@ class MessageInProgress:
     def __init__(self, node_name, node_info, msg):
         self.node_name = node_name
         self.node_info = node_info
-        self.msg = msg
+        self.msg = msg.copy()
         self.status = 'unsent'
 
 
@@ -69,7 +69,10 @@ class OutgoingMessages():
             [msg.node_info['hostname'], '/home/ffs/ssh.py']
         msg.job_id = self.job_id
         self.job_id += 1
-        p = LoggingProcessProtocol(msg.msg, msg.job_id, self.job_returned,
+        m = msg.msg.copy()
+        m['to'] = msg.node_name
+
+        p = LoggingProcessProtocol(m, msg.job_id, self.job_returned,
                                    self.logger, self.running_processes)
         msg.status = 'in_progress'
         self.running_processes.append(p)

@@ -65,7 +65,8 @@ def chmod(filename, bits):
 
 def chown(filename, owner, group=None):
     if group:
-        subprocess.check_call(['sudo', 'chown', "%s:%s" % (owner, group), filename])
+        subprocess.check_call(['sudo', 'chown', "%s:%s" %
+                               (owner, group), filename])
     else:
         subprocess.check_call(['sudo', 'chown', owner, filename])
 
@@ -167,10 +168,13 @@ class RPsTests(unittest.TestCase):
             read_file(os.path.join(target_path, 'file1')), 'hello')
         self.assertEqual(read_file(os.path.join(
             target_path, '1', 'file2')), 'hello1')
-        #file should have been chowned, since we set chown_user
-        self.assertEqual(get_file_user(os.path.join(target_path, '2', 'file3')), 'nobody')
-        self.assertEqual(get_file_group(os.path.join(target_path, '2', 'file3')),get_file_group(os.path.join(source_path, '2', 'file3')))
-        self.assertEqual(get_file_rights(os.path.join(target_path, '2', 'file3')) & 0o777, 0o744)
+        # file should have been chowned, since we set chown_user
+        self.assertEqual(get_file_user(os.path.join(
+            target_path, '2', 'file3')), 'nobody')
+        self.assertEqual(get_file_group(os.path.join(target_path, '2', 'file3')),
+                         get_file_group(os.path.join(source_path, '2', 'file3')))
+        self.assertEqual(get_file_rights(os.path.join(
+            target_path, '2', 'file3')) & 0o777, 0o744)
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
 
@@ -198,9 +202,12 @@ class RPsTests(unittest.TestCase):
             read_file(os.path.join(target_path, 'file1')), 'hello')
         self.assertEqual(read_file(os.path.join(
             target_path, '1', 'file2')), 'hello1')
-        self.assertEqual(get_file_user(os.path.join(target_path, '2',)), 'nobody')
-        self.assertEqual(get_file_group(os.path.join(target_path, '2',)), get_file_group(os.path.join(source_path, '2',)))
-        self.assertEqual(get_file_rights(os.path.join(target_path, '2')) & 0o777, 0o650)
+        self.assertEqual(get_file_user(
+            os.path.join(target_path, '2',)), 'nobody')
+        self.assertEqual(get_file_group(os.path.join(target_path, '2',)),
+                         get_file_group(os.path.join(source_path, '2',)))
+        self.assertEqual(get_file_rights(
+            os.path.join(target_path, '2')) & 0o777, 0o650)
 
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
@@ -324,9 +331,11 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(
             target_path, '2', 'file3')), 'hello2')
 
-        should_rights = get_file_rights(os.path.join(source_path, '2', 'file3'))
+        should_rights = get_file_rights(
+            os.path.join(source_path, '2', 'file3'))
         mode = get_file_rights(os.path.join(target_path, '2', 'file3'))
-        self.assertEqual(mode & 0o777, should_rights & 0o777) # just as unreadable as it was before...
+        # just as unreadable as it was before...
+        self.assertEqual(mode & 0o777, should_rights & 0o777)
 
     def test_executable_stays(self):
         source_path = '/tmp/RPsTests/test_executable_stays_from'
@@ -380,7 +389,7 @@ class RPsTests(unittest.TestCase):
         chmod(target_path, '+rX')
         self.assertEqual(read_file(os.path.join(target_path, 'file1')), h)
 
-        #try it again straight away
+        # try it again straight away
         chmod(target_path, '-rX')
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
@@ -393,7 +402,6 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(get_file_rights(target_path) & 0o777, 0)
         chmod(target_path, '+rX')
         self.assertEqual(read_file(os.path.join(target_path, 'file1')), h)
-
 
     def test_over_9000_files(self):
         # mostly a test of the chown expansion...
@@ -453,7 +461,6 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(get_file_group(fn_target), 'nogroup')
 
 
-
 def touch(filename):
     with open(filename, 'w'):
         pass
@@ -461,8 +468,7 @@ def touch(filename):
 
 class NodeTests(unittest.TestCase):
 
-
-    @classmethod 
+    @classmethod
     def get_test_prefix(cls):
         return cls.get_prefix() + '.ffs_testing/'
 
@@ -470,13 +476,13 @@ class NodeTests(unittest.TestCase):
     def setUpClass(cls):
         p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-        subprocess.check_call(['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
 
     @classmethod
     def tearDownClass(cls):
         p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
- 
 
     @classmethod
     def get_prefix(cls):
@@ -516,12 +522,13 @@ class NodeTests(unittest.TestCase):
         self.assertTrue(any_snapshots)
 
     def test_set_properties(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', self.get_test_prefix() + 'one'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', self.get_test_prefix() + 'one'])
         subprocess.check_call(
             ['sudo', 'zfs', 'set', 'ffs:test=one', self.get_test_prefix() + 'one'])
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', self.get_test_prefix() + 'one@a'])
- 
+
         in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/one',
                   'properties': {'ffs:test': 'two'}}
         self.assertEqual(node.get_zfs_property(
@@ -546,7 +553,8 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('invalid ffs' in out_msg['content'])
 
     def test_set_properties_invalid_property_name(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneB'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneB'])
         in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/oneB',
                   'properties': {' ffs:test': 'two'}}
         out_msg = node.dispatch(in_msg)
@@ -555,7 +563,8 @@ class NodeTests(unittest.TestCase):
 
     def test_set_properties_invalid_value(self):
         # max length is 1024
-        subprocess.check_call(['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneC'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', self.get_test_prefix() + 'oneC'])
         in_msg = {'msg': 'set_properties', 'ffs': '.ffs_testing/oneC',
                   'properties': {'ffs:test': 't' * 1025}}
         out_msg = node.dispatch(in_msg)
@@ -568,7 +577,7 @@ class NodeTests(unittest.TestCase):
         self.assertFalse('error' in msg)
 
     def assertError(self, msg):
-        if not 'error' in msg:
+        if 'error' not in msg:
             pprint.pprint(msg)
         self.assertTrue('error' in msg)
 
@@ -602,8 +611,10 @@ class NodeTests(unittest.TestCase):
         self.assertFalse(full_path in sn)
 
     def test_capture(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'five'])
-        in_msg = {'msg': 'capture', 'ffs': '.ffs_testing/five', 'snapshot': 'b'}
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'five'])
+        in_msg = {'msg': 'capture',
+                  'ffs': '.ffs_testing/five', 'snapshot': 'b'}
         self.assertNotSnapshot('.ffs_testing/five', 'b')
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
@@ -613,8 +624,10 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['snapshot'], 'b')
 
     def test_snapshot_exists(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'six'])
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'six@a'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'six'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'six@a'])
         in_msg = {'msg': 'capture', 'ffs': '.ffs_testing/six', 'snapshot': 'a'}
         self.assertSnapshot('.ffs_testing/six', 'a')
         out_msg = node.dispatch(in_msg)
@@ -628,7 +641,8 @@ class NodeTests(unittest.TestCase):
         self.assertError(out_msg)
 
     def test_remove(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'two'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'two'])
         in_msg = {'msg': 'remove', 'ffs': '.ffs_testing/two'}
         self.assertTrue('.ffs_testing/two' in node.list_ffs(True, True))
         out_msg = node.dispatch(in_msg)
@@ -645,8 +659,10 @@ class NodeTests(unittest.TestCase):
         self.assertError(out_msg)
 
     def test_remove_snapshot(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'three'])
-        subprocess.check_call(['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'three'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'three'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'three'])
         touch('/' + NodeTests.get_test_prefix() + 'three/file_a')
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'three@a'])
@@ -654,8 +670,8 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'three@b'])
         touch('/' + NodeTests.get_test_prefix() + 'three/file_c')
-        subprocess.check_call(['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'three@c'])
-
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'three@c'])
 
         in_msg = {'msg': 'remove_snapshot',
                   'ffs': '.ffs_testing/three', 'snapshot': 'c'}
@@ -704,8 +720,10 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('status:' in out_msg['status'])
 
     def test_chown_and_chmod(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac'])
-        subprocess.check_call( ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac'])
 
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac',
                   'user': 'nobody', 'rights': '0567'}
@@ -718,8 +736,10 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['msg'], 'chmod_and_chown_done')
 
     def test_chown_and_chmod_rgwx(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac3'])
-        subprocess.check_call( ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac3'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac3'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac3'])
 
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac3',
                   'user': 'nobody', 'rights': 'o+rwX'}
@@ -743,7 +763,8 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('invalid ffs' in out_msg['content'])
 
     def test_chown_and_chmod_invalid_user(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac4'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac4'])
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac4',
                   'user': 'not_present_here', 'rights': '0567'}
         out_msg = node.dispatch(in_msg)
@@ -751,7 +772,8 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('invalid user' in out_msg['content'])
 
     def test_chown_and_chmod_invalid_rights(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac5'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac5'])
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac5',
                   'user': 'nobody', 'rights': '+nope'}
         out_msg = node.dispatch(in_msg)
@@ -759,8 +781,10 @@ class NodeTests(unittest.TestCase):
         self.assertTrue('invalid rights' in out_msg['content'])
 
     def test_chown_and_chmod_within_capture(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac2'])
-        subprocess.check_call( ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac2'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac2'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac2'])
         in_msg = {'msg': 'capture', 'ffs': '.ffs_testing/cac2', 'snapshot': 'a',
                   'chown_and_chmod': True, 'user': 'nobody', 'rights': '0567'}
         self.assertNotSnapshot('.ffs_testing/cac2', 'b')
@@ -777,30 +801,40 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(get_file_rights(fn) & 0o567, 0o567)
 
     def test_send_snapshot(self):
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_1'])
-        subprocess.check_call(['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'to_1'])
-        subprocess.check_call(['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_1'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_1'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'to_1'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_1'])
         write_file('/' + NodeTests.get_test_prefix() + 'from_1/one', 'hello')
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_1@a'])
- 
+
         self.assertSnapshot('.ffs_testing/from_1', 'a')
-        self.assertFalse(os.path.exists('/' + NodeTests.get_test_prefix()  + 'to_1/one'))
-        self.assertTrue(os.path.exists('/' + NodeTests.get_test_prefix()  + 'from_1/one'))
-        in_msg = {'msg': 'send_snapshot', 
-            'ffs': '.ffs_testing/from_1', 
-            'snapshot': 'a',
-            'target_host': '127.0.0.1',
-            'target_ssh_cmd': target_ssh_cmd,
-            'target_path': '/' + NodeTests.get_test_prefix() + 'to_1',
-            'target_ffs': '.ffs_testing/to_1',
-            'target_user': 'ffs',
-        }
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'to_1/one'))
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'from_1/one'))
+        # so that the actual dir differes from the snapshot and we can test
+        # that that we're reading from the snapshot!
+        write_file('/' + NodeTests.get_test_prefix() + 'from_1/one', 'hello2')
+        in_msg = {'msg': 'send_snapshot',
+                  'ffs': '.ffs_testing/from_1',
+                  'snapshot': 'a',
+                  'target_host': '127.0.0.1',
+                  'target_user': 'ffs',
+                  'target_ssh_cmd': target_ssh_cmd,
+                  'target_path': '/%%ffs%%/.ffs_testing/to_1',
+                  }
         self.assertNotSnapshot('.ffs_testing/to_1', 'a')
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
-        self.assertTrue(os.path.exists('/' + NodeTests.get_test_prefix()  + 'to_1/one'))
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'to_1/one'))
         self.assertSnapshot('.ffs_testing/to_1', 'a')
+        self.assertEqual(read_file('/' + NodeTests.get_test_prefix() + 'to_1/one'), 'hello')
+        self.assertFalse(os.path.exists('/' + NodeTests.get_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
 
     def test_send_snapshot_invalid_ffs(self):
         raise NotImplemented()

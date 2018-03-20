@@ -54,7 +54,7 @@ def list_ffs(strip_prefix=False, include_testing=False):
 
 
 def list_snapshots():
-    return [x.split("\t")[0] for x in zfs_output(['sudo', 'zfs', 'list', '-t', 'snapshot', '-H']).strip().split("\n")]
+    return [x.split("\t")[0] for x in zfs_output(['sudo', 'zfs', 'list', '-t', 'snapshot', '-H', '-s', 'creation']).strip().split("\n")]
 
 
 def get_snapshots(ffs):
@@ -206,8 +206,7 @@ def msg_chown_and_chmod(msg):
 def clean_up_clones():
     for fn in os.listdir('/' + clone_dir):
         cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn]
-        #p = subprocess.Popen(cmd).communicate()
-        print(cmd)
+        p = subprocess.Popen(cmd).communicate()
 
 
 def msg_send_snapshot(msg):
@@ -219,7 +218,7 @@ def msg_send_snapshot(msg):
     target_user = msg['target_user']
     target_ssh_cmd = msg['target_ssh_cmd']
     target_path = msg['target_path']
-    target_ffs = msg['target_ffs']
+    target_ffs = target_path[target_path.find("/%%ffs%%/") + len('/%%ffs%%/'):]
     snapshot = msg['snapshot']
     my_hash = hashlib.md5()
     my_hash.update(ffs_from.encode('utf-8'))
@@ -239,7 +238,7 @@ def msg_send_snapshot(msg):
             'target_ssh_cmd': target_ssh_cmd,
             'cores': -1,
         }
-        p = subprocess.Popen(['./robust_parallel_rsync.py'],
+        p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
         rsync_stdout, rsync_stderr = p.communicate(json.dumps(rsync_cmd).encode('utf-8'))
         rc = p.returncode
@@ -249,7 +248,6 @@ def msg_send_snapshot(msg):
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (rsync_stdout, rsync_stderr)
             }
         cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
-        print(cmd)
         p = subprocess.Popen(cmd,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
         stdout, stderr = p.communicate(json.dumps({
@@ -265,7 +263,8 @@ def msg_send_snapshot(msg):
         return {
             'msg': 'send_snapshot_done',
             'target_host': target_host,
-            'ffs': ffs_from
+            'ffs': ffs_from,
+            'clone_name': clone_name,
         }
 
     finally:
@@ -278,7 +277,7 @@ def msg_deploy(msg):
     subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/.ssh', '-R'])
     with open("/home/ffs/node.zip", 'wb') as op:
         op.write(
-            base64.decodestring(msg['node.zip'].encode('utf-8'))
+            base64.decodebytes(msg['node.zip'].encode('utf-8'))
         )
     with zipfile.ZipFile("/home/ffs/node.zip") as zf:
         zf.extractall()
@@ -300,6 +299,8 @@ def shell_cmd_rprsync(cmd_line):
         return False
 
     target_path = cmd_line[cmd_line.find('/'):]
+    target_path = target_path.replace("/%%ffs%%/", '/' + find_ffs_prefix() + '/')
+    cmd_line = cmd_line.replace("/%%ffs%%/", '/' + find_ffs_prefix() + '/')
     path_ok(target_path)
     reset_rights = False
     if target_path.endswith('/.'):

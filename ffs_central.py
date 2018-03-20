@@ -38,6 +38,7 @@ def check_if_changed():
                 d = op.read()
                 h.update(d)
     if file_changed_hash is not None and file_changed_hash != h.hexdigest():
+        logger.info('FloatingFileSystem code changed - restarting')
         config.inform('FloatingFileSystem code changed - restarting')
         restart = True
         reactor.stop()
@@ -106,6 +107,9 @@ def main():
         non_node_config['chmod_rights'] = config.chmod_rights
         non_node_config['chown_user'] = config.chown_user
         non_node_config['ssh_cmd'] = config.ssh_cmd
+        non_node_config['inform'] = config.inform
+        non_node_config['complain'] = config.complain
+        non_node_config['enforced_properties'] = config.enforced_properties
 
         our_engine = engine.Engine(config.nodes, None,
                                    config.logger,

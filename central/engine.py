@@ -47,8 +47,8 @@ def needs_startup(func):
 
 class Engine:
 
-    def __init__(self, config, sender=None, logger=None, 
-        non_node_config = None):
+    def __init__(self, config, sender=None, logger=None,
+                 non_node_config=None):
         """Config is a dictionary node_name -> node info
         send_function handles sending  messages to nodes
         and get's the node_info and a message passed"""
@@ -64,12 +64,23 @@ class Engine:
         if non_node_config is None:
             non_node_config = {}
         self.non_node_config = non_node_config
-        allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd'}
+        allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd', 'inform',
+                           'complain', 'enforced_properties', 'decide_snapshots_to_keep'}
         too_many_options = set(non_node_config).difference(allowed_options)
         if too_many_options:
             raise ValueError("Invalid option set: %s" % (too_many_options, ))
+        if 'inform' not in non_node_config:
+            non_node_config['inform'] = lambda x: None
+        if 'complain' not in non_node_config:
+            non_node_config['complain'] = lambda x: None
+        if 'enforced_properties' not in non_node_config:
+            non_node_config['enforced_properties'] = {}
+        if 'decide_snapshots_to_keep' not in non_node_config:
+            non_node_config[
+                'decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
         if sender is None:
-            sender = ssh_message_que.OutgoingMessages(logger, self, non_node_config['ssh_cmd'])
+            sender = ssh_message_que.OutgoingMessages(
+                logger, self, non_node_config['ssh_cmd'])
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
@@ -100,7 +111,8 @@ class Engine:
 
     def send(self, node_name, message):
         """allow sending by name"""
-        self.sender.send_message(node_name, self.node_config[node_name], message)
+        self.sender.send_message(
+            node_name, self.node_config[node_name], message)
 
     def incoming_node(self, msg):
         if 'msg' not in msg:
@@ -165,8 +177,8 @@ class Engine:
         msg = {'msg': 'deploy'}
         with open(self.deployment_zip_filename, 'rb') as op:
             d = op.read()
-            msg['node.zip'] =  base64.b64encode(d).decode('utf-8')
-        for node_name, node_info in self.node_config.items():
+            msg['node.zip'] = base64.b64encode(d).decode('utf-8')
+        for node_name, node_info in sorted(self.node_config.items()):
             self.sender.send_message(node_name, node_info, msg)
 
     def check_ffs_name(self, path):
@@ -375,10 +387,19 @@ class Engine:
         self.sender.send_message(sender, self.node_config[sender], msg)
 
     def node_ffs_list(self, ffs_list, sender):
+        # remove those starting with .ffs_testing - only '.' filesystem that
+        # the node's will report
+        for x in list(ffs_list.keys()):
+            # all other . something filesystems have been filtered by node.py
+            # already
+            if x.startswith('.ffs_testing'):
+                del ffs_list[x]
         self.node_ffs_infos[sender] = ffs_list
         if len(self.node_ffs_infos) == len(self.node_config):
             self.build_model()
             self.startup_done = True
+            self.logger.info("Startup complete")
+            self.non_node_config['inform']("Startup completed, sending syncs.")
 
     def build_model(self):
         self.model = {}
@@ -389,6 +410,9 @@ class Engine:
                 ffs_info['removing'] = False
                 self.model[ffs][node] = ffs_info
         self._parse_main_and_readonly()
+        self._enforce_properties()
+        self._prune_snapshots()
+        self._send_pulls_and_removals()
 
     def _parse_main_and_readonly(self):
         """Go through the ffs:main and readonly properties.
@@ -481,10 +505,53 @@ class Engine:
                         'ffs': ffs,
                         'properties': {'ffs:main': 'on', 'readonly': 'off'}
                     })
+                    main = any_moving_to
                 # we can deal with main being None until the ffs:moving_to = -
                 # job  is done..
                 node_ffs_info['_main'] = main
-        self._send_pulls_and_removals()
+        for ffs, node_ffs_info in self.model.items():
+            if node_ffs_info['_main'] is None:
+                raise CodingError("Main remained None")
+
+    def _enforce_properties(self):
+        for ffs in self.model:
+            for node, ffs_node_info in sorted(self.model[ffs].items()):
+                if node.startswith('_'):
+                    continue
+                to_set = {}
+                for k, v in self.non_node_config['enforced_properties'].items():
+                    v = str(v)
+                    if ffs_node_info['properties'].get(k, False) != v:
+                        to_set[k] = v
+                if to_set:
+                    self.send(
+                        node, {'msg': 'set_properties',
+                               'ffs': ffs, 'properties': to_set}
+                    )
+
+    def _prune_snapshots(self):
+        for ffs, node_fss_info in self.model.items():
+            main_node = node_fss_info['_main']
+            main_snapshots = node_fss_info[main_node]['snapshots']
+            keep_snapshots = self.non_node_config[
+                'decide_snapshots_to_keep'](ffs, main_snapshots)
+            remove_from_main = [
+                x for x in main_snapshots if x not in keep_snapshots]
+            for snapshot in remove_from_main:
+                self.send(
+                    main_node, {'msg': 'remove_snapshot', 'ffs': ffs, 'snapshot': snapshot})
+                # and forget they existed for now.
+                node_fss_info[main_node]['snapshots'].remove(snapshot)
+            for node in sorted(node_fss_info):
+                if node != main_node and not node.startswith('_'):
+                    target_snapshots = node_fss_info[node]['snapshots']
+                    too_many = [
+                        x for x in target_snapshots if x not in keep_snapshots]
+                    for snapshot in too_many:
+                        self.send(node, {'msg': 'remove_snapshot',
+                                         'ffs': ffs, 'snapshot': snapshot})
+                        # and forget they existed for now.
+                        node_fss_info[node]['snapshots'].remove(snapshot)
 
     def _send_pulls_and_removals(self):
         """Once we have prased the ffs_lists into our model (see _parse_main_and_readonly),
@@ -496,24 +563,17 @@ class Engine:
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
             if main_snapshots:
-                latest_snapshot = main_snapshots[-1]
-                for node, node_info in node_fss_info.items():
-                    if not node.startswith('_') and node != main:
-                        if latest_snapshot not in node_info['snapshots']:
-                            self.send(main, {
-                                'msg': 'send_snapshot',
-                                'send_to': node,
-                                'ffs': ffs,
-                                'snapshot': latest_snapshot
-                            }
-                            )
-                        for snapshot in reversed(node_info['snapshots']):
-                            if not snapshot in main_snapshots:
-                                self.send(node, {
-                                    'msg': 'remove_snapshot',
+                for sn in main_snapshots:
+                    for node, node_info in node_fss_info.items():
+                        if not node.startswith('_') and node != main:
+                            if sn not in node_info['snapshots']:
+                                self.send(main, {
+                                    'msg': 'send_snapshot',
+                                    'send_to': node,
                                     'ffs': ffs,
-                                    'snapshot': snapshot,
-                                })
+                                    'snapshot': sn
+                                }
+                                )
 
     def node_set_properties_done(self, msg):
         node = msg['from']
@@ -671,9 +731,9 @@ class Engine:
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-                    node == self.model[ffs]['_moving'] and
-                    msg['snapshot'] == self.model[ffs]['_move_snapshot']
-                ):
+            node == self.model[ffs]['_moving'] and
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+            ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -714,24 +774,6 @@ class Engine:
             if status['DEGRADED'] or status['UNAVAIL']:
                 self.error_callback("Zpool status: %s - %s" % (node, status))
         self.zpool_stati[node] = status
-
-    @needs_startup
-    def prune_snapshots(self):
-        """Pruning means to remove snapshots on target
-        that do not / no longer exist on main"""
-        for ffs in self.model:
-            main = self.model[ffs]['_main']
-            keep = set(self.model[ffs][main]['snapshots'])
-            for target in self.model[ffs]:
-                if target != main and not target.startswith('_'):
-                    to_remove = set(self.model[ffs][target][
-                                    'snapshots']).difference(keep)
-                    for s in to_remove:
-                        self.send(target, {
-                            'msg': 'remove_snapshot',
-                            'ffs': ffs,
-                            'snapshot': s
-                        })
 
     def do_zpool_status_check(self):
         for node in self.node_config:

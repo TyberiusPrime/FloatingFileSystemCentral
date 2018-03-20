@@ -30,28 +30,29 @@ def grouper(n, iterable, padvalue=None):
     "grouper(3, 'abcdefg', 'x') --> ('a','b','c'), ('d','e','f'), ('g','x','x')"
     return itertools.zip_longest(*[iter(iterable)]*n, fillvalue=padvalue)
 
-def chown_chmod_and_rsync(args):
+def do_rsync(args):
     """the actual work horse"""
     sub_dir, recursive, cmd = args
     source_dir_path = os.path.abspath(os.path.join(cmd['source_path'], sub_dir))
-    for c_cmd, c_opt in [
-        ('chown',  ['chown_user', 'chown_group']),
-        ('chmod',  ['chmod_rights']),
-    ]:
-        try:
-            c_opt = ":".join([cmd[x] for x in c_opt])
-        except KeyError:
-            continue
-        c_command = ['sudo', c_cmd, c_opt]
-        if recursive:
-            blocks = [[source_dir_path, '-R']]
-        else:
-            blocks = grouper(100, [os.path.join(source_dir_path, f) for f in os.listdir(source_dir_path)])
-        for b in blocks:
-            p = subprocess.Popen(c_command + [x for x in b if x is not None], stdout=subprocess.PIPE, stderr=subprocess.PIPE )
-            stdout, stderr = p.communicate()
-            if p.returncode != 0:
-                return c_cmd, p.returncode, stdout, stderr
+    if False:
+        for c_cmd, c_opt in [
+            ('chown',  ['chown_user', 'chown_group']),
+            ('chmod',  ['chmod_rights']),
+        ]:
+            try:
+                c_opt = ":".join([cmd[x] for x in c_opt])
+            except KeyError:
+                continue
+            c_command = ['sudo', c_cmd, c_opt]
+            if recursive:
+                blocks = [[source_dir_path, '-R']]
+            else:
+                blocks = grouper(100, [os.path.join(source_dir_path, f) for f in os.listdir(source_dir_path)])
+            for b in blocks:
+                p = subprocess.Popen(c_command + [x for x in b if x is not None], stdout=subprocess.PIPE, stderr=subprocess.PIPE )
+                stdout, stderr = p.communicate()
+                if p.returncode != 0:
+                    return c_cmd, p.returncode, stdout, stderr
         
     rsync_cmd = ['sudo', 'rsync',
         '--rsync-path=rprsync',
@@ -105,7 +106,7 @@ def parallel_chown_chmod_and_rsync(cmd):
     if cores == -1:
         cores = None
     p=multiprocessing.Pool(cores)
-    result=p.map(chown_chmod_and_rsync, iter_subdirs())
+    result=p.map(do_rsync, iter_subdirs())
     p.close()
     p.join()
     #result = map(chown_chmod_and_rsync, list(iter_subdirs()))
