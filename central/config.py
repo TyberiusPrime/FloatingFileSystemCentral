@@ -90,6 +90,8 @@ def inform(message):
         print("-----------EndInform----------", file=op)
         print('', file=op)
 
+def decide_snapshots_to_send(dummy_ffs_name, snapshots):
+    return set([x for x in snapshots])
 
 def decide_snapshots_to_keep(dummy_ffs_name, snapshots):
     """Decide which snapshots to keep.

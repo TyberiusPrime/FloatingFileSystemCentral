@@ -1191,7 +1191,7 @@ class SnapshotPruningTests(EngineTests):
         #can't have it missing by default, would trigger startup pruning,
         #and I want to test it...
         engine.model['one']['alpha']['snapshots'].remove('1')
-        engine.prune_snapshots()
+        engine._prune_snapshots()
         self.assertEqual(len(outgoing_messages), 1)
         self.assertEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
@@ -1858,9 +1858,33 @@ class TestStartupTriggeringActions(EngineTests):
             })
         self.assertEqual(len(outgoing_messages), 4)
 
-
-
-
+    def test_send_only_some(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2', '3',]},
+            'beta':  {'one': ['0']},
+            'gamma': {},
+        }, non_node_config = {'decide_snapshots_to_keep': 
+            lambda a, b: ['2', '3'],
+            'decide_snapshots_to_send': lambda dummy_ffs, snapshots: ['3']
+        })
+        self.assertEqual(outgoing_messages[0], { 
+            'to': 'alpha',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1'})
+        self.assertEqual(outgoing_messages[1], { 
+            'to': 'beta',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '0'})
+        self.assertEqual(outgoing_messages[2], { 
+            'to': 'alpha',
+            'msg': 'send_snapshot',
+            'ffs': 'one',
+            'snapshot': '3',
+            'send_to': 'beta',
+            })
+        self.assertEqual(len(outgoing_messages), 3)
 
 class CrossTalkTest(EngineTests):
 
@@ -2016,7 +2040,7 @@ class CrossTalkTest(EngineTests):
 
 
     def test_error_return_from_node(self):
-        raise NotImplemented()
+        raise NotImplementedError()
 
 
 

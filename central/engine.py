@@ -65,7 +65,8 @@ class Engine:
             non_node_config = {}
         self.non_node_config = non_node_config
         allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd', 'inform',
-                           'complain', 'enforced_properties', 'decide_snapshots_to_keep'}
+                           'complain', 'enforced_properties', 'decide_snapshots_to_keep',
+                           'decide_snapshots_to_send'}
         too_many_options = set(non_node_config).difference(allowed_options)
         if too_many_options:
             raise ValueError("Invalid option set: %s" % (too_many_options, ))
@@ -76,8 +77,9 @@ class Engine:
         if 'enforced_properties' not in non_node_config:
             non_node_config['enforced_properties'] = {}
         if 'decide_snapshots_to_keep' not in non_node_config:
-            non_node_config[
-                'decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
+            non_node_config['decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
+        if 'decide_snapshots_to_send' not in non_node_config:
+            non_node_config['decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
         if sender is None:
             sender = ssh_message_que.OutgoingMessages(
                 logger, self, non_node_config['ssh_cmd'])
@@ -562,18 +564,20 @@ class Engine:
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
+            snapshots_to_send = self.non_node_config['decide_snapshots_to_send'](ffs, main_snapshots)
             if main_snapshots:
-                for sn in main_snapshots:
-                    for node, node_info in node_fss_info.items():
-                        if not node.startswith('_') and node != main:
-                            if sn not in node_info['snapshots']:
-                                self.send(main, {
-                                    'msg': 'send_snapshot',
-                                    'send_to': node,
-                                    'ffs': ffs,
-                                    'snapshot': sn
-                                }
-                                )
+                for sn in main_snapshots: # we keep the order!
+                    if sn in snapshots_to_send:
+                        for node, node_info in node_fss_info.items():
+                            if not node.startswith('_') and node != main:
+                                if sn not in node_info['snapshots']:
+                                    self.send(main, {
+                                        'msg': 'send_snapshot',
+                                        'send_to': node,
+                                        'ffs': ffs,
+                                        'snapshot': sn
+                                    }
+                                    )
 
     def node_set_properties_done(self, msg):
         node = msg['from']
