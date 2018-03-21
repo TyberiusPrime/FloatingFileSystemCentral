@@ -150,11 +150,20 @@ def msg_remove(msg):
     ffs = msg['ffs']
     full_ffs_path = find_ffs_prefix() + ffs
     if full_ffs_path not in list_ffs(False, True):
-        raise ValueError("invalid ffs")
+        return {'msg':'remove_failed', 'reason': 'target_does_not_exists', 'ffs': ffs}
     if not '/ffs' in full_ffs_path:
         raise ValueError("Unexpected")
-    subprocess.check_call(['sudo', 'zfs', 'destroy', full_ffs_path])
-    return {"msg": 'remove_done', 'ffs': ffs}
+    p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = p.communicate()
+    if p.returncode == 0:
+        return {"msg": 'remove_done', 'ffs': ffs}
+    else:
+        if b'target is busy' in stderr:
+            subprocess.check_call(['sudo', 'zfs', 'set', 'ffs:remove_asap=on', full_ffs_path])
+            return {'msg':'remove_failed', 'reason': 'target_is_busy', 'ffs': ffs}
+        else:
+            return {'error': 'zfs_error_return', 'content': 'zfs destroy %s failed. stdout:%s \nstderr: %s' % (ffs, stdout, stderr)}
+
 
 
 def msg_remove_snapshot(msg):
@@ -229,11 +238,19 @@ def msg_send_snapshot(msg):
     my_hash = my_hash.hexdigest()
     clone_name = "%f_%s" % (time.time(), my_hash)
     try:
-        # step 0 - prepare a clone to rsync from
+        # step -1 - make sure we have an .ffs_sync_clones directory.
         subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
-                         stderr=subprocess.PIPE).communicate()
-        subprocess.check_call(
-            ['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name])
+                         stderr=subprocess.PIPE).communicate() # ignore the error on this one.
+        
+        # step 0 - prepare a clone to rsync from
+        p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
+            stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+        if p.returncode != 0:
+            if b'dataset does not exist' in stderr:
+                raise ValueError("invalid snapshot")
+            else:
+                raise ValueError("Could not clone. Error:%s" % stderr)
 
         # step1 - set readonly=false on receiver
         cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
@@ -314,14 +331,18 @@ def msg_deploy(msg):
     import zipfile
     subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/', '-R'])
     subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/.ssh', '-R'])
-    with open("/home/ffs/node.zip", 'wb') as op:
-        op.write(
-            base64.decodebytes(msg['node.zip'].encode('utf-8'))
-        )
-    with zipfile.ZipFile("/home/ffs/node.zip") as zf:
-        zf.extractall()
-
-    return {"msg": 'deploy_done'}
+    org_dir = os.getcwd()
+    try:
+        os.chdir('/home/ffs')
+        with open("/home/ffs/node.zip", 'wb') as op:
+            op.write(
+                base64.decodebytes(msg['node.zip'].encode('utf-8'))
+            )
+        with zipfile.ZipFile("/home/ffs/node.zip") as zf:
+            zf.extractall()
+        return {"msg": 'deploy_done'}
+    finally:
+        os.chdir(org_dir)
 
 
 def shell_cmd_rprsync(cmd_line):

@@ -153,10 +153,12 @@ class Engine:
             self.node_remove_snapshot_done(msg)
         elif msg['msg'] == 'remove_done':
             self.node_remove_done(msg)
+        elif msg['msg'] == 'remove_failed':
+            self.node_remove_failed(msg)
         elif msg['msg'] == 'zpool_status':
             self.node_zpool_status(msg)
         else:
-            self.fault("Invalid msg from node", msg)
+            self.fault("Invalid msg from node: %s" % msg)
 
     def incoming_client(self, msg):
         command = msg['msg']
@@ -247,10 +249,13 @@ class Engine:
             raise ValueError("Target not in list of targets")
         if target == self.model[ffs]['_main']:
             raise ValueError("Target is main - not removing")
+        if self.model[ffs].get('_moving', False):
+            raise ValueError("FFS is moving, can't remove targets during move. Try again later.")
+        #little harm in sending it again if we're already removing
         self.send(target,
-                  {'msg': 'remove',
-                   'ffs': ffs}
-                  )
+                {'msg': 'remove',
+                'ffs': ffs}
+                )
         self.model[ffs][target]['removing'] = True
 
     @needs_startup
@@ -350,6 +355,10 @@ class Engine:
         current_main = self.model[ffs]['_main']
         if target == current_main:
             raise ValueError("Target is already main")
+        for node in self.model[ffs]:
+            if not node.startswith('_'):
+                if self.model[ffs][node]['removing']:
+                    raise ValueError("Can not move while a target is being removed (%s). Try again later" % node)
         self.model[ffs]['_moving'] = target
         # self.model[ffs][current_main]['properties']['readonly'] = 'on'
         self.send(current_main, {
@@ -420,12 +429,29 @@ class Engine:
             for ffs, ffs_info in ffs_list.items():
                 if ffs not in self.model:
                     self.model[ffs] = {}
-                ffs_info['removing'] = False
                 self.model[ffs][node] = ffs_info
         self._parse_main_and_readonly()
+        self._handle_remove_asap() # do removal after assigning a main, so we can trigger on ffs:main=on and ffs:remove_asap=on!
         self._enforce_properties()
         self._prune_snapshots()
         self._send_missing_snapshots()
+
+    def _handle_remove_asap(self):
+        for ffs in self.model:
+            main = self.model[ffs]['_main']
+            for node in self.model[ffs]:
+                if not node.startswith('_'):
+                    if self.model[ffs][node]['properties'].get('ffs:remove_asap', '-') == 'on':
+                        if node == main:
+                            self.fault("ffs:main and ffs:remove_asap set at the same time. Manual fix necessory. FFS: %s, node%s" % (ffs, node), exception=ManualInterventionNeeded)
+                        else:
+                            self.model[ffs][node]['removing'] = True
+                            self.send(node, {
+                                'msg': 'remove',
+                                'ffs': ffs,
+                            })
+                    else:
+                        self.model[ffs][node]['removing'] = False
 
     def _parse_main_and_readonly(self):
         """Go through the ffs:main and readonly properties.
@@ -581,6 +607,8 @@ class Engine:
                 for node, node_info in node_fss_info.items():
                     if node.startswith('_'):
                         continue
+                    if node_info['removing']:
+                        continue
                     missing = []
                     for sn in reversed(ordered_to_send):
                         if sn not in node_info['snapshots']:
@@ -697,7 +725,7 @@ class Engine:
 
         main = self.model[ffs]['_main']
         for node in self.node_config:
-            if node != main and node in self.model[ffs]:
+            if node != main and node in self.model[ffs] and not self.model[ffs][node]['removing']:
                 postfix = self.model[ffs][node][
                     'properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
@@ -747,6 +775,19 @@ class Engine:
         if self.model[ffs]['_main'] == node:
             self.fault("remove_done from main!", msg, InconsistencyError)
         del self.model[ffs][node]
+
+    def node_remove_failed(self, msg):
+        if msg['reason'] == 'target_is_busy':
+            # just keep it in 'removing' status (or already removed).
+            # the node will have set ffs:remove_asap=on and that will retrigger 
+            # removal upon startup
+            pass
+        elif msg['reason'] == 'target_does_not_exist':  
+            # most likely a repeated request from the user
+            # ignore
+            pass
+        else:
+            self.fault("remove_failed with something other than target_is_busy: %s" % msg)
 
     def node_remove_snapshot_done(self, msg):
         node = msg['from']
