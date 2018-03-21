@@ -150,6 +150,7 @@ chmod_rights = 'uog+rwX'
 
 enforced_properties = { # properties that *every* ffs get's assigned!
     'com.sun:auto-snapshot': 'false',
+    'compression': 'on',
 }
 
 ssh_cmd = ['ssh', '-p', '223', '-o', 'StrictHostKeyChecking=no', ]  # default ssh command

@@ -77,9 +77,11 @@ class Engine:
         if 'enforced_properties' not in non_node_config:
             non_node_config['enforced_properties'] = {}
         if 'decide_snapshots_to_keep' not in non_node_config:
-            non_node_config['decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
+            non_node_config[
+                'decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
         if 'decide_snapshots_to_send' not in non_node_config:
-            non_node_config['decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
+            non_node_config[
+                'decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
         if sender is None:
             sender = ssh_message_que.OutgoingMessages(
                 logger, self, non_node_config['ssh_cmd'])
@@ -116,17 +118,19 @@ class Engine:
         self.sender.send_message(
             node_name, self.node_config[node_name], message)
 
+    def fault(self, message, trigger=None, exception=ManualInterventionNeeded):
+        self.faulted = message
+        self.trigger_message = trigger
+        self.sender.kill_unsent_messages()
+        raise exception(message)
+
     def incoming_node(self, msg):
         if 'msg' not in msg:
-            raise ValueError("No message in msg")
+            self.fault("No message in msg", msg)
         if 'from' not in msg:
-            self.trigger_message = msg
-            self.faulted = "No from in message - should not happen"
-            raise ManualInterventionNeeded(self.faulted)
+            self.fault("No from in message - should not happen", msg)
         if msg['from'] not in self.node_config:
-            self.faulted = "Invalid sender"
-            self.trigger_message = msg
-            raise ManualInterventionNeeded(self.faulted)
+            self.fault("Invalid sender", msg)
         elif msg['msg'] == 'deploy_done':
             self.node_deploy_done(msg['from'])
         elif msg['msg'] == 'ffs_list':
@@ -139,14 +143,14 @@ class Engine:
             self.node_capture_done(msg)
         elif msg['msg'] == 'send_done':
             self.node_send_done(msg)
+        elif msg['msg'] == 'remove_snapshot_done':
+            self.node_remove_snapshot_done(msg)
         elif msg['msg'] == 'remove_done':
             self.node_remove_done(msg)
         elif msg['msg'] == 'zpool_status':
             self.node_zpool_status(msg)
         else:
-            self.faulted = "Invalid msg from node"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("Invalid msg from node", msg)
 
     def incoming_client(self, msg):
         command = msg['msg']
@@ -296,8 +300,8 @@ class Engine:
         if not 'upcoming_snapshots' in node_info:
             node_info['upcoming_snapshots'] = []
         if snapshot in node_info['upcoming_snapshots']:
-            self.faulted = "Adding a snapshot to upcoming snapshot that was already present"
-            raise CodingError(self.faulted)
+            self.fault(
+                "Adding a snapshot to upcoming snapshot that was already present", exception=CodingError)
         node_info['upcoming_snapshots'].append(snapshot)
         return snapshot
 
@@ -441,12 +445,10 @@ class Engine:
                         main = node
                         # no break, - need to check for multiple
                     else:
-                        self.faulted = "Multiple mains for %s" % ffs
-                        raise ManualInterventionNeeded(self.faulted)
+                        self.fault("Multiple mains for %s" % ffs)
                 if props.get('ffs:moving_to', '-') != '-':
                     if any_moving_to is not None:
-                        self.faulted = "Multiple moving_to for %s" % ffs
-                        raise ManualInterventionNeeded(self.faulted)
+                        self.fault("Multiple moving_to for %s" % ffs)
                     any_moving_to = props['ffs:moving_to']
                     any_moving_from = node
             if main is None:
@@ -457,8 +459,8 @@ class Engine:
                     if any_moving_to:
                         main = None  # stays None.
                     else:
-                        self.faulted = "No main, muliple non-readonly for %s" % ffs
-                        raise ManualInterventionNeeded(self.faulted)
+                        self.fault(
+                            "No main, muliple non-readonly for %s" % ffs)
             self.model[ffs]['_main'] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
@@ -566,9 +568,10 @@ class Engine:
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
-            snapshots_to_send = self.non_node_config['decide_snapshots_to_send'](ffs, main_snapshots)
+            snapshots_to_send = self.non_node_config[
+                'decide_snapshots_to_send'](ffs, main_snapshots)
             if main_snapshots:
-                for sn in main_snapshots: # we keep the order!
+                for sn in main_snapshots:  # we keep the order!
                     if sn in snapshots_to_send:
                         for node, node_info in node_fss_info.items():
                             if not node.startswith('_') and node != main:
@@ -584,41 +587,36 @@ class Engine:
     def node_set_properties_done(self, msg):
         node = msg['from']
         if msg['ffs'] not in self.model:
-            self.faulted = ("set_properties_done from ffs not in model.")
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("set_properties_done from ffs not in model.",
+                       msg, exception=InconsistencyError)
         ffs = msg['ffs']
         if node not in self.model[ffs]:
-            self.faulted = ("set_properties_done from ffs not on that node")
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("set_properties_done from ffs not on that node",
+                       msg, exception=InconsistencyError)
         if 'properties' not in msg:
-            self.faulted = "No properties in set_properties_done msg"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("No properties in set_properties_done msg",
+                       msg, CodingError)
         props = msg['properties']
         self.model[ffs][node]['properties'].update(props)
         if 'ffs:moving_to' in props:  # first step in moving to a new main
             moving_to = props['ffs:moving_to']
             if moving_to != '-':
                 if not self.is_ffs_moving(ffs):
-                    self.faulted = "Received unexpected set_propertes_done for ffs:moving_to"
-                    self.trigger_message = msg
-                    raise InconsistencyError(self.fault)
+                    self.fault(
+                        "Received unexpected set_propertes_done for ffs:moving_to", msg, InconsistencyError)
                 self.model[ffs]['_move_snapshot'] = self.do_capture(ffs, False)
 
             else:
                 del self.model[ffs]['_moving']
                 if self.is_ffs_moving(ffs):
-                    self.faulted = "Still moving after set_properties moving_to = -, Something is fishy "
-                    self.trigger_message = msg
-                    raise CodingError(self.fault)
+                    self.fault(
+                        "Still moving after set_properties moving_to = -, Something is fishy ", msg, CodingError)
         elif (  # happens after successful capture & replication.
                 self.is_ffs_moving(ffs) and
                 props.get('ffs:main', False) == 'off'):
             if node != self.model[ffs]['_main']:
-                self.faulted = "Received unexpected set_propertes_done for ffs:main=off for non mainjjj"
-                self.trigger_message = msg
+                self.fault(
+                    "Received unexpected set_propertes_done for ffs:main=off for non main", msg, InconsistencyError)
                 raise InconsistencyError(self.fault)
             self.send(self.model[ffs]['_moving'], {
                 'msg': 'set_properties',
@@ -638,21 +636,15 @@ class Engine:
     def node_new_done(self, msg):
         node = msg['from']
         if msg['ffs'] not in self.model:
-            self.faulted = ("node_new_done from ffs not in model.")
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("node_new_done from ffs not in model.",
+                       msg, InconsistencyError)
         ffs = msg['ffs']
         if node not in self.model[ffs]:
-            self.faulted = ("node_new_done from ffs not on that node")
-            pprint.pprint(msg)
-            pprint.pprint(self.model)
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("node_new_done from ffs not on that node",
+                       msg, CodingError)
         if self.model[ffs][node] != {}:
-            self.faulted = (
-                "node_new_done from an node/ffs where we already have data")
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault(
+                "node_new_done from an node/ffs where we already have data", msg, CodingError)
         self.model[ffs][node] = {
             'snapshots': [],
             'properties': msg['properties']
@@ -670,28 +662,20 @@ class Engine:
     def node_capture_done(self, msg):
         node = msg['from']
         if 'ffs' not in msg:
-            self.faulted = "missing ffs parameter"
-            self.trigger_message = msg
-            raise CodingError()
+            self.fault("missing ffs parameter", CodingError)
         ffs = msg['ffs']
         if ffs not in self.model:
-            self.faulted = "capture_done from ffs not in model."
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("capture_done from ffs not in model.",
+                       msg, InconsistencyError)
         main = self.model[ffs]['_main']
         if main != node:
-            self.trigger_message = msg
-            self.faulted = "Capture message received from non main node"
-            raise InconsistencyError(self.faulted)
+            self.fault("Capture message received from non main node",
+                       msg, InconsistencyError)
         if not 'snapshot' in msg:
-            self.faulted = "No snapshot in msg"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("No snapshot in msg", msg, CodingError)
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
-            self.faulted = "Snapshot was already in model"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("Snapshot was already in model", msg, CodingError)
         if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
             self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
 
@@ -712,34 +696,26 @@ class Engine:
     def node_send_done(self, msg):
         main = msg['from']
         if 'ffs' not in msg:
-            self.faulted = "missing ffs parameter"
-            self.trigger_message = msg
-            raise CodingError()
+            self.fault("missing ffs parameter", msg, CodingError)
         ffs = msg['ffs']
         if ffs not in self.model:
-            self.faulted = "capture_done from ffs not in model."
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("capture_done from ffs not in model.",
+                       msg, InconsistencyError)
         node = msg['send_to']
         if main == node:
-            self.trigger_message = msg
-            self.faulted = "Send done from main to main?!"
-            raise InconsistencyError(self.faulted)
+            self.fault("Send done from main to main?!",
+                       msg, InconsistencyError)
         if 'snapshot' not in msg:
-            self.faulted = "No snapshot in msg"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("No snapshot in msg", msg, CodingError)
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
-            self.faulted = "Snapshot was already in model"
-            self.trigger_message = msg
-            raise CodingError(self.faulted)
+            self.fault("Snapshot was already in model", msg, CodingError)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-            node == self.model[ffs]['_moving'] and
-            msg['snapshot'] == self.model[ffs]['_move_snapshot']
-            ):
+                node == self.model[ffs]['_moving'] and
+                msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -749,22 +725,33 @@ class Engine:
     def node_remove_done(self, msg):
         node = msg['from']
         if 'ffs' not in msg:
-            self.faulted = "missing ffs parameter"
-            self.trigger_message = msg
-            raise CodingError()
+            self.fault("missing ffs parameter", msg, CodingError)
         ffs = msg['ffs']
         if ffs not in self.model:
-            self.faulted = "remove_done from ffs not in model."
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("remove_done from ffs not in model.",
+                       msg, InconsistencyError)
         if node not in self.model[ffs]:
             raise InconsistencyError(
                 "remove_done from node not in ffs for this model")
         if self.model[ffs]['_main'] == node:
-            self.faulted = "remove_done from main!"
-            self.trigger_message = msg
-            raise InconsistencyError(self.faulted)
+            self.fault("remove_done from main!", msg, InconsistencyError)
         del self.model[ffs][node]
+
+    def node_remove_snapshot_done(self, msg):
+        node = msg['from']
+        if 'ffs' not in msg:
+            self.fault("missing ffs parameter", msg, CodingError)
+        ffs = msg['ffs']
+        if ffs not in self.model:
+            self.fault("remove_done from ffs not in model.",
+                       msg, InconsistencyError)
+        if node not in self.model[ffs]:
+            raise InconsistencyError(
+                "remove_done from node not in ffs for this model")
+        # we ignore the message if the snapshot had already been removed in our
+        # database.
+        if msg['snapshot'] in self.model[ffs][node]['snapshots']:
+            self.model[ffs][node]['snapshots'].remove(msg['snapshot'])
 
     def node_zpool_status(self, msg):
         node = msg['from']
@@ -784,3 +771,6 @@ class Engine:
     def do_zpool_status_check(self):
         for node in self.node_config:
             self.send(node, {'msg': 'zpool_status'})
+
+    def shutdown(self):
+        self.sender.shutdown()

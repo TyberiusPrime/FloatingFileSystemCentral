@@ -683,6 +683,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['msg'], 'remove_snapshot_done')
         self.assertEqual(out_msg['ffs'], '.ffs_testing/three')
         self.assertEqual(out_msg['snapshots'], ['a', 'b'],)
+        self.assertEqual(out_msg['snapshot'], ['c'],)
         self.assertSnapshot('.ffs_testing/three', 'a')
         self.assertSnapshot('.ffs_testing/three', 'b')
         self.assertNotSnapshot('.ffs_testing/three', 'c')
@@ -697,10 +698,13 @@ class NodeTests(unittest.TestCase):
         self.assertNotSnapshot('.ffs_testing/three', 'c')
 
     def test_remove_snapshot_invalid_snapshot(self):
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'threeb'])
         in_msg = {'msg': 'remove_snapshot',
-                  'ffs': '.ffs_testing/three', 'snapshot': 'no_such_snapshot'}
+                  'ffs': '.ffs_testing/threeb', 'snapshot': 'no_such_snapshot'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
+        print(out_msg)
         self.assertTrue("invalid snapshot" in out_msg['content'])
 
     def test_remove_snapshot_invalid_ffs(self):

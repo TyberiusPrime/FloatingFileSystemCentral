@@ -20,7 +20,7 @@ def format_msg(msg):
     return pprint.pformat(x)
 
 
-class OutgoingMessages():
+class OutgoingMessages:
 
     def __init__(self, logger, engine, ssh_cmd):
         self.max_per_host = 5
@@ -30,9 +30,15 @@ class OutgoingMessages():
         self.running_processes = []
         self.engine = engine
         self.ssh_cmd = ssh_cmd
+        self._shutdown = False
+
+    def kill_unsent_messages(self):
+        self.logger.warn("Killing all unsent messages!")
+        for node in self.outgoing:
+            self.outgoing[node] = [x for x in self.outgoing[node] if x.status != 'unsent']
 
     def send_message(self, node_name, node_info, msg):
-        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties', 'send_snapshot'):
+        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties', 'remove_snapshot'):
             self.logger.info(
                 "Msgfiltered to %s: %s", node_name, format_msg(msg))
             return
@@ -108,7 +114,12 @@ class OutgoingMessages():
         self.send_if_possible()
 
     def shutdown(self):
+        if self._shutdown:
+            return
+        self._shutdown = True
+        self.kill_unsent_messages()
         for p in self.running_processes:
+            p.terminated = True
             self.logger.info("Terminating running child: %s", p)
             try:
                 p.transport.signalProcess('INT')
@@ -117,7 +128,7 @@ class OutgoingMessages():
                 pass
         time.sleep(1)
         for p in self.running_processes:
-            self.info("Killing running child: %s", p)
+            self.logger.info("Killing running child: %s", p)
             try:
                 p.transport.signalProcess('KILL')
             except error.ProcessExitedAlready:
@@ -135,13 +146,14 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
         self.stderr = b''
         self.logger = logger
         self.running_processes = running_processes
+        self.terminated = False
 
     def __str__(self):
         return "LoggingProcessProtocol: %s" % self.cmd
 
     def connectionMade(self):
-        self.logger.debug(
-            "Process started: %s, job_id=%s", format_msg(self.cmd), self.job_id)
+        #self.logger.debug(
+            #"Process started: %s, job_id=%s", format_msg(self.cmd), self.job_id)
         self.transport.write(json.dumps(self.cmd).encode('utf-8'))
         self.transport.closeStdin()  # tell them we're done
 
@@ -152,13 +164,16 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
         self.stderr += data
 
     def processEnded(self, reason):
-        self.logger.debug(
-            "Process ended,  %s, job_id=%s", format_msg(self.cmd), self.job_id)
+        # self.logger.debug(
+            # "Process ended,  %s, job_id=%s", format_msg(self.cmd), self.job_id)
         try:
             self.running_processes.remove(self)
         except ValueError as e:
             self.logger.error(
                 "ValueError when removing running proccess: %s", e)
+        if self.terminated:
+            self.logger.info("Terminated job_id=%i, no result back to engine", self.job_id)
+            return
 
         exit_code = reason.value.exitCode
         # logger.debug("Result: %s" % repr(self.stdout)[:30])
@@ -173,3 +188,5 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
         self.logger.debug(
             "Process ended, return code 0, %s, job_id=%s, result: %s", format_msg(self.cmd), self.job_id, format_msg(result))
         self.job_done_calleback(self.job_id, result)
+
+

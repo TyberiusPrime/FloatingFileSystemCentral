@@ -45,13 +45,16 @@ def check_if_changed():
     file_changed_hash = h.hexdigest()
 
 
-sender = None
+our_engine = None
 
 
 def on_shutdown():
-    if sender:
-        sender.shutdown()
     logger.info("Shutdown")
+    if our_engine:
+        logger.info("Shutdown ->engine")
+        our_engine.shutdown()
+    else:
+        logger.info("Shutdown engine was falsy")
 
 
 class EncryptedZmqREPConnection(ZmqREPConnection):
@@ -81,6 +84,7 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
 
 
 def main():
+    global our_engine
     logger.debug("")
     logger.debug("")
     logger.debug("")
@@ -149,7 +153,11 @@ def main():
         s.gotMessage = handle_message
         logger.debug("Entering reactor")
         our_engine.incoming_client({"msg": 'startup'})
-        reactor.run()
+        try:
+            reactor.run()
+        except KeyboardInterrupt:
+            self.logger.info("KeyboardInterrupt")
+            raise
         logger.debug("Left reactor")
     finally:
         auth.stop()

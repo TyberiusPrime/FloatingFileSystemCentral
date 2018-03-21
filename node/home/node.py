@@ -169,7 +169,7 @@ def msg_remove_snapshot(msg):
     if not '/ffs' in full_ffs_path:
         raise ValueError("Unexpected")
     subprocess.check_call(['sudo', 'zfs', 'destroy', combined])
-    return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs)}
+    return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs), 'snapshot': snapshot_name}
 
 
 def msg_zpool_status(msg):
