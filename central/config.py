@@ -153,7 +153,7 @@ enforced_properties = { # properties that *every* ffs get's assigned!
     'compression': 'on',
 }
 
-ssh_cmd = ['ssh', '-p', '223', '-o', 'StrictHostKeyChecking=no', ]  # default ssh command
+ssh_cmd = ['ssh', '-p', '223', '-o', 'StrictHostKeyChecking=no', '-i', '/home/ffs/.ssh/id_rsa']  # default ssh command, #-i is necessary for 'sudo rsync'
 ssh_concurrent_connection_limit = 5
 zpool_check_frequency = 60 * 15  # in seconds
 zmq_port = 47777

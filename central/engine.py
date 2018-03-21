@@ -82,6 +82,9 @@ class Engine:
         if 'decide_snapshots_to_send' not in non_node_config:
             non_node_config[
                 'decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
+        if 'ssh_cmd' not in non_node_config:
+            non_node_config['ssh_cmd'] = sh_cmd = ['ssh', '-o', 'StrictHostKeyChecking=no', '-i',
+                                                   '/home/ffs/.ssh/id_rsa']  # default ssh command, #-i is necessary for 'sudo rsync'
         if sender is None:
             sender = ssh_message_que.OutgoingMessages(
                 logger, self, non_node_config['ssh_cmd'])
@@ -119,6 +122,9 @@ class Engine:
             node_name, self.node_config[node_name], message)
 
     def fault(self, message, trigger=None, exception=ManualInterventionNeeded):
+        self.logger.error("Faulted engine with message: %s", message)
+        if trigger:
+            self.logger.error("Fault triggeredb by incoming message", trigger)
         self.faulted = message
         self.trigger_message = trigger
         self.sender.kill_unsent_messages()
@@ -141,8 +147,8 @@ class Engine:
             self.node_new_done(msg)
         elif msg['msg'] == 'capture_done':
             self.node_capture_done(msg)
-        elif msg['msg'] == 'send_done':
-            self.node_send_done(msg)
+        elif msg['msg'] == 'send_snapshot_done':
+            self.send_snapshot_done(msg)
         elif msg['msg'] == 'remove_snapshot_done':
             self.node_remove_snapshot_done(msg)
         elif msg['msg'] == 'remove_done':
@@ -419,7 +425,7 @@ class Engine:
         self._parse_main_and_readonly()
         self._enforce_properties()
         self._prune_snapshots()
-        self._send_pulls_and_removals()
+        self._send_missing_snapshots()
 
     def _parse_main_and_readonly(self):
         """Go through the ffs:main and readonly properties.
@@ -559,7 +565,7 @@ class Engine:
                         # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
-    def _send_pulls_and_removals(self):
+    def _send_missing_snapshots(self):
         """Once we have prased the ffs_lists into our model (see _parse_main_and_readonly),
         we send out pull requests for the missing snapshots
         and prunes for those that are too many"""
@@ -568,21 +574,34 @@ class Engine:
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
-            snapshots_to_send = self.non_node_config[
-                'decide_snapshots_to_send'](ffs, main_snapshots)
-            if main_snapshots:
-                for sn in main_snapshots:  # we keep the order!
-                    if sn in snapshots_to_send:
-                        for node, node_info in node_fss_info.items():
-                            if not node.startswith('_') and node != main:
-                                if sn not in node_info['snapshots']:
-                                    self.send(main, {
-                                        'msg': 'send_snapshot',
-                                        'send_to': node,
-                                        'ffs': ffs,
-                                        'snapshot': sn
-                                    }
-                                    )
+            snapshots_to_send = set(self.non_node_config[
+                'decide_snapshots_to_send'](ffs, main_snapshots))
+            ordered_to_send = [x for x in main_snapshots if x in snapshots_to_send]
+            if ordered_to_send:
+                for node, node_info in node_fss_info.items():
+                    if node.startswith('_'):
+                        continue
+                    missing = []
+                    for sn in reversed(ordered_to_send):
+                        if sn not in node_info['snapshots']:
+                            missing.append(sn)
+                        else:
+                             break
+                    missing = reversed(missing)
+                    for sn in missing:
+                        self._send_snapshot(main, node, ffs, sn)
+
+    def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
+        self.send(sending_node, {
+            'msg': 'send_snapshot',
+            'ffs': ffs,
+            'snapshot': snapshot_name,
+            'target_host': receiving_node,
+            'target_user': 'ffs',
+            'target_ssh_cmd': self.non_node_config['ssh_cmd'],
+            'target_path': '/%%ffs%%/' + ffs,
+        }
+        )
 
     def node_set_properties_done(self, msg):
         node = msg['from']
@@ -650,14 +669,11 @@ class Engine:
             'properties': msg['properties']
         }
         main = self.model[ffs]['_main']
+        # This happens if we were actually a add_new_target
         if node != main and self.model[ffs][main]['snapshots']:
-            self.send(main,
-                      {'msg': 'send_snapshot',
-                       'send_to': node,
-                       'ffs': ffs,
-                       'snapshot': self.model[ffs][main]['snapshots'][-1]
-                       }
-                      )
+            for sn in self.model[ffs][main]['snapshots']:
+                self._send_snapshot(main, node, ffs, sn)
+            
 
     def node_capture_done(self, msg):
         node = msg['from']
@@ -685,23 +701,18 @@ class Engine:
                 postfix = self.model[ffs][node][
                     'properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
-                    self.send(main,
-                              {
-                                  'msg': 'send_snapshot',
-                                  'ffs': ffs,
-                                  'snapshot': snapshot,
-                                  'send_to': node,
-                              })
+                    self._send_snapshot(main, node, ffs, snapshot)
+                    
 
-    def node_send_done(self, msg):
+    def send_snapshot_done(self, msg):
         main = msg['from']
         if 'ffs' not in msg:
             self.fault("missing ffs parameter", msg, CodingError)
         ffs = msg['ffs']
         if ffs not in self.model:
-            self.fault("capture_done from ffs not in model.",
+            self.fault("send_snapshot_done from ffs not in model.",
                        msg, InconsistencyError)
-        node = msg['send_to']
+        node = msg['target_host']
         if main == node:
             self.fault("Send done from main to main?!",
                        msg, InconsistencyError)
@@ -713,9 +724,9 @@ class Engine:
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-                node == self.model[ffs]['_moving'] and
-                msg['snapshot'] == self.model[ffs]['_move_snapshot']
-                ):
+            node == self.model[ffs]['_moving'] and
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+            ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,

@@ -217,6 +217,8 @@ def msg_send_snapshot(msg):
     target_host = msg['target_host']
     target_user = msg['target_user']
     target_ssh_cmd = msg['target_ssh_cmd']
+    if not target_ssh_cmd[0] == 'ssh':
+        raise ValueError("Invalid ssh command - first value must be 'ssh'")
     target_path = msg['target_path']
     target_ffs = target_path[target_path.find("/%%ffs%%/") + len('/%%ffs%%/'):]
     snapshot = msg['snapshot']
@@ -227,9 +229,29 @@ def msg_send_snapshot(msg):
     my_hash = my_hash.hexdigest()
     clone_name = "%f_%s" % (time.time(), my_hash)
     try:
-        subprocess.Popen(['sudo', 'zfs', 'create', clone_dir], stderr=subprocess.PIPE).communicate()
+        # step 0 - prepare a clone to rsync from
+        subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
+                         stderr=subprocess.PIPE).communicate()
         subprocess.check_call(
             ['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name])
+
+        # step1 - set readonly=false on receiver
+        cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
+
+        p = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        #
+        stdout, stderr = p.communicate(json.dumps({
+            'msg': 'set_properties',
+            'ffs': target_ffs,
+            'properties': {'readonly': 'off'}
+        }).encode('utf-8'))
+        if p.returncode != 0:
+            return {
+                'error': 'set_properties_read_only_off',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+            }
+        # step2: rsync
         rsync_cmd = {
             'source_path': '/' + clone_dir + '/' + clone_name,
             'target_path': target_path,
@@ -240,16 +262,31 @@ def msg_send_snapshot(msg):
         }
         p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        rsync_stdout, rsync_stderr = p.communicate(json.dumps(rsync_cmd).encode('utf-8'))
+        rsync_stdout, rsync_stderr = p.communicate(
+            json.dumps(rsync_cmd).encode('utf-8'))
         rc = p.returncode
         if rc != 0:
             return {
                 'error': 'rsync_failure',
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (rsync_stdout, rsync_stderr)
             }
-        cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
         p = subprocess.Popen(cmd,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        # step4: restore readonly
+        stdout, stderr = p.communicate(json.dumps({
+            'msg': 'set_properties',
+            'ffs': target_ffs,
+            'properties': {'readonly': 'on'}
+        }).encode('utf-8'))
+        if p.returncode != 0:
+            return {
+                'error': 'set_properties_read_only_on',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+            }
+        # step5: make a snapshot
+        p = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        #
         stdout, stderr = p.communicate(json.dumps({
             'msg': 'capture',
             'ffs': target_ffs,
@@ -265,11 +302,13 @@ def msg_send_snapshot(msg):
             'target_host': target_host,
             'ffs': ffs_from,
             'clone_name': clone_name,
+            'snapshot': snapshot,
         }
 
     finally:
         clean_up_clones()
-    
+
+
 def msg_deploy(msg):
     import base64
     import zipfile
@@ -299,22 +338,22 @@ def shell_cmd_rprsync(cmd_line):
         return False
 
     target_path = cmd_line[cmd_line.find('/'):]
-    target_path = target_path.replace("/%%ffs%%/", '/' + find_ffs_prefix() + '/')
+    target_path = target_path.replace(
+        "/%%ffs%%/", '/' + find_ffs_prefix() + '/')
     cmd_line = cmd_line.replace("/%%ffs%%/", '/' + find_ffs_prefix() + '/')
     path_ok(target_path)
     reset_rights = False
     if target_path.endswith('/.'):
         try:
             org_rights = os.stat(target_path)[stat.ST_MODE]
-        except PermissionError: # target directory is without +X
-            subprocess.check_call(['sudo','chmod', 'oug+rwX', target_path])
+        except PermissionError:  # target directory is without +X
+            subprocess.check_call(['sudo', 'chmod', 'oug+rwX', target_path])
             reset_rights = True
     real_cmd = cmd_line.replace('rprsync', 'sudo rsync')
     p = subprocess.Popen(real_cmd, shell=True)
     p.communicate()
-    #if reset_rights:
-            #subprocess.check_call(['sudo','chmod', '%.3o'  % (org_rights & 0o777), target_path])
-
+    # if reset_rights:
+    #subprocess.check_call(['sudo','chmod', '%.3o'  % (org_rights & 0o777), target_path])
 
 
 def dispatch(msg):
