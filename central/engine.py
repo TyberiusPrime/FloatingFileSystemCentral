@@ -5,6 +5,7 @@ import os
 import re
 from collections import OrderedDict
 from . import ssh_message_que
+from . import default_config
 
 
 class StartupNotDone(Exception):
@@ -50,52 +51,18 @@ def needs_startup(func):
 
 class Engine:
 
-    def __init__(self, config, sender=None, logger=None,
-                 non_node_config=None):
+    def __init__(self, config, sender=None):
         """Config is a dictionary node_name -> node info
         send_function handles sending  messages to nodes
         and get's the node_info and a message passed"""
-        if logger is None:
-            import logging
-            logger = logging.Logger(name='Dummy')
-            logger.addHandler(logging.NullHandler())
-        self.logger = logger
-        for node in config:
-            if node.startswith('_'):
-                raise ValueError("Node can not start with _: %s" % node)
-        self.node_config = config
-        if non_node_config is None:
-            non_node_config = {}
-        self.non_node_config = non_node_config
-        allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd', 'inform',
-                           'complain', 'enforced_properties', 'decide_snapshots_to_keep',
-                           'decide_snapshots_to_send',
-                           'decide_targets', 'name_translator'}
-        too_many_options = set(non_node_config).difference(allowed_options)
-        if too_many_options:
-            raise ValueError("Invalid option set: %s" % (too_many_options, ))
-        if 'inform' not in non_node_config:
-            non_node_config['inform'] = lambda x: None
-        if 'complain' not in non_node_config:
-            non_node_config['complain'] = lambda x: None
-        if 'enforced_properties' not in non_node_config:
-            non_node_config['enforced_properties'] = {}
-        if 'decide_snapshots_to_keep' not in non_node_config:
-            non_node_config[
-                'decide_snapshots_to_keep'] = lambda dummy_ffs_name, snapshots: snapshots
-        if 'decide_snapshots_to_send' not in non_node_config:
-            non_node_config[
-                'decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
-        if 'decide_targets' not in non_node_config:
-            non_node_config['decide_targets'] = self.random_target()
-        if 'name_translator' not in non_node_config:
-            non_node_config['name_translator'] = lambda name: name
-        if 'ssh_cmd' not in non_node_config:
-            non_node_config['ssh_cmd'] = sh_cmd = ['ssh', '-o', 'StrictHostKeyChecking=no', '-i',
-                                                   '/home/ffs/.ssh/id_rsa']  # default ssh command, #-i is necessary for 'sudo rsync'
+        self.logger = config.get_logging()
+        self.config = config
+        if not isinstance(config, default_config.CheckedConfig):
+            raise ValueError("Config must be a CheckedConfig instance")
+        self.node_config = self.config.get_nodes()
         if sender is None:
             sender = ssh_message_que.OutgoingMessages(
-                logger, self, non_node_config['ssh_cmd'])
+                self.logger, self, self.config.get_ssh_cmd())
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
@@ -108,10 +75,6 @@ class Engine:
         self.deployment_zip_filename = os.path.join('node', 'node.zip')
         self.build_deployment_zip()
     
-    def random_target(self):
-        import random
-        return random.choice(self.node_config)
-
     def write_authorized_keys(self):
         if not os.path.exists(os.path.join('node', 'home', '.ssh')):
             os.makedirs(os.path.join('node', 'home', '.ssh'))
@@ -250,10 +213,10 @@ class Engine:
         if 'targets' not in msg:
             raise CodingError("No targets specified")
         if not msg['targets']:
-            msg['targets'] = self.non_node_config['decide_targets'](ffs)
+            msg['targets'] = self.config.decide_targets(ffs)
             if not isinstance(msg['targets'], list):
                 self.fault("config.decide_targets returned non-list")
-        targets = [self.non_node_config['name_translator'](x) for x in msg['targets']]
+        targets = [self.config.find_node(x) for x in msg['targets']]
         for x in targets:
             if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
@@ -263,7 +226,7 @@ class Engine:
         any_found = False
         for node in self.node_config:
             if node in targets:
-                props = self.non_node_config['enforced_properties'].copy()
+                props = self.config.get_enforced_properties().copy()
                 if main == node:
                     props.update({'ffs:main': 'on',
                              'readonly': 'off'
@@ -329,7 +292,7 @@ class Engine:
                    'properties': {'ffs:main': 'off', 'readonly': 'on'}
                    }
                   )
-        self.model[ffs][target] = {}
+        self.model[ffs][target] = {'_new': True}
 
     @needs_startup
     def client_capture(self, msg):
@@ -353,8 +316,8 @@ class Engine:
         }
         if chown_and_chmod:
             out_msg['chown_and_chmod'] = True
-            out_msg['user'] = self.non_node_config['chown_user']
-            out_msg['rights'] = self.non_node_config['chmod_rights']
+            out_msg['user'] = self.config.get_chown_user(ffs)
+            out_msg['rights'] = self.config.get_chmod_rights(ffs)
         self.send(
             self.model[ffs]['_main'],
             out_msg
@@ -384,8 +347,8 @@ class Engine:
             {
                 'msg': 'chown_and_chmod',
                 'ffs': ffs,
-                'user': self.non_node_config['chown_user'],
-                'rights': self.non_node_config['chmod_rights']
+                'user': self.config.get_chown_user(ffs),
+                'rights': self.config.get_chmod_rights(ffs)
             }
 
 
@@ -473,7 +436,7 @@ class Engine:
             self.build_model()
             self.startup_done = True
             self.logger.info("Startup complete")
-            self.non_node_config['inform']("Startup completed, sending syncs.")
+            self.config.inform("Startup completed, sending syncs.")
 
     def build_model(self):
         self.logger.info("All list_ffs returned")
@@ -609,7 +572,7 @@ class Engine:
                 if node.startswith('_'):
                     continue
                 to_set = {}
-                for k, v in self.non_node_config['enforced_properties'].items():
+                for k, v in self.config.get_enforced_properties().items():
                     v = str(v)
                     if ffs_node_info['properties'].get(k, False) != v:
                         to_set[k] = v
@@ -623,8 +586,7 @@ class Engine:
         for ffs, node_fss_info in self.model.items():
             main_node = node_fss_info['_main']
             main_snapshots = node_fss_info[main_node]['snapshots']
-            keep_snapshots = self.non_node_config[
-                'decide_snapshots_to_keep'](ffs, main_snapshots)
+            keep_snapshots = self.config.decide_snapshots_to_keep(ffs, main_snapshots)
             self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
             remove_from_main = [
                 x for x in main_snapshots if x not in keep_snapshots]
@@ -653,8 +615,7 @@ class Engine:
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
-            snapshots_to_send = set(self.non_node_config[
-                'decide_snapshots_to_send'](ffs, main_snapshots))
+            snapshots_to_send = set(self.config.decide_snapshots_to_send(ffs, main_snapshots))
             ordered_to_send = [x for x in main_snapshots if x in snapshots_to_send]
             if ordered_to_send:
                 for node, node_info in node_fss_info.items():
@@ -679,7 +640,7 @@ class Engine:
             'snapshot': snapshot_name,
             'target_host': receiving_node,
             'target_user': 'ffs',
-            'target_ssh_cmd': self.non_node_config['ssh_cmd'],
+            'target_ssh_cmd': self.config.get_ssh_cmd(),
             'target_path': '/%%ffs%%/' + ffs,
         }
         )
@@ -743,6 +704,7 @@ class Engine:
             self.fault("node_new_done from ffs not on that node",
                        msg, CodingError)
         if self.model[ffs][node] != {'_new': True}:
+            print(self.model[ffs][node])
             self.fault(
                 "node_new_done from an node/ffs where we already have data", msg, CodingError)
         self.model[ffs][node] = {

@@ -13,6 +13,7 @@ from central import config
 logger = config.logger
 from central import engine
 from central import ssh_message_que
+from central import default_config
 from twisted.python import log
 import pwd
 import atexit
@@ -107,22 +108,8 @@ def main():
 
         e = ZmqEndpoint('bind', 'tcp://*:%s' % config.zmq_port)
         s = EncryptedZmqREPConnection(zf, e)
-        non_node_config = {}
-        non_node_config['chmod_rights'] = config.chmod_rights
-        non_node_config['chown_user'] = config.chown_user
-        non_node_config['ssh_cmd'] = config.ssh_cmd
-        non_node_config['inform'] = config.inform
-        non_node_config['complain'] = config.complain
-        non_node_config['enforced_properties'] = config.enforced_properties
-        non_node_config['decide_snapshots_to_keep'] = config.decide_snapshots_to_keep
-        non_node_config['decide_snapshots_to_send'] = config.decide_snapshots_to_send
-        non_node_config['decide_targets'] = config.decide_targets
-        non_node_config['name_translator'] = config.name_translator
-
-        our_engine = engine.Engine(config.nodes, None,
-                                   config.logger,
-                                   non_node_config
-                                   )
+        cfg = default_config.CheckedConfig(config.config)
+        our_engine = engine.Engine(cfg, sender=None)
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)
         l.start(1.0)  # call every second

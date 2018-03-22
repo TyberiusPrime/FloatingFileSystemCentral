@@ -5,7 +5,7 @@ import collections
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from central import engine, ssh_message_que
+from central import engine, ssh_message_que, default_config
 
 
 class FakeMessageSender():
@@ -38,7 +38,22 @@ class EngineTests(unittest.TestCase):
         except OSError:
             pass
 
-    def get_engine(self, quick_ffs_definition, non_node_config=None):
+    def _get_test_config(self):
+        class NobodyConfig(default_config.DefaultConfig):
+
+            def get_chown_user(self, ffs):
+                return 'nobody'
+
+            def get_chmod_rights(self, ffs):
+                return '0777'
+
+            def get_default_properties(self):
+                return {}
+            def get_enforced_properties(self):
+                return {}
+        return NobodyConfig()
+
+    def get_engine(self, quick_ffs_definition, config=None):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -52,20 +67,19 @@ class EngineTests(unittest.TestCase):
             'gamma': {},
         })
         """
-        config = collections.OrderedDict()
+        nodes = collections.OrderedDict()
         for name in quick_ffs_definition:
-            config[name] = {'storage_prefix': '/' + name,
-                            'hostname': name, 'public_key': b'#no such key'}
-        if non_node_config is None:
-            non_node_config = {}
-        non_node_config['chown_user'] = 'nobody'
-        non_node_config['chmod_rights'] = '0777'
+            nodes[name] = {'storage_prefix': '/' + name,
+                           'hostname': name, 'public_key': b'#no such key'}
+        if config is None:
+            config = self._get_test_config()
+        config._nodes = nodes
+        config = default_config.CheckedConfig(config)
 
         fm = FakeMessageSender()
         e = engine.Engine(
             config,
             fm,
-            non_node_config=non_node_config
         )
         e.incoming_client({'msg': 'startup', })
         for node_name, ffs_to_snapshots in quick_ffs_definition.items():
@@ -93,18 +107,20 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(e.startup_done)
         return e, fm.outgoing
 
-    def ge(self, non_node_config=None):
+    def ge(self, config=None):
         nodes = collections.OrderedDict()
         nodes['alpha'] = {'storage_prefix': '/alpha',
                           'hostname': 'alpha', 'public_key': b'a'}
         nodes['beta'] = {'storage_prefix': '/beta',
                          'hostname': 'beta', 'public_key': b'b'}
         fm = FakeMessageSender()
-
+        if config is None:
+            config = self._get_test_config()
+        config._nodes = nodes
+        config = default_config.CheckedConfig(config)
         return engine.Engine(
-            nodes,
+            config,
             fm,
-            non_node_config=non_node_config
         ), fm.outgoing
 
 
@@ -119,8 +135,10 @@ class StartupTests(EngineTests):
             pass
 
         def inner():
+            cfg = self._get_test_config()
+            cfg._nodes = nodes
             engine.Engine(
-                nodes,
+                default_config.CheckedConfig(cfg),
                 ignore
             )
         self.assertRaises(ValueError, inner)
@@ -413,10 +431,15 @@ class StartupTests(EngineTests):
             'ffs': 'one',
             'properties': {'readonly': 'off'}
         })
+    
+    def _get_cfg_enforced_properties(self, props):
+        cfg = self._get_test_config()
+        cfg.get_enforced_properties = lambda: props
+        return cfg
 
     def test_enforced_properties_set_if_unset(self):
         e, outgoing_messages = self.ge(
-            {'enforced_properties': {'ffs:test': 'shu'}})
+           self._get_cfg_enforced_properties({'ffs:test': 'shu'}))
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
@@ -460,8 +483,7 @@ class StartupTests(EngineTests):
         })
 
     def test_enforced_properties_set_if_wrong_not_set_if_unchanged(self):
-        e, outgoing_messages = self.ge(
-            {'enforced_properties': {'ffs:test': 'shu'}})
+        e, outgoing_messages = self.ge(self._get_cfg_enforced_properties({'ffs:test': 'shu'}))
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
@@ -503,7 +525,7 @@ class StartupTests(EngineTests):
 
     def test_enforced_properties_during_readonly(self):
         e, outgoing_messages = self.ge(
-            {'enforced_properties': {'ffs:test': 'shu'}})
+            self._get_cfg_enforced_properties({'ffs:test': 'shu'}))
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
@@ -567,9 +589,11 @@ class PostStartupTests(EngineTests):
                           'hostname': 'alpha', 'public_key': b'a'}
         nodes['beta'] = {'storage_prefix': '/beta',
                          'hostname': 'beta', 'public_key': b'a'}
+        cfg = self._get_test_config()
+        cfg._nodes = nodes
         fm = FakeMessageSender()
         e = engine.Engine(
-            nodes,
+            default_config.CheckedConfig(cfg),
             fm
         )
         e.incoming_client({'msg': 'startup', })
@@ -609,10 +633,8 @@ class PreStartupRaisesTests(EngineTests):
 
 class NewTests(PostStartupTests):
 
-
     def test_new_status_disappears_upon_creation(self):
         raise NotImplementedError()
-
 
     def test_capture_while_new(self):
         raise NotImplementedError()
@@ -622,7 +644,6 @@ class NewTests(PostStartupTests):
 
     def test_move_while_new(self):
         raise NotImplementedError()
-
 
     def test_new_raises_on_existing(self):
         e, outgoing_messages = self.ge()
@@ -676,7 +697,7 @@ class NewTests(PostStartupTests):
             }})
         self.assertTrue('two' in e.model)
         self.assertEqual(e.model['two']['_main'], 'alpha')
-        self.assertEqual(e.model['two']['alpha'], {})
+        self.assertEqual(e.model['two']['alpha'], {'_new': True})
         e.incoming_node(
             {'msg': 'new_done',
              'ffs': 'two',
@@ -687,6 +708,7 @@ class NewTests(PostStartupTests):
              }
              }
         )
+        self.assertFalse('_new' in e.model['two']['alpha'])
         self.assertEqual(e.model['two']['alpha'][
                          'properties']['ffs:main'], 'on')
         self.assertEqual(e.model['two']['alpha'][
@@ -1085,18 +1107,22 @@ class RemoveTarget(PostStartupTests):
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 0)
         e.incoming_client({'msg': 'move_main', 'ffs': 'one', 'target': 'beta'})
-        #this one should explode anyhow... since we're removing the main
+        # this one should explode anyhow... since we're removing the main
+
         def inner():
-            e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha' })
+            e.incoming_client(
+                {'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
         self.assertRaises(ValueError, inner)
 
         def inner():
-            e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'beta' })
+            e.incoming_client(
+                {'msg': 'remove_target', 'ffs': 'one', 'target': 'beta'})
         self.assertRaises(ValueError, inner)
+
         def inner():
-            e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'gamma' })
+            e.incoming_client(
+                {'msg': 'remove_target', 'ffs': 'one', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
-        
 
     def test_cant_move_during_remove_if_target_is_being_removed(self):
         e, outgoing_messages = self.get_engine({
@@ -1106,8 +1132,10 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 1)
+
         def inner():
-            e.incoming_client({'msg': 'move_main', 'ffs': 'one', 'target': 'beta'})
+            e.incoming_client(
+                {'msg': 'move_main', 'ffs': 'one', 'target': 'beta'})
         self.assertRaises(ValueError, inner)
 
     def test_cant_move_during_remove_if_target_is_not_the_one_being_removed(self):
@@ -1118,11 +1146,11 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 1)
+
         def inner():
-            e.incoming_client({'msg': 'move_main', 'ffs': 'one', 'target': 'gamma'})
+            e.incoming_client(
+                {'msg': 'move_main', 'ffs': 'one', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
-
-
 
 
 class AddTarget(PostStartupTests):
@@ -1136,9 +1164,11 @@ class AddTarget(PostStartupTests):
         nodes['gamma'] = {'storage_prefix': '/gamma',
                           'hostname': 'gamma', 'public_key': b'a'}
         fm = FakeMessageSender()
+        cfg = self._get_test_config()
+        cfg._nodes = nodes
 
         e = engine.Engine(
-            nodes,
+            default_config.CheckedConfig(cfg),
             fm
         )
         e.incoming_client({'msg': 'startup', })
@@ -1826,8 +1856,8 @@ class ChownTests(PostStartupTests):
             'msg': 'chown_and_chmod',
             'ffs': 'one',
             'to': 'alpha',
-            'user': e.non_node_config['chown_user'],
-            'rights': e.non_node_config['chmod_rights'],
+            'user': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
         })
 
     def test_capture_and_chown(self):
@@ -1844,8 +1874,8 @@ class ChownTests(PostStartupTests):
             'msg': 'capture',
             'ffs': 'one',
             'chown_and_chmod': True,
-            'user': e.non_node_config['chown_user'],
-            'rights': e.non_node_config['chmod_rights'],
+            'user': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
         }
         )
 
@@ -1990,13 +2020,13 @@ class TestStartupTriggeringActions(EngineTests):
         })
 
     def test_purge_snapshots(self):
+        cfg = self._get_test_config()
+        cfg.decide_snapshots_to_keep = lambda a, b: ['2']
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1', '2']},
             'beta':  {'one': ['1', '2']},
             'gamma': {},
-        }, non_node_config={'decide_snapshots_to_keep':
-                            lambda a, b: ['2']
-                            })
+        }, config=cfg)
         self.assertEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
@@ -2010,13 +2040,13 @@ class TestStartupTriggeringActions(EngineTests):
         self.assertEqual(len(outgoing_messages), 2)
 
     def test_snapshot_on_target_too_much(self):
+        cfg = self._get_test_config()
+        cfg.decide_snapshots_to_keep = lambda a, b: ['2']
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1', '2']},
             'beta':  {'one': ['0', '1', '2']},
             'gamma': {},
-        }, non_node_config={'decide_snapshots_to_keep':
-                            lambda a, b: ['2']
-                            })
+        }, config=cfg)
         self.assertEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
@@ -2035,13 +2065,13 @@ class TestStartupTriggeringActions(EngineTests):
         self.assertEqual(len(outgoing_messages), 3)
 
     def test_purge_and_send_combined(self):
+        cfg = self._get_test_config()
+        cfg.decide_snapshots_to_keep = lambda a, b: ['2', '3']
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1', '2', '3', ]},
             'beta':  {'one': ['0', '1', '2']},
             'gamma': {},
-        }, non_node_config={'decide_snapshots_to_keep':
-                            lambda a, b: ['2', '3']
-                            })
+        }, config=cfg)
         self.assertEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
@@ -2067,14 +2097,16 @@ class TestStartupTriggeringActions(EngineTests):
         self.assertEqual(len(outgoing_messages), 4)
 
     def test_send_only_some(self):
+        cfg = self._get_test_config()
+        cfg.decide_snapshots_to_keep = lambda a, b: ['2', '3']
+        cfg.decide_snapshots_to_send = lambda dummy_ffs, snapshots: ['3']
+
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1', '2', '3', ]},
             'beta':  {'one': ['0']},
             'gamma': {},
-        }, non_node_config={'decide_snapshots_to_keep':
-                            lambda a, b: ['2', '3'],
-                            'decide_snapshots_to_send': lambda dummy_ffs, snapshots: ['3']
-                            })
+        },
+            config=cfg)
         self.assertEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
@@ -2092,7 +2124,7 @@ class TestStartupTriggeringActions(EngineTests):
             'snapshot': '3',
             'target_host': 'beta',
             'target_path': '/%%ffs%%/one',
-            'target_ssh_cmd': engine.non_node_config['ssh_cmd'],
+            'target_ssh_cmd': engine.config.get_ssh_cmd(),
             'target_user': 'ffs',
         })
         self.assertEqual(len(outgoing_messages), 3)
@@ -2121,7 +2153,7 @@ class CrossTalkTest(EngineTests):
             'ffs': 'one',
             'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
         })
-        snapshot_name = outgoing_messages[-1]['snapshot']
+        snapshot_name=outgoing_messages[-1]['snapshot']
         self.assertRaises(engine.MoveInProgress, inner)
         e.incoming_node({
             'msg': 'capture_done',
@@ -2184,7 +2216,7 @@ class CrossTalkTest(EngineTests):
         })
 
     def test_move_during_capture(self):
-        e, outgoing_messages = self.get_engine({
+        e, outgoing_messages=self.get_engine({
             'alpha': {'_one': ['1']},
             'beta':  {'one': ['1']},
             'gamma': {},
@@ -2198,7 +2230,7 @@ class CrossTalkTest(EngineTests):
             'to': 'alpha',
             'ffs': 'one'
         })
-        wrong_snapshot_name = outgoing_messages[0]['snapshot']
+        wrong_snapshot_name=outgoing_messages[0]['snapshot']
         e.incoming_client(
             {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
 
@@ -2208,7 +2240,7 @@ class CrossTalkTest(EngineTests):
             'ffs': 'one',
             'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
         })
-        right_snapshot_name = outgoing_messages[-1]['snapshot']
+        right_snapshot_name=outgoing_messages[-1]['snapshot']
         e.incoming_node({
             'msg': 'capture_done',
             'from': 'alpha',
@@ -2251,7 +2283,7 @@ class CrossTalkTest(EngineTests):
         #
 
     def test_error_return_from_node(self):
-        e, outgoing_messages = self.get_engine({
+        e, outgoing_messages=self.get_engine({
             'alpha': {'_one': ['1']},
             'beta':  {'one': ['1']},
             'gamma': {},
@@ -2267,7 +2299,8 @@ class CrossTalkTest(EngineTests):
 class MockEngine:
 
     def __init__(self):
-        self.node_messages = []
+        self.node_messages=[]
+        self.config = default_config.CheckedConfig(default_config.DefaultConfig())
 
     def incoming_node(self, msg):
         self.node_messages.append(message)
@@ -2276,10 +2309,10 @@ class MockEngine:
 class OutgoingMessageForTesting(ssh_message_que.OutgoingMessages):
 
     def __init__(self):
-        engine = MockEngine
-        ssh_cmd = 'shu'
+        engine=MockEngine()
+        ssh_cmd='shu'
         import logging
-        logger = logging.Logger(name='Dummy')
+        logger=logging.Logger(name = 'Dummy')
         logger.addHandler(logging.NullHandler())
         super().__init__(logger, engine, ssh_cmd)
 
@@ -2290,85 +2323,84 @@ class OutgoingMessageForTesting(ssh_message_que.OutgoingMessages):
 class OutgoingMessageTests(unittest.TestCase):
 
     def test_max_per_host(self):
-        m = {'msg': 'deploy'}
-        om = OutgoingMessageForTesting()
+        m={'msg': 'deploy'}
+        om=OutgoingMessageForTesting()
         for i in range(om.max_per_host + 1):
-            mx = m.copy()
-            mx['i'] = i
+            mx=m.copy()
+            mx['i']=i
             om.send_message('alpha', {}, mx)
-        out = om.outgoing['alpha']
+        out=om.outgoing['alpha']
         self.assertEqual(len(out), om.max_per_host + 1)
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), om.max_per_host)
         self.assertEqual(len(unsent), 1)
-        s = set()
+        s=set()
         for x in sent:
             s.add(x.msg['i'])
         self.assertEqual(s, set(range(om.max_per_host)))
         self.assertEqual(unsent[0].msg['i'], om.max_per_host)
         om.job_returned(out[0].job_id, {'msg': 'deploy_done'})
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), om.max_per_host)
         self.assertEqual(len(unsent), 0)
 
     def test_max_one_send_snapshot(self):
-        m = {'msg': 'send_snapshot'}
-        om = OutgoingMessageForTesting()
+        m={'msg': 'send_snapshot'}
+        om=OutgoingMessageForTesting()
         self.assertTrue(om.max_per_host > 1)
         for i in range(om.max_per_host + 1):
-            mx = m.copy()
-            mx['i'] = i
+            mx=m.copy()
+            mx['i']=i
             om.send_message('alpha', {}, mx)
-        out = om.outgoing['alpha']
+        out=om.outgoing['alpha']
         self.assertEqual(len(out), om.max_per_host + 1)
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 1)
         self.assertEqual(len(unsent), om.max_per_host)
         self.assertEqual(unsent[0].msg['i'], 1)
         om.job_returned(out[0].job_id, {'msg': 'send_snapshot_done'})
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 1)
         self.assertEqual(len(unsent), om.max_per_host - 1)
 
     def test_mixed(self):
-        om = OutgoingMessageForTesting()
+        om=OutgoingMessageForTesting()
         self.assertTrue(om.max_per_host > 1)
         om.send_message('alpha', {}, {'msg': 'send_snapshot'})
         om.send_message('alpha', {}, {'msg': 'deploy'})
         om.send_message('alpha', {}, {'msg': 'deploy'})
-        out = om.outgoing['alpha']
+        out=om.outgoing['alpha']
         self.assertEqual(len(out), 3)
 
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 3)
         self.assertEqual(len(unsent), 0)
 
         om.send_message('alpha', {}, {'msg': 'send_snapshot'})
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 3)
         self.assertEqual(len(unsent), 1)
 
         om.send_message('alpha', {}, {'msg': 'deploy'})
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 4)
         self.assertEqual(len(unsent), 1)
         self.assertEqual(unsent[0].msg['msg'], 'send_snapshot')
 
         om.job_returned(out[0].job_id, {'msg': 'send_snapshot_done'})
-        sent = [x for x in out if x.status != 'unsent']
-        unsent = [x for x in out if x.status == 'unsent']
+        sent=[x for x in out if x.status != 'unsent']
+        unsent=[x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 4)
         self.assertEqual(len(unsent), 0)
         # this reflects the submission order, not the send order!
         self.assertEqual(sent[2].msg['msg'], 'send_snapshot')
-
 
     def test_disallowed_naming_config(self):
         # test to disallow ffs/20xx_project_ag_...
@@ -2376,10 +2408,15 @@ class OutgoingMessageTests(unittest.TestCase):
 
     def test_client_list_ffs_in_case_of_new(self):
         raise NotImplementedError()
-        
-    
+
     def test_new_sets_default_properties(self):
         raise NotImplementedError()
+
+    def test_default_properties(self):
+        raise NotImplementedError()
+
+    def test_non_capture_chown_chmod(self):
+        pass
 
 if __name__ == '__main__':
     unittest.main()

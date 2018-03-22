@@ -23,7 +23,7 @@ def format_msg(msg):
 class OutgoingMessages:
 
     def __init__(self, logger, engine, ssh_cmd):
-        self.max_per_host = 5
+        self.max_per_host = engine.config.get_ssh_concurrent_connection_limit()
         self.logger = logger
         self.job_id = 0
         self.outgoing = {}
