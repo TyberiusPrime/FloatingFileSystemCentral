@@ -118,7 +118,16 @@ def msg_new(msg):
     for prop, value in msg['properties'].items():
         check_property_name_and_value(prop, value)
 
+    parent_zfs = full_ffs_path[:full_ffs_path.rfind('/')]
+    parent_readonly = get_zfs_property(parent_zfs, 'readonly') == 'on'
+    if parent_readonly:
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'readonly=off', parent_zfs])
     subprocess.check_call(['sudo', 'zfs', 'create', full_ffs_path])
+    if parent_readonly:
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'readonly=on', parent_zfs])
+
     for prop, value in msg['properties'].items():
         subprocess.check_call(
             ['sudo', 'zfs', 'set', "%s=%s" % (prop, value), full_ffs_path])
@@ -150,20 +159,21 @@ def msg_remove(msg):
     ffs = msg['ffs']
     full_ffs_path = find_ffs_prefix() + ffs
     if full_ffs_path not in list_ffs(False, True):
-        return {'msg':'remove_failed', 'reason': 'target_does_not_exists', 'ffs': ffs}
+        return {'msg': 'remove_failed', 'reason': 'target_does_not_exists', 'ffs': ffs}
     if not '/ffs' in full_ffs_path:
         raise ValueError("Unexpected")
-    p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
     if p.returncode == 0:
         return {"msg": 'remove_done', 'ffs': ffs}
     else:
         if b'target is busy' in stderr:
-            subprocess.check_call(['sudo', 'zfs', 'set', 'ffs:remove_asap=on', full_ffs_path])
-            return {'msg':'remove_failed', 'reason': 'target_is_busy', 'ffs': ffs}
+            subprocess.check_call(
+                ['sudo', 'zfs', 'set', 'ffs:remove_asap=on', full_ffs_path])
+            return {'msg': 'remove_failed', 'reason': 'target_is_busy', 'ffs': ffs}
         else:
             return {'error': 'zfs_error_return', 'content': 'zfs destroy %s failed. stdout:%s \nstderr: %s' % (ffs, stdout, stderr)}
-
 
 
 def msg_remove_snapshot(msg):
@@ -240,11 +250,11 @@ def msg_send_snapshot(msg):
     try:
         # step -1 - make sure we have an .ffs_sync_clones directory.
         subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
-                         stderr=subprocess.PIPE).communicate() # ignore the error on this one.
-        
+                         stderr=subprocess.PIPE).communicate()  # ignore the error on this one.
+
         # step 0 - prepare a clone to rsync from
         p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
-            stderr=subprocess.PIPE)
+                             stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
         if p.returncode != 0:
             if b'dataset does not exist' in stderr:

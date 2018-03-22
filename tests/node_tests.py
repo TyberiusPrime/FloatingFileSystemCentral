@@ -22,7 +22,7 @@ from central import config
 import node
 
 
-target_ssh_cmd = config.ssh_cmd + ['-i', '/home/ffs/.ssh/id_rsa']
+target_ssh_cmd = config.config.get_ssh_cmd() + ['-i', '/home/ffs/.ssh/id_rsa']
 
 
 def run_rsync(cmd, encode=True, show_errors=True):
@@ -719,7 +719,8 @@ class NodeTests(unittest.TestCase):
        # happens if we're rsyncing into the directory.!
         subprocess.check_call(
             ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'rwo'])
-        subprocess.check_call(['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'rwo'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'rwo'])
         try:
             op = open('/' + NodeTests.get_test_prefix() + 'rwo/fileA', 'w')
             op.write("hello")
@@ -746,7 +747,6 @@ class NodeTests(unittest.TestCase):
         self.assertNotError(out_msg)
         self.assertEqual(out_msg['msg'], 'remove_failed')
         self.assertEqual(out_msg['reason'], 'target_does_not_exists')
-
 
     def test_zpool_status(self):
         in_msg = {'msg': 'zpool_status', }
@@ -871,8 +871,10 @@ class NodeTests(unittest.TestCase):
         self.assertTrue(os.path.exists(
             '/' + NodeTests.get_test_prefix() + 'to_1/one'))
         self.assertSnapshot('.ffs_testing/to_1', 'a')
-        self.assertEqual(read_file('/' + NodeTests.get_test_prefix() + 'to_1/one'), 'hello')
-        self.assertFalse(os.path.exists('/' + NodeTests.get_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
+        self.assertEqual(
+            read_file('/' + NodeTests.get_test_prefix() + 'to_1/one'), 'hello')
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests.get_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
 
     def test_send_snapshot_invalid_ffs(self):
         # so that the actual dir differes from the snapshot and we can test
@@ -907,7 +909,7 @@ class NodeTests(unittest.TestCase):
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue("invalid snapshot" in out_msg['content'])
-        
+
     def test_send_snapshot_invalid_target(self):
         subprocess.check_call(
             ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_4'])
@@ -930,7 +932,7 @@ class NodeTests(unittest.TestCase):
         in_msg = {'msg': 'send_snapshot',
                   'ffs': '.ffs_testing/from_4',
                   'snapshot': 'a',
-                  'target_host': '203.0.113.0', # that ip is reserved for documentation purposes
+                  'target_host': '203.0.113.0',  # that ip is reserved for documentation purposes
                   'target_user': 'ffs',
                   'target_ssh_cmd': target_ssh_cmd,
                   'target_path': '/%%ffs%%/.ffs_testing/to_4',
@@ -952,13 +954,13 @@ class NodeTests(unittest.TestCase):
             ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_5/suba'])
         subprocess.check_call(
             ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_5/suba'])
- 
-        write_file('/' + NodeTests.get_test_prefix() + 'from_5/suba/two', 'hello2')
+
+        write_file('/' + NodeTests.get_test_prefix() +
+                   'from_5/suba/two', 'hello2')
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_5@a'])
         subprocess.check_call(
             ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_5/suba@a'])
-
 
         in_msg = {'msg': 'send_snapshot',
                   'ffs': '.ffs_testing/from_5',
@@ -972,9 +974,13 @@ class NodeTests(unittest.TestCase):
         self.assertNotError(out_msg)
         self.assertSnapshot('.ffs_testing/from_5', 'a')
         self.assertSnapshot('.ffs_testing/to_5', 'a')
-        self.assertEqual(read_file('/' + NodeTests().get_test_prefix() + 'to_5/one'), 'hello')
-        self.assertTrue(os.path.exists('/' + NodeTests().get_test_prefix() + 'to_5/suba')) # the emty directory does get placed there
-        self.assertFalse(os.path.exists('/' + NodeTests().get_test_prefix() + 'to_5/suba/two'))
+        self.assertEqual(
+            read_file('/' + NodeTests().get_test_prefix() + 'to_5/one'), 'hello')
+        # the emty directory does get placed there
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests().get_test_prefix() + 'to_5/suba'))
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests().get_test_prefix() + 'to_5/suba/two'))
 
     def test_deploy(self):
         import zipfile
@@ -986,7 +992,8 @@ class NodeTests(unittest.TestCase):
         f = zipfile.ZipFile(buffer, "a", zipfile.ZIP_DEFLATED, False)
         f.writestr("test_deploy.txt", test_string)
         f.close()
-        in_msg = {'msg': 'deploy', 'node.zip': base64.b64encode(buffer.getvalue()).decode('utf-8')}
+        in_msg = {'msg': 'deploy', 'node.zip': base64.b64encode(
+            buffer.getvalue()).decode('utf-8')}
         fn = '/home/ffs/test_deploy.txt'
         if os.path.exists(fn):
             self.assertNotEqual(read_file(fn), test_string)
@@ -995,7 +1002,29 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(read_file(fn), test_string)
 
     def test_new_in_readonly_parent(self):
-        raise NotImplementedError()
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_6'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_6/a'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'to_6'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'ffs:main=on', NodeTests.get_test_prefix() + 'from_6'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'ffs:main=on', NodeTests.get_test_prefix() + 'from_6/a'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'ffs:main=off', NodeTests.get_test_prefix() + 'to_6'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'set', 'readonly=on', NodeTests.get_test_prefix() + 'to_6'])
+        in_msg = {'msg': 'new',
+                  'ffs': '.ffs_testing/to_6/a',
+                  'properties': {},
+                  }
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'to_6/a'))
+
 
 if __name__ == '__main__':
     unittest.main()
