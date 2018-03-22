@@ -32,6 +32,9 @@ class InconsistencyError(ManualInterventionNeeded):
 class MoveInProgress(ValueError):
     pass
 
+class RestartError(Exception):
+    pass
+
 
 def needs_startup(func):
     def wrapper(self, *args, **kwargs):
@@ -66,7 +69,8 @@ class Engine:
         self.non_node_config = non_node_config
         allowed_options = {'chown_user', 'chmod_rights', 'ssh_cmd', 'inform',
                            'complain', 'enforced_properties', 'decide_snapshots_to_keep',
-                           'decide_snapshots_to_send'}
+                           'decide_snapshots_to_send',
+                           'decide_targets', 'name_translator'}
         too_many_options = set(non_node_config).difference(allowed_options)
         if too_many_options:
             raise ValueError("Invalid option set: %s" % (too_many_options, ))
@@ -82,6 +86,10 @@ class Engine:
         if 'decide_snapshots_to_send' not in non_node_config:
             non_node_config[
                 'decide_snapshots_to_send'] = lambda dummy_ffs_name, snapshots: snapshots
+        if 'decide_targets' not in non_node_config:
+            non_node_config['decide_targets'] = self.random_target()
+        if 'name_translator' not in non_node_config:
+            non_node_config['name_translator'] = lambda name: name
         if 'ssh_cmd' not in non_node_config:
             non_node_config['ssh_cmd'] = sh_cmd = ['ssh', '-o', 'StrictHostKeyChecking=no', '-i',
                                                    '/home/ffs/.ssh/id_rsa']  # default ssh command, #-i is necessary for 'sudo rsync'
@@ -99,6 +107,10 @@ class Engine:
         self.write_authorized_keys()
         self.deployment_zip_filename = os.path.join('node', 'node.zip')
         self.build_deployment_zip()
+    
+    def random_target(self):
+        import random
+        return random.choice(self.node_config)
 
     def write_authorized_keys(self):
         if not os.path.exists(os.path.join('node', 'home', '.ssh')):
@@ -178,8 +190,38 @@ class Engine:
             return self.client_move_main(msg)
         elif command == 'deploy':
             return self.client_deploy()
+        elif command == 'service_que':
+            return self.client_service_que()
+        elif command == 'service_is_started':
+            return self.client_service_is_started()
+        elif command == 'service_restart':
+            return self.client_service_restart()
+        elif command == 'list_ffs':
+            return self.client_list_ffs()
         else:
             raise ValueError("invalid message from client, ignoring")
+
+    def client_service_restart(self):
+        self.logger.info("Client requested restart")
+        raise RestartError()
+
+    @needs_startup
+    def client_list_ffs(self):
+        print(self.model)
+        result = {}
+        for ffs, ffs_info in self.model.items():
+            result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x != ffs_info['_main'] and not x.startswith('_')]
+        return result
+
+
+    def client_service_is_started(self):
+        return {'started': self.startup_done}
+
+    def client_service_que(self):
+        res = {}
+        for node in self.sender.outgoing:
+            res[node] = [(x.status, x.msg) for x in self.sender.outgoing[node]]
+        return res
 
     def client_deploy(self):
         with open(self.deployment_zip_filename, 'rb') as op:
@@ -208,32 +250,43 @@ class Engine:
         if 'targets' not in msg:
             raise CodingError("No targets specified")
         if not msg['targets']:
-            raise CodingError("Targets empty")
-        for x in msg['targets']:
+            msg['targets'] = self.non_node_config['decide_targets'](ffs)
+            if not isinstance(msg['targets'], list):
+                self.fault("config.decide_targets returned non-list")
+        targets = [self.non_node_config['name_translator'](x) for x in msg['targets']]
+        for x in targets:
             if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
         if ffs in self.model:
             raise ValueError("Already present, can't create as new")
-        main = msg['targets'][0]
+        main = targets[0]
+        any_found = False
         for node in self.node_config:
-            if node in msg['targets']:
+            if node in targets:
+                props = self.non_node_config['enforced_properties'].copy()
                 if main == node:
-                    props = {'ffs:main': 'on',
+                    props.update({'ffs:main': 'on',
                              'readonly': 'off'
-                             }
+                             })
                 else:
-                    props = {'ffs:main': 'off',
+                    props.update({'ffs:main': 'off',
                              'readonly': 'on'
-                             }
+                             })
                 self.send(node,
                           {'msg': 'new',
                            'ffs': msg['ffs'],
                            'properties': props
                            }
                           )
+                any_found = True
                 if ffs not in self.model:
-                    self.model[ffs] = {'_new': True, '_main': main}
-                self.model[ffs][node] = {}
+                    self.model[ffs] = { '_main': main}
+                self.model[ffs][node] = {'_new': True}
+        if any_found:
+            return {'ok': True}
+        else:
+            return {'error': 'no_targets'}
+
 
     @needs_startup
     def client_remove_target(self, msg):
@@ -689,7 +742,7 @@ class Engine:
         if node not in self.model[ffs]:
             self.fault("node_new_done from ffs not on that node",
                        msg, CodingError)
-        if self.model[ffs][node] != {}:
+        if self.model[ffs][node] != {'_new': True}:
             self.fault(
                 "node_new_done from an node/ffs where we already have data", msg, CodingError)
         self.model[ffs][node] = {
@@ -697,6 +750,7 @@ class Engine:
             'properties': msg['properties']
         }
         main = self.model[ffs]['_main']
+
         # This happens if we were actually a add_new_target
         if node != main and self.model[ffs][main]['snapshots']:
             for sn in self.model[ffs][main]['snapshots']:

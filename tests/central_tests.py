@@ -609,6 +609,21 @@ class PreStartupRaisesTests(EngineTests):
 
 class NewTests(PostStartupTests):
 
+
+    def test_new_status_disappears_upon_creation(self):
+        raise NotImplementedError()
+
+
+    def test_capture_while_new(self):
+        raise NotImplementedError()
+
+    def test_remove_while_new(self):
+        raise NotImplementedError()
+
+    def test_move_while_new(self):
+        raise NotImplementedError()
+
+
     def test_new_raises_on_existing(self):
         e, outgoing_messages = self.ge()
 
@@ -2354,6 +2369,17 @@ class OutgoingMessageTests(unittest.TestCase):
         # this reflects the submission order, not the send order!
         self.assertEqual(sent[2].msg['msg'], 'send_snapshot')
 
+
+    def test_disallowed_naming_config(self):
+        # test to disallow ffs/20xx_project_ag_...
+        raise NotImplementedError()
+
+    def test_client_list_ffs_in_case_of_new(self):
+        raise NotImplementedError()
+        
+    
+    def test_new_sets_default_properties(self):
+        raise NotImplementedError()
 
 if __name__ == '__main__':
     unittest.main()

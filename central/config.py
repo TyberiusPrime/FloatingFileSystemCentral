@@ -50,24 +50,22 @@ nodes = {
         'storage_prefix': 'mm/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
     },
-    'pcmt335': {
-        'hostname': 'donna',
-        'storage_prefix': 'donna/ffs',
-        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVBWJOP1VCBDLbgp6uChMD/PSKAg2VoqUAP/ztT5CuvuEXfnRJbrghVsZ6r08ttOYD3JrtVmclclUPqs3ValVORpmuCydxU9zSGcmtca4JtooDi2aBYBLy4KlOPM30EQqEvGFcl+lRLJW6rHBO8KC28nbpDHEgZauCbDKA0PvLDT71XvDZAaJd7VKz00nsI+7kc6Ez2wkXnENNCWLEtC0Sw7elOn17Td2JoHkpi8TSk7W8HiRPJSkJOA1jkkgrxYDfC0TPTe85WML2ah9I3nz/iLBxPSooGY+g4CacKnaS0i6p7IYMqTocchjjmlHhSIMrwgbfxhkXM5wIQKx4D77R ffs@pcmt335'
-    }
+    #'pcmt335': {
+        #'hostname': 'donna',
+        #'storage_prefix': 'donna/ffs',
+        #'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVBWJOP1VCBDLbgp6uChMD/PSKAg2VoqUAP/ztT5CuvuEXfnRJbrghVsZ6r08ttOYD3JrtVmclclUPqs3ValVORpmuCydxU9zSGcmtca4JtooDi2aBYBLy4KlOPM30EQqEvGFcl+lRLJW6rHBO8KC28nbpDHEgZauCbDKA0PvLDT71XvDZAaJd7VKz00nsI+7kc6Ez2wkXnENNCWLEtC0Sw7elOn17Td2JoHkpi8TSk7W8HiRPJSkJOA1jkkgrxYDfC0TPTe85WML2ah9I3nz/iLBxPSooGY+g4CacKnaS0i6p7IYMqTocchjjmlHhSIMrwgbfxhkXM5wIQKx4D77R ffs@pcmt335'
+    #}
 
 
 }
 
-def decide_nodes(ffs_name):
-    """Decide who is master and what targets are going to be used"""
-    import random
-    if ffs_name.startswith('datasets'):
-            return ['ensembl']
-    if random.random() < 0.5:
-        return ['pcmt391', 'pcmt321']
-    else:
-        return ['pcmt321', 'pcmt391']
+def name_translator(incoming_name):
+    for node, node_info in nodes.items():
+        if node == incoming_name:
+            return node
+        if node_info['hostname'] == incoming_name:
+            return node
+    return incoming_name
 
 # output channel
 
@@ -143,6 +141,9 @@ def decide_snapshots_to_keep(dummy_ffs_name, snapshots):
             snapshot_times.remove((parse_snapshot(found), found))
             keep.add(found)
     return keep
+
+def decide_targets(dummy_ffs):
+    return ['mm']
 
 
 chown_user = 'finkernagel'

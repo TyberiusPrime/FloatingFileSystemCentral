@@ -994,6 +994,8 @@ class NodeTests(unittest.TestCase):
         self.assertNotError(out_msg)
         self.assertEqual(read_file(fn), test_string)
 
+    def test_new_in_readonly_parent(self):
+        raise NotImplementedError()
 
 if __name__ == '__main__':
     unittest.main()

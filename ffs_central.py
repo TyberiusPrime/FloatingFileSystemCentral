@@ -116,6 +116,8 @@ def main():
         non_node_config['enforced_properties'] = config.enforced_properties
         non_node_config['decide_snapshots_to_keep'] = config.decide_snapshots_to_keep
         non_node_config['decide_snapshots_to_send'] = config.decide_snapshots_to_send
+        non_node_config['decide_targets'] = config.decide_targets
+        non_node_config['name_translator'] = config.name_translator
 
         our_engine = engine.Engine(config.nodes, None,
                                    config.logger,
@@ -130,13 +132,17 @@ def main():
         reactor.addSystemEventTrigger('before', 'shutdown', on_shutdown)
 
         def handle_message(msgId, *args):
+            global restart
             try:
                 str_payload = args[0].decode('utf-8')
                 j = json.loads(str_payload)
-                logger.info("Incoming message: %s", pprint.pformat(j))
+                logger.info("Incoming client message: %s", pprint.pformat(j))
                 reply = our_engine.incoming_client(j)
                 if reply is None:
                     reply = {'error': 'no_return_value_set'}
+            except engine.RestartError:
+                restart = True
+                reply = {"ok": True}
             except Exception as e:
                 import traceback
                 logger.error(traceback.format_exc())
@@ -149,6 +155,8 @@ def main():
                         len(reply), repr(reply)[:80])
             reply = reply.encode("utf-8")
             s.reply(msgId, reply)
+            if restart:
+                reactor.stop()
 
         s.gotMessage = handle_message
         logger.debug("Entering reactor")
