@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import logging
 import time
+
 class DefaultConfig:
 
     def get_nodes(self):
@@ -44,6 +45,12 @@ class DefaultConfig:
     
     def get_chmod_rights(self, dummy_ffs):
         return 'uog+rwX'
+    
+    def accepted_ffs_name(self, ffs):
+        """False will lead to an execption when calling client_new / ffs.py new.
+        Names are not filtered otherwise!
+        """
+        return True
 
     def decide_snapshots_to_send(self, dummy_ffs_name, snapshots):
         """What snapshots for this ffs should be transmitted?"""
@@ -125,16 +132,24 @@ class CheckedConfig:
 
     @must_return_type(dict)
     def get_enforced_properties(self):
-        return self.config.get_enforced_properties()
+        res = self.config.get_enforced_properties()
+        if not isinstance(res, dict):
+            raise ValueError("get_default_properties must return a dict")
+        for k in res:
+            res[k] = str(res[k])
+        return res
 
     @must_return_type(dict)
     def get_default_properties(self):
         res = self.config.get_default_properties()
+        if not isinstance(res, dict):
+            raise ValueError("get_default_properties must return a dict")
         enforced = self.get_enforced_properties()
         for k in res:
             if k in enforced:
                 raise ValueError(
                     "Duplicate property in default and enforced: %s" % k)
+            res[k] = str(res[k])
         return res
 
     @must_return_type(str)
@@ -177,6 +192,11 @@ class CheckedConfig:
     def find_node(self, incoming_name):
         found = self.config.find_node(incoming_name)
         if not found in self.get_nodes():
-            raise ValueError("invalid target: %s" % incoming_name)
+            from .engine import InvalidTarget
+            raise InvalidTarget("invalid target: %s" % incoming_name)
         return found
+
+    @must_return_type(bool)
+    def accepted_ffs_name(self, ffs):
+        return self.config.accepted_ffs_name(ffs)
 

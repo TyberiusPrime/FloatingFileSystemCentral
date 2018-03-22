@@ -101,6 +101,24 @@ class ClientTests(unittest.TestCase):
     def test_list_ffs_json(self):
         raise NotImplementedError()
 
+    def test_capture(self):
+        raise NotImplementedError()
+
+    def test_list_orphans(self):
+        raise NotImplementedError()
+
+    def test_list_targets(self):
+        raise NotImplementedError()
+
+
+    def test_add_target(self):
+        raise NotImplementedError()
+
+    def test_remove_target(self):
+        pass
+
+    def test_rename(self):
+        pass
 
 
 

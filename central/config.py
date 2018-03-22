@@ -42,13 +42,15 @@ from . default_config import DefaultConfig
 
 
 class Config(DefaultConfig):
-    nodes = {
-    'pcmt283': {
-        'hostname': 'mm',
-        'storage_prefix': 'mm/ffs',
-        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
-    },
-    }
+
+    def get_nodes(self):
+        return {
+            'pcmt283': {
+                'hostname': 'mm',
+                'storage_prefix': 'mm/ffs',
+                'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
+            },
+        }
     #'pcmt335': {
         #'hostname': 'donna',
         #'storage_prefix': 'donna/ffs',
@@ -100,7 +102,7 @@ class Config(DefaultConfig):
             print("-----------EndInform----------", file=op)
             print('', file=op)
 
-    def decide_snapshots_to_keep(dummy_ffs_name, snapshots):
+    def decide_snapshots_to_keep(self, dummy_ffs_name, snapshots):
         """  
         capture-snapshots relevant are labled like 'ffs-2017-04-24-16-43-32-604
 
@@ -158,8 +160,5 @@ class Config(DefaultConfig):
         return keep
 
 
-
-
- 
 config = Config()
-all = [config] 
+all = [config]

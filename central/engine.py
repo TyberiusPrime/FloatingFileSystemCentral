@@ -29,9 +29,21 @@ class CodingError(ManualInterventionNeeded):
 class InconsistencyError(ManualInterventionNeeded):
     pass
 
-
-class MoveInProgress(ValueError):
+class InProgress(ValueError):
     pass
+
+class MoveInProgress(InProgress):
+    pass
+
+class NewInProgress(InProgress):
+    pass
+
+class RemoveInProgress(InProgress):
+    pass
+
+class InvalidTarget(KeyError):
+    pass
+
 
 class RestartError(Exception):
     pass
@@ -143,8 +155,8 @@ class Engine:
             return self.client_new(msg)
         elif command == 'remove_target':
             return self.client_remove_target(msg)
-        elif command == 'add_target':
-            return self.client_add_target(msg)
+        elif command == 'add_targets':
+            return self.client_add_targets(msg)
         elif command == 'capture':
             return self.client_capture(msg)
         elif command == 'chown_and_chmod':
@@ -201,7 +213,7 @@ class Engine:
             self.sender.send_message(node_name, node_info, msg)
 
     def check_ffs_name(self, path):
-        if not re.match("^[a-z0-9][A-Za-z0-9/_-]*$", path):
+        if not re.match("^[a-zA-Z0-9][A-Za-z0-9/_-]*$", path):
             raise ValueError("Invalid path: %s" % repr(path))
 
     @needs_startup
@@ -210,8 +222,12 @@ class Engine:
             raise CodingError("No ffs specified")
         ffs = msg['ffs']
         self.check_ffs_name(ffs)
+        if not self.config.accepted_ffs_name(ffs):
+            raise ValueError("Config rejects this ffs name")
         if 'targets' not in msg:
             raise CodingError("No targets specified")
+        if not isinstance(msg['targets'], list):
+            raise CodingError("targets must be alist")
         if not msg['targets']:
             msg['targets'] = self.config.decide_targets(ffs)
             if not isinstance(msg['targets'], list):
@@ -226,7 +242,8 @@ class Engine:
         any_found = False
         for node in self.node_config:
             if node in targets:
-                props = self.config.get_enforced_properties().copy()
+                props = self.config.get_default_properties().copy()
+                props.update(self.config.get_enforced_properties())
                 if main == node:
                     props.update({'ffs:main': 'on',
                              'readonly': 'off'
@@ -258,13 +275,15 @@ class Engine:
         if 'target' not in msg:
             raise CodingError("target not specified")
         ffs = msg['ffs']
-        target = msg['target']
+        target = self.config.find_node(msg['target'])
         if ffs not in self.model:
             raise ValueError("FFs unknown")
         if target not in self.model[ffs]:
             raise ValueError("Target not in list of targets")
         if target == self.model[ffs]['_main']:
             raise ValueError("Target is main - not removing")
+        if self.model[ffs][target].get('_new', False):
+            raise NewInProgress("Target is still new - can not remove. Try again later.")
         if self.model[ffs].get('_moving', False):
             raise ValueError("FFS is moving, can't remove targets during move. Try again later.")
         #little harm in sending it again if we're already removing
@@ -272,27 +291,48 @@ class Engine:
                 {'msg': 'remove',
                 'ffs': ffs}
                 )
-        self.model[ffs][target]['removing'] = True
+        self.model[ffs][target] = {'removing': True}
 
     @needs_startup
-    def client_add_target(self, msg):
+    def client_add_targets(self, msg):
         if 'ffs' not in msg:
             raise CodingError("No ffs specified")
-        if 'target' not in msg:
-            raise CodingError("target not specified")
+        if 'targets' not in msg:
+            raise CodingError("target nots specified")
         ffs = msg['ffs']
-        target = msg['target']
         if ffs not in self.model:
             raise ValueError("FFs unknown")
-        if target in self.model[ffs]:
-            raise ValueError("Target already in list")
-        self.send(target,
-                  {'msg': 'new',
-                   'ffs': ffs,
-                   'properties': {'ffs:main': 'off', 'readonly': 'on'}
-                   }
-                  )
-        self.model[ffs][target] = {'_new': True}
+        if not isinstance(msg['targets'], list):
+            raise CodingError("targets must be alist")
+        
+        targets = [self.config.find_node(x) for x in msg['targets']]
+        targets = sorted(set(targets))
+        if not targets:
+            raise ValueError("Empty target list")
+        for target in targets:
+            if target in self.model[ffs]:
+                if self.model[ffs][target].get('removing', False):
+                    raise RemoveInProgress("Remove in progress - can't add again before remove is completed")
+                else:
+                    raise ValueError("Target already in list")
+        for target in targets:
+            props = self.config.get_default_properties().copy()
+            props.update(self.config.get_enforced_properties())
+            props.update({'ffs:main': 'off', 'readonly': 'on'})
+            self.send(target,
+                    {'msg': 'new',
+                    'ffs': ffs,
+                    'properties': props,
+                    }
+                    )
+            self.model[ffs][target] = {'_new': True}
+
+
+    def any_new(self, ffs):
+        for node, node_info in self.model[ffs].items():
+            if not node.startswith('_') and node_info.get('_new', False):
+                return True
+        return False
 
     @needs_startup
     def client_capture(self, msg):
@@ -301,6 +341,8 @@ class Engine:
         ffs = msg['ffs']
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
+        if self.any_new(ffs):
+            raise NewInProgress("New targets are currently being added to this ffs. Please try again later.")
         if self.is_ffs_moving(ffs):
             raise MoveInProgress(
                 "This ffs is moving to a different main - you should not have been able to change the files anyhow")
@@ -707,6 +749,8 @@ class Engine:
             print(self.model[ffs][node])
             self.fault(
                 "node_new_done from an node/ffs where we already have data", msg, CodingError)
+        if msg['properties']['ffs:main'] == 'on' and not self.model[ffs]['_main'] == node:
+            self.fault("ffs:main=on from non-main node", msg, CodingError)
         self.model[ffs][node] = {
             'snapshots': [],
             'properties': msg['properties']

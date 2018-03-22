@@ -9,11 +9,11 @@ from twisted.internet import reactor, task, error
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqREPConnection
 import hashlib
 import logging
-from central import config
-logger = config.logger
+from central import config, default_config
+cfg = default_config.CheckedConfig(config.config)
+logger = cfg.config.get_logging()
 from central import engine
 from central import ssh_message_que
-from central import default_config
 from twisted.python import log
 import pwd
 import atexit
@@ -40,7 +40,7 @@ def check_if_changed():
                 h.update(d)
     if file_changed_hash is not None and file_changed_hash != h.hexdigest():
         logger.info('FloatingFileSystem code changed - restarting')
-        config.inform('FloatingFileSystem code changed - restarting')
+        cfg.inform('FloatingFileSystem code changed - restarting')
         restart = True
         reactor.stop()
     file_changed_hash = h.hexdigest()
@@ -106,9 +106,8 @@ def main():
     auth.configure_curve(domain='*', location=zmq.auth.CURVE_ALLOW_ANY)
     try:
 
-        e = ZmqEndpoint('bind', 'tcp://*:%s' % config.zmq_port)
+        e = ZmqEndpoint('bind', 'tcp://*:%s' % cfg.get_zmq_port())
         s = EncryptedZmqREPConnection(zf, e)
-        cfg = default_config.CheckedConfig(config.config)
         our_engine = engine.Engine(cfg, sender=None)
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)
@@ -134,7 +133,7 @@ def main():
                 import traceback
                 logger.error(traceback.format_exc())
                 logger.error("Exception occured: %s", repr(e))
-                config.complain("Exception occured handling %s: %s" %
+                cfg.complain("Exception occured handling %s: %s" %
                                 (j, repr(e)))
                 reply = {"error": "exception", 'content': repr(e)}
             reply = json.dumps(reply)

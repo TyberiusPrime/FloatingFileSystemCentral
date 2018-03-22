@@ -583,14 +583,16 @@ class StartupTests(EngineTests):
 
 class PostStartupTests(EngineTests):
 
-    def ge(self):
+    def ge(self, cfg=None):
         nodes = collections.OrderedDict()
         nodes['alpha'] = {'storage_prefix': '/alpha',
                           'hostname': 'alpha', 'public_key': b'a'}
         nodes['beta'] = {'storage_prefix': '/beta',
                          'hostname': 'beta', 'public_key': b'a'}
-        cfg = self._get_test_config()
-        cfg._nodes = nodes
+        if cfg is None:
+            cfg = self._get_test_config()
+        if not hasattr(cfg, '_nodes'):
+            cfg._nodes = nodes
         fm = FakeMessageSender()
         e = engine.Engine(
             default_config.CheckedConfig(cfg),
@@ -633,18 +635,6 @@ class PreStartupRaisesTests(EngineTests):
 
 class NewTests(PostStartupTests):
 
-    def test_new_status_disappears_upon_creation(self):
-        raise NotImplementedError()
-
-    def test_capture_while_new(self):
-        raise NotImplementedError()
-
-    def test_remove_while_new(self):
-        raise NotImplementedError()
-
-    def test_move_while_new(self):
-        raise NotImplementedError()
-
     def test_new_raises_on_existing(self):
         e, outgoing_messages = self.ge()
 
@@ -667,12 +657,25 @@ class NewTests(PostStartupTests):
             e.incoming_client({"msg": 'new', 'targets': ['alpha']})
         self.assertRaises(ValueError, inner)
 
-    def test_new_raises_on_empty_targets(self):
+    def test_non_list_targets_raises(self):
         e, outgoing_messages = self.ge()
-
         def inner():
-            e.incoming_client({"msg": 'new', 'ffs': 'one', 'targets': []})
-        self.assertRaises(ValueError, inner)
+                e.incoming_client({'msg':
+                           'new',
+                           'ffs': 'two',
+                           'targets': 'gamma'})
+ 
+    def test_new_call_deceide_targets_on_empty_targets(self):
+        cfg = self._get_test_config()
+        called = [False]
+        def decide_targets(ffs):
+            called[0] = True
+            return ['alpha']
+        cfg.decide_targets = decide_targets
+        e, outgoing_messages = self.ge(cfg)
+
+        e.incoming_client({"msg": 'new', 'ffs': 'two', 'targets': []})
+        self.assertTrue(called[0])
 
     def test_new_raises_on_non_existing_targets(self):
         e, outgoing_messages = self.ge()
@@ -680,7 +683,7 @@ class NewTests(PostStartupTests):
         def inner():
             e.incoming_client(
                 {"msg": 'new', 'ffs': 'one', 'targets': ['gamma']})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.InvalidTarget, inner)
 
     def test_new_single_node(self):
         e, outgoing_messages = self.ge()
@@ -767,6 +770,187 @@ class NewTests(PostStartupTests):
                          'properties']['ffs:main'], 'off')
         self.assertEqual(e.model['two']['alpha'][
                          'properties']['readonly'], 'on')
+                        
+
+    def test_name_ok_callback(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'new', 'ffs': 'Three',
+                           'targets': ['beta', 'alpha']})
+
+        cfg = self._get_test_config()
+        cfg.accepted_ffs_name = lambda ffs: ffs[0] != ffs[0].upper()
+        e, outgoing_messages = self.ge(cfg)
+
+        def inner():
+            e.incoming_client({"msg": 'new', 'ffs': 'Three',
+                           'targets': ['beta', 'alpha']})
+        self.assertRaises(ValueError, inner)
+
+
+    def test_new_dual_main_faults(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'new', 'ffs': 'two',
+                           'targets': ['beta', 'alpha']})
+        self.assertEqual(len(outgoing_messages), 2)
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        def inner():
+            e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'alpha',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        self.assertRaises(engine.CodingError, inner)
+        self.assertTrue(e.faulted)
+ 
+    def test_capture_while_new(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'new', 'ffs': 'two',
+                           'targets': ['beta', 'alpha']})
+        self.assertEqual(len(outgoing_messages), 2)
+        #any node in new state prevents capture
+        def inner():
+            e.incoming_client({'msg':'capture', 'ffs': 'two'})
+        self.assertRaises(ValueError, inner)
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        self.assertRaises(ValueError, inner)
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'alpha',
+             'properties': {
+                 'ffs:main': 'off',
+                 'readonly': 'on'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg':'capture', 'ffs': 'two'})
+        self.assertEqual(1, len(outgoing_messages))
+
+        
+    def test_remove_while_new(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'new', 'ffs': 'two',
+                           'targets': ['beta']})
+        self.assertEqual(len(outgoing_messages), 1)
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        self.assertFalse('_new' in e.model['two']['beta'])
+        self.assertFalse('alpha' in e.model['two'])
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['alpha']})
+        self.assertTrue('alpha' in e.model['two'])
+        self.assertTrue(e.model['two']['alpha']['_new'])
+        def inner():
+            e.incoming_client({'msg': 'remove_target', 'ffs': 'two', 'target': 'alpha'})
+        self.assertRaises(engine.NewInProgress, inner)
+
+    def test_remove_while_new_unrelated(self):
+        cfg = self._get_test_config()
+        nodes = {}
+        nodes['alpha'] = {'storage_prefix': '/alpha',
+                          'hostname': 'alpha', 'public_key': b'a'}
+        nodes['beta'] = {'storage_prefix': '/beta',
+                         'hostname': 'beta', 'public_key': b'a'}
+        nodes['gamma'] = {'storage_prefix': '/gamma',
+                         'hostname': 'gamma', 'public_key': b'a'}
+        cfg._nodes = nodes
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'gamma',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                             }
+                             }
+                         }
+                         })
+        outgoing_messages.clear()
+        e.incoming_client({"msg": 'new', 'ffs': 'two',
+                           'targets': ['beta', 'alpha', 'gamma']})
+        self.assertEqual(len(outgoing_messages), 3)
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'gamma',
+             'properties': {
+                 'ffs:main': 'off',
+                 'readonly': 'on'
+             }
+             }
+        )
+
+        self.assertFalse('_new' in e.model['two']['beta'])
+        self.assertFalse('_new' in e.model['two']['gamma'])
+        self.assertTrue('_new' in e.model['two']['alpha'])
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'two', 'target': 'gamma'})
+        self.assertTrue(e.model['two']['gamma'] == {'removing': True})
+
+    def test_new_while_removing(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({'msg': "remove_target", 'ffs': 'one', 'target': 'alpha'})
+        self.assertTrue(e.model['one']['alpha'] == {'removing': True})
+        def inner():
+            e.incoming_client({'msg': 'add_targets', 'ffs': 'one', 'targets': ['alpha']})
+        self.assertRaises(engine.RemoveInProgress, inner)
+
+    def test_move_while_new(self):
+        raise NotImplementedError()
+
+    def test_new_sets_default_properties(self):
+        cfg = self._get_test_config()
+        cfg.get_default_properties = lambda: {'ffs:test': 23} # also tests stringification
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_client({'msg': "new", 'ffs': 'two', 'targets': ['alpha']})
+        self.assertEqual(1, len(outgoing_messages))
+        self.assertEqual(outgoing_messages[0]['properties'], {
+            'ffs:main': 'on',
+            'readonly': 'off',
+            'ffs:test': '23'
+        })
+
+
 
 
 def remove_snapshot_from_message(msg):
@@ -982,7 +1166,7 @@ class RemoveTarget(PostStartupTests):
         def inner():
             e.incoming_client(
                 {"msg": 'remove_target', 'ffs': 'one', 'target': 'gamma'})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.InvalidTarget, inner)
 
     def test_raises_missing_ffs(self):
         e, outgoing_messages = self.ge()
@@ -1047,7 +1231,7 @@ class RemoveTarget(PostStartupTests):
 
         def inner():
             e.incoming_client(
-                {'msg': 'add_target', 'ffs': 'one', 'target': 'beta'})
+                {'msg': 'add_targets', 'ffs': 'one', 'target': ['beta']})
         # technically, an 'already in list' error
         self.assertRaises(ValueError, inner)
 
@@ -1152,10 +1336,65 @@ class RemoveTarget(PostStartupTests):
                 {'msg': 'move_main', 'ffs': 'one', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
 
+    def test_raises_invalid_target(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'shu'})
+        self.assertRaises(engine.InvalidTarget, inner)
 
-class AddTarget(PostStartupTests):
+    def test_double_delete(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
+        self.assertTrue('removing' in e.model['one']['alpha'])
+        #ignored
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
+        #now remove...
+        e.incoming_node({'msg': 'remove_done', 'ffs': 'one', 'from': 'alpha'})
+        def inner():
+            e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
+        self.assertRaises(ValueError, inner)
 
-    def ge(self):
+
+    
+    def test_find_node(self):
+        def find_node(name):
+            if name == 'shu':
+                return 'gamma'
+            else:
+                return default_config.DefaultConfig.find_node(cfg, name)
+        cfg = self._get_test_config()
+        cfg.find_node = find_node
+        nodes = {}
+        nodes['alpha'] = {'storage_prefix': '/alpha',
+                          'hostname': 'alpha', 'public_key': b'a'}
+        nodes['beta'] = {'storage_prefix': '/beta',
+                         'hostname': 'beta', 'public_key': b'a'}
+        nodes['gamma'] = {'storage_prefix': '/gamma',
+                         'hostname': 'gamma', 'public_key': b'a'}
+        cfg._nodes = nodes
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'gamma',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'ffs:main': 'off',
+                             }
+                             }
+                         }
+                         }) 
+        self.assertTrue('gamma' in e.model['one'])
+        self.assertFalse(e.model['one']['gamma'].get('removing', False))
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'shu'})
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertEqual(outgoing_messages[0], {'msg': 'remove', 'ffs': 'one', 'to': 'gamma'})
+        self.assertEqual(e.model['one']['gamma'], {'removing': True})
+
+
+class AddTargetTests(PostStartupTests):
+
+    def ge(self, cfg=None):
         nodes = collections.OrderedDict()
         nodes['alpha'] = {'storage_prefix': '/alpha',
                           'hostname': 'alpha', 'public_key': b'a'}
@@ -1164,8 +1403,10 @@ class AddTarget(PostStartupTests):
         nodes['gamma'] = {'storage_prefix': '/gamma',
                           'hostname': 'gamma', 'public_key': b'a'}
         fm = FakeMessageSender()
-        cfg = self._get_test_config()
-        cfg._nodes = nodes
+        if cfg is None:
+            cfg = self._get_test_config()
+        if not hasattr(cfg, '_nodes'):
+            cfg._nodes = nodes
 
         e = engine.Engine(
             default_config.CheckedConfig(cfg),
@@ -1199,15 +1440,43 @@ class AddTarget(PostStartupTests):
 
         fm.outgoing.clear()
         return e, fm.outgoing
+    
+    def test_non_list_targets_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+                e.incoming_client({'msg':
+                           'add_targets',
+                           'ffs': 'one',
+                           'targets': 'gamma'})
+        self.assertRaises(ValueError, inner)
+    
+    def test_empty_list_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+                e.incoming_client({'msg':
+                           'add_targets',
+                           'ffs': 'one',
+                           'targets': []})
+        self.assertRaises(ValueError, inner)
+
+
+    def test_non_target_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+                e.incoming_client({'msg':
+                           'add_targets',
+                           'ffs': 'one',
+                           'targets': ['shu']})
+        self.assertRaises(engine.InvalidTarget, inner)
 
     def test_basic(self):
         e, outgoing_messages = self.ge()
         self.assertTrue('one' in e.model)
         self.assertFalse('gamma' in e.model['one'])
         e.incoming_client({'msg':
-                           'add_target',
+                           'add_targets',
                            'ffs': 'one',
-                           'target': 'gamma'})
+                           'targets': ['gamma']})
         self.assertEqual(outgoing_messages, [
             {'msg': 'new',
              'to': 'gamma',
@@ -1240,6 +1509,133 @@ class AddTarget(PostStartupTests):
         })
         self.assertEqual(len(outgoing_messages), 2)
 
+
+    def test_add_multiple_targets(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['beta']})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['gamma', 'alpha']})
+        self.assertEqual(2, len(outgoing_messages))
+        #alphabetical order!
+        self.assertEqual(outgoing_messages[0],
+            {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'two',
+                'properties': {'ffs:main': 'off', 'readonly': 'on'}
+            }
+        )
+        self.assertEqual(outgoing_messages[1],
+            {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'two',
+                'properties': {'ffs:main': 'off', 'readonly': 'on'}
+            }
+        )
+
+    def test_add_target_find_node(self):
+        def find_node(name):
+            if name == 'shu':
+                return 'gamma'
+            else:
+                return default_config.DefaultConfig.find_node(cfg, name)
+        cfg = self._get_test_config()
+        cfg.find_node = find_node
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['beta']})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['shu']})
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertTrue(e.model['two']['gamma']['_new'])
+
+    def test_repeated_target_handled(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['beta']})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'beta',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['gamma', 'gamma']})
+        self.assertEqual(1, len(outgoing_messages))
+
+
+    def test_add_target_default_properties(self):
+        cfg = self._get_test_config()
+        cfg.get_default_properties = lambda: {'ffs:test': 23} # also tests stringification
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_client({'msg': "new", 'ffs': 'two', 'targets': ['alpha']})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'alpha',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off',
+                 'ffs:test': '23'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['beta']})
+        self.assertEqual(1, len(outgoing_messages))
+        self.assertEqual(outgoing_messages[0]['properties'], {
+            'ffs:main': 'off',
+            'readonly': 'on',
+            'ffs:test': '23'
+        })
+
+    def test_add_target_enforced_properties(self):
+        cfg = self._get_test_config()
+        cfg.get_enforced_properties = lambda: {'ffs:test': 24} # also tests stringification
+        e, outgoing_messages = self.ge(cfg)
+        e.incoming_client({'msg': "new", 'ffs': 'two', 'targets': ['alpha']})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'alpha',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off',
+                 'ffs:test': '24'
+             }
+             }
+        )
+        outgoing_messages.clear()
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'two', 'targets': ['beta']})
+        self.assertEqual(1, len(outgoing_messages))
+        self.assertEqual(outgoing_messages[0]['properties'], {
+            'ffs:main': 'off',
+            'readonly': 'on',
+            'ffs:test': '24'
+        })
 
 class TestMove(PostStartupTests):
 
@@ -2402,17 +2798,7 @@ class OutgoingMessageTests(unittest.TestCase):
         # this reflects the submission order, not the send order!
         self.assertEqual(sent[2].msg['msg'], 'send_snapshot')
 
-    def test_disallowed_naming_config(self):
-        # test to disallow ffs/20xx_project_ag_...
-        raise NotImplementedError()
-
     def test_client_list_ffs_in_case_of_new(self):
-        raise NotImplementedError()
-
-    def test_new_sets_default_properties(self):
-        raise NotImplementedError()
-
-    def test_default_properties(self):
         raise NotImplementedError()
 
     def test_non_capture_chown_chmod(self):
