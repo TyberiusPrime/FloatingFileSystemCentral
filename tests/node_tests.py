@@ -1025,6 +1025,28 @@ class NodeTests(unittest.TestCase):
         self.assertTrue(os.path.exists(
             '/' + NodeTests.get_test_prefix() + 'to_6/a'))
 
+    def test_rename_sets_ffs_renamed_from(self):
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_7'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_7'])
+        write_file('/' + NodeTests.get_test_prefix() + 'from_7/one', 'hello')
+
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_7@a'])
+
+        in_msg = {'msg': 'rename',
+                  'ffs': '.ffs_testing/from_7',
+                  'new_name': '.ffs_testing/from_7_r'
+        }
+        self.assertSnapshot('.ffs_testing/from_7', 'a')
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertSnapshot('.ffs_testing/from_7_r', 'a')
+        self.assertEqual(read_file('/' + NodeTests.get_test_prefix() + 'from_7_r/one'), 'hello')
+        self.assertFalse(os.path.exists('/' + NodeTests.get_test_prefix() + 'from_7', ))
+        self.assertEqual(node.get_zfs_property(NodeTests.get_test_prefix() + 'from_7_r', 'ffs:renamed_from'),
+        '.ffs_testing/from_7')
 
 if __name__ == '__main__':
     unittest.main()

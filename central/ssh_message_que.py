@@ -35,11 +35,13 @@ class OutgoingMessages:
     def kill_unsent_messages(self):
         self.logger.warn("Killing all unsent messages!")
         for node in self.outgoing:
-            self.outgoing[node] = [x for x in self.outgoing[node] if x.status != 'unsent']
+            self.outgoing[node] = [x for x in self.outgoing[
+                node] if x.status != 'unsent']
 
     def send_message(self, node_name, node_info, msg):
-        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties', 'remove_snapshot', 'send_snapshot',
-            'new'):
+        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties',
+                              'remove_snapshot', 'send_snapshot', 'rename',
+                              'new'):
             self.logger.info(
                 "Msgfiltered to %s: %s", node_name, format_msg(msg))
             return
@@ -136,6 +138,7 @@ class OutgoingMessages:
                 pass
         #os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
 
+
 class OutgoingMessagesDryRun(OutgoingMessages):
     """Filter all messages that change the downstream.
     Useful to check whether the system will do 
@@ -148,7 +151,7 @@ class OutgoingMessagesDryRun(OutgoingMessages):
             self.logger.info(
                 "Msgfiltered to %s: %s", node_name, format_msg(msg))
             return
-   
+
 
 class LoggingProcessProtocol(protocol.ProcessProtocol):
 
@@ -166,7 +169,7 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
         return "LoggingProcessProtocol: %s" % self.cmd
 
     def connectionMade(self):
-        #self.logger.debug(
+        # self.logger.debug(
             #"Process started: %s, job_id=%s", format_msg(self.cmd), self.job_id)
         self.transport.write(json.dumps(self.cmd).encode('utf-8'))
         self.transport.closeStdin()  # tell them we're done
@@ -186,7 +189,8 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
             self.logger.error(
                 "ValueError when removing running proccess: %s", e)
         if self.terminated:
-            self.logger.info("Terminated job_id=%i, no result back to engine", self.job_id)
+            self.logger.info(
+                "Terminated job_id=%i, no result back to engine", self.job_id)
             return
 
         exit_code = reason.value.exitCode
@@ -202,5 +206,3 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
         self.logger.debug(
             "Process ended, return code 0, %s, job_id=%s, result: %s", format_msg(self.cmd), self.job_id, format_msg(result))
         self.job_done_calleback(self.job_id, result)
-
-

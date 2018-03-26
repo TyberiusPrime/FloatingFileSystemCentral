@@ -355,6 +355,27 @@ def msg_deploy(msg):
         os.chdir(org_dir)
 
 
+def msg_rename(msg):
+    ffs = msg['ffs']
+    full_ffs_path = find_ffs_prefix() + ffs
+    lf = list_ffs(False, True)
+    if full_ffs_path not in lf:
+        raise ValueError("invalid ffs")
+    if not 'new_name' in msg:
+        raise ValueError("no new_name set")
+    new_name = msg['new_name']
+    full_new_path = find_ffs_prefix() + new_name
+    if full_new_path in lf:
+        raise ValueError("new_name already exists")
+    subprocess.check_call(
+        ['sudo', 'zfs', 'rename', full_ffs_path, full_new_path])
+    subprocess.check_call(
+        ['sudo', 'zfs', 'set', "ffs:renamed_from=%s" % (ffs, ), full_new_path])
+    return {'msg': 'rename_done',
+            'ffs': ffs,
+            'new_name': new_name}
+
+
 def shell_cmd_rprsync(cmd_line):
     """The receiving end of an rsync sync"""
     def path_ok(target_path):
@@ -409,6 +430,9 @@ def dispatch(msg):
             result = msg_send_snapshot(msg)
         elif msg['msg'] == 'deploy':
             result = msg_deploy(msg)
+        elif msg['msg'] == 'rename':
+            result = msg_rename(msg)
+
         else:
             result = {'error': 'message_not_understood'}
     except Exception as e:

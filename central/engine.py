@@ -29,17 +29,26 @@ class CodingError(ManualInterventionNeeded):
 class InconsistencyError(ManualInterventionNeeded):
     pass
 
+
 class InProgress(ValueError):
     pass
+
 
 class MoveInProgress(InProgress):
     pass
 
+
 class NewInProgress(InProgress):
     pass
 
+
 class RemoveInProgress(InProgress):
     pass
+
+
+class RenameInProgress(InProgress):
+    pass
+
 
 class InvalidTarget(KeyError):
     pass
@@ -78,7 +87,7 @@ class Engine:
                     self.logger, self, self.config.get_ssh_cmd())
             else:
                 sender = ssh_message_que.OutgoingMessages(
-                self.logger, self, self.config.get_ssh_cmd())
+                    self.logger, self, self.config.get_ssh_cmd())
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
@@ -90,7 +99,7 @@ class Engine:
         self.write_authorized_keys()
         self.deployment_zip_filename = os.path.join('node', 'node.zip')
         self.build_deployment_zip()
-    
+
     def write_authorized_keys(self):
         if not os.path.exists(os.path.join('node', 'home', '.ssh')):
             os.makedirs(os.path.join('node', 'home', '.ssh'))
@@ -148,6 +157,8 @@ class Engine:
             self.node_remove_failed(msg)
         elif msg['msg'] == 'zpool_status':
             self.node_zpool_status(msg)
+        elif msg['msg'] == 'rename_done':
+            self.node_rename_done(msg)
         else:
             self.fault("Invalid msg from node: %s" % msg)
 
@@ -167,6 +178,8 @@ class Engine:
             return self.client_chown_and_chmod(msg)
         elif command == 'move_main':
             return self.client_move_main(msg)
+        elif command == 'rename':
+            return self.client_rename(msg)
         elif command == 'deploy':
             return self.client_deploy()
         elif command == 'service_que':
@@ -186,12 +199,11 @@ class Engine:
 
     @needs_startup
     def client_list_ffs(self):
-        print(self.model)
         result = {}
         for ffs, ffs_info in self.model.items():
-            result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x != ffs_info['_main'] and not x.startswith('_')]
+            result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x !=
+                                                 ffs_info['_main'] and not x.startswith('_')]
         return result
-
 
     def client_service_is_started(self):
         return {'started': self.startup_done}
@@ -250,12 +262,12 @@ class Engine:
                 props.update(self.config.get_enforced_properties())
                 if main == node:
                     props.update({'ffs:main': 'on',
-                             'readonly': 'off'
-                             })
+                                  'readonly': 'off'
+                                  })
                 else:
                     props.update({'ffs:main': 'off',
-                             'readonly': 'on'
-                             })
+                                  'readonly': 'on'
+                                  })
                 self.send(node,
                           {'msg': 'new',
                            'ffs': msg['ffs'],
@@ -264,13 +276,12 @@ class Engine:
                           )
                 any_found = True
                 if ffs not in self.model:
-                    self.model[ffs] = { '_main': main}
+                    self.model[ffs] = {'_main': main}
                 self.model[ffs][node] = {'_new': True}
         if any_found:
             return {'ok': True}
         else:
             return {'error': 'no_targets'}
-
 
     @needs_startup
     def client_remove_target(self, msg):
@@ -284,17 +295,22 @@ class Engine:
             raise ValueError("FFs unknown")
         if target not in self.model[ffs]:
             raise ValueError("Target not in list of targets")
+        if self.model[ffs][target].get('_new', False):
+            raise NewInProgress(
+                "Target is still new - can not remove. Try again later.")
+        if self.is_ffs_moving(ffs):
+            raise MoveInProgress(
+                "FFS is moving, can't remove targets during move. Try again later.")
+        if self.is_ffs_renaming(ffs):
+            raise RenameInProgress()
         if target == self.model[ffs]['_main']:
             raise ValueError("Target is main - not removing")
-        if self.model[ffs][target].get('_new', False):
-            raise NewInProgress("Target is still new - can not remove. Try again later.")
-        if self.model[ffs].get('_moving', False):
-            raise ValueError("FFS is moving, can't remove targets during move. Try again later.")
-        #little harm in sending it again if we're already removing
+
+        # little harm in sending it again if we're already removing
         self.send(target,
-                {'msg': 'remove',
-                'ffs': ffs}
-                )
+                  {'msg': 'remove',
+                   'ffs': ffs}
+                  )
         self.model[ffs][target] = {'removing': True}
 
     @needs_startup
@@ -308,7 +324,7 @@ class Engine:
             raise ValueError("FFs unknown")
         if not isinstance(msg['targets'], list):
             raise CodingError("targets must be alist")
-        
+
         targets = [self.config.find_node(x) for x in msg['targets']]
         targets = sorted(set(targets))
         if not targets:
@@ -316,7 +332,8 @@ class Engine:
         for target in targets:
             if target in self.model[ffs]:
                 if self.model[ffs][target].get('removing', False):
-                    raise RemoveInProgress("Remove in progress - can't add again before remove is completed")
+                    raise RemoveInProgress(
+                        "Remove in progress - can't add again before remove is completed")
                 else:
                     raise ValueError("Target already in list")
         for target in targets:
@@ -324,13 +341,12 @@ class Engine:
             props.update(self.config.get_enforced_properties())
             props.update({'ffs:main': 'off', 'readonly': 'on'})
             self.send(target,
-                    {'msg': 'new',
-                    'ffs': ffs,
-                    'properties': props,
-                    }
-                    )
+                      {'msg': 'new',
+                       'ffs': ffs,
+                       'properties': props,
+                       }
+                      )
             self.model[ffs][target] = {'_new': True}
-
 
     def any_new(self, ffs):
         for node, node_info in self.model[ffs].items():
@@ -346,10 +362,13 @@ class Engine:
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
         if self.any_new(ffs):
-            raise NewInProgress("New targets are currently being added to this ffs. Please try again later.")
+            raise NewInProgress(
+                "New targets are currently being added to this ffs. Please try again later.")
         if self.is_ffs_moving(ffs):
             raise MoveInProgress(
                 "This ffs is moving to a different main - you should not have been able to change the files anyhow")
+        if self.is_ffs_renaming(ffs):
+            raise RenameInProgress()
         postfix = msg.get('postfix', '')
         self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
 
@@ -402,12 +421,12 @@ class Engine:
 
     @needs_startup
     def client_move_main(self, msg):
-        if not 'ffs' in msg:
-            raise ValueError("no ffs specified'")
+        if 'ffs' not in msg:
+            raise CodingError("no ffs specified'")
         ffs = msg['ffs']
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
-        if not 'target' in msg:
+        if 'target' not in msg:
             raise ValueError("Missing target (=new_main) in msg")
         target = msg['target']
         if target.startswith("_"):
@@ -417,10 +436,12 @@ class Engine:
         current_main = self.model[ffs]['_main']
         if target == current_main:
             raise ValueError("Target is already main")
-        for node in self.model[ffs]:
-            if not node.startswith('_'):
-                if self.model[ffs][node]['removing']:
-                    raise ValueError("Can not move while a target is being removed (%s). Try again later" % node)
+        if self.is_ffs_removing_any(ffs):
+            raise RemoveInProgress()
+        if self.is_ffs_renaming(ffs):
+            raise RenameInProgress()
+        if self.is_ffs_new_any(ffs):
+            raise NewInProgress()
         self.model[ffs]['_moving'] = target
         # self.model[ffs][current_main]['properties']['readonly'] = 'on'
         self.send(current_main, {
@@ -432,9 +453,48 @@ class Engine:
             }
         })
 
+    @needs_startup
+    def client_rename(self, msg):
+        if 'ffs' not in msg:
+            raise CodingError("no ffs specified'")
+        ffs = msg['ffs']
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if 'new_name' not in msg:
+            raise CodingError("no ffs specified'")
+        new_name = msg['new_name']
+        if not isinstance(new_name, str):
+            raise ValueError("new_name parameter must be a string")
+        if new_name in self.model:
+            raise ValueError("An ffs with the new name already exists.")
+        if self.is_ffs_moving(ffs):
+            raise MoveInProgress()
+        if self.is_ffs_removing_any(ffs):
+            raise RemoveInProgress()
+        if '_renaming' in self.model[ffs]:
+            raise RenameInProgress()
+        if any([node_info.get('_new', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')]):
+            raise NewInProgress()
+
+        self.model[ffs]['_renaming'] = ('to', new_name)
+        self.model[new_name] = {'_renaming': ('from', ffs)}
+
+        for node in sorted(self.model[ffs]):
+            if not node.startswith('_'):
+                self.send(node, {
+                    'msg': 'rename',
+                    'ffs': ffs,
+                    'new_name': new_name
+                })
+        return {'ok': True}
+
     def is_ffs_moving(self, ffs):
         if '_moving' in self.model[ffs]:
             return True
+        if self.is_ffs_renaming(ffs):  # can be only one..
+            return False
         main = self.model[ffs]['_main']
         moving_to = self.model[ffs][main][
             'properties'].get('ffs:moving_to', '-')
@@ -442,6 +502,15 @@ class Engine:
             self.model[ffs]['_moving'] = moving_to
             return True
         return False
+
+    def is_ffs_removing_any(self, ffs):
+        return any([node_info.get('removing', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
+
+    def is_ffs_new_any(self, ffs):
+        return any([node_info.get('_new', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
+
+    def is_ffs_renaming(self, ffs):
+        return '_renaming' in self.model[ffs]
 
     def _name_snapshot(self, ffs, postfix=''):
         import time
@@ -493,7 +562,9 @@ class Engine:
                     self.model[ffs] = {}
                 self.model[ffs][node] = ffs_info
         self._parse_main_and_readonly()
-        self._handle_remove_asap() # do removal after assigning a main, so we can trigger on ffs:main=on and ffs:remove_asap=on!
+        # do removal after assigning a main, so we can trigger on ffs:main=on
+        # and ffs:remove_asap=on!
+        self._handle_remove_asap()
         self._enforce_properties()
         self._prune_snapshots()
         self._send_missing_snapshots()
@@ -505,7 +576,8 @@ class Engine:
                 if not node.startswith('_'):
                     if self.model[ffs][node]['properties'].get('ffs:remove_asap', '-') == 'on':
                         if node == main:
-                            self.fault("ffs:main and ffs:remove_asap set at the same time. Manual fix necessory. FFS: %s, node%s" % (ffs, node), exception=ManualInterventionNeeded)
+                            self.fault("ffs:main and ffs:remove_asap set at the same time. Manual fix necessory. FFS: %s, node%s" % (
+                                ffs, node), exception=ManualInterventionNeeded)
                         else:
                             self.model[ffs][node]['removing'] = True
                             self.send(node, {
@@ -520,6 +592,23 @@ class Engine:
         Make sure there is exactly one main, it is non-readonly,
         and everything else is ffs:main=off and readonly
         """
+        renames = {}  # from -> to
+
+        for ffs, node_ffs_info in self.model.items():
+            for node, node_info in node_ffs_info.items():
+                props = node_info['properties']
+                ffs_rename_from = props.get('ffs:renamed_from', '-')
+                if ffs_rename_from != '-':
+                    if ffs_rename_from in renames:
+                        if renames[ffs_rename_from] != ffs:
+                            self.fault("Multiple renames to different targets: %s: %s %s" %
+                                       (ffs, renames[ffs_rename_from], ffs_rename_from), exception=InconsistencyError)
+                    else:
+                        renames[ffs_rename_from] = ffs
+        if len(renames) != len(set(renames.values())):
+            self.fault("Multiple renames to the same target",
+                       exception=InconsistencyError)
+
         for ffs, node_ffs_info in self.model.items():
             main = None
             non_ro_count = 0
@@ -551,37 +640,61 @@ class Engine:
                     main = last_non_ro
                 else:
                     if any_moving_to:
+                        if ffs in renames.keys() or ffs in renames.values():
+                            ffs_involved = [x for x in renames.items() if x[0] == ffs or x[
+                                1] == ffs][0]
+                            self.fault("FFS moving and renaming at the same time - data model inconsintent. ffs involved: %s" % ffs_involved,
+                                       exception=InconsistencyError)
                         main = None  # stays None.
+                    elif ffs in renames.keys() or ffs in renames.values():
+                        main = None
                     else:
                         self.fault(
                             "No main, muliple non-readonly for %s" % ffs)
             self.model[ffs]['_main'] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
+                prop_adjust_messages = []
                 for node in sorted(self.node_config):  # always in the same order
                     if node in node_ffs_info:
                         node_info = node_ffs_info[node]
                         props = node_info['properties']
                         if node == main:
                             if props.get('readonly', False) != 'off':
-                                self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                                 'properties': {'readonly': 'off'}})
+                                prop_adjust_messages.append((node, {'msg': 'set_properties', 'ffs': ffs,
+                                                                   'properties': {'readonly': 'off'}}))
 
                             if props.get('ffs:main', 'off') != 'on':
-                                self.send(
+                                prop_adjust_messages.append((
                                     node, {'msg': 'set_properties', 'ffs': ffs,
-                                           'properties': {'ffs:main': 'on'}})
+                                           'properties': {'ffs:main': 'on'}}))
                         else:
                             if props.get('readonly', 'off') != 'on':
-                                self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                                 'properties': {'readonly': 'on'}})
+                                prop_adjust_messages.append((node, {'msg': 'set_properties', 'ffs': ffs,
+                                                                    'properties': {'readonly': 'on'}}))
                             if 'ffs:main' not in props:
-                                self.send(
+                                prop_adjust_messages.append((
                                     node, {'msg': 'set_properties', 'ffs': ffs,
-                                           'properties': {'ffs:main': 'off'}})
+                                           'properties': {'ffs:main': 'off'}}))
+                if prop_adjust_messages:
+                    if ffs in renames.keys() or ffs in renames.values():
+                        ffs_involved = [x for x in renames.items() if x[0] == ffs or x[
+                            1] == ffs][0]
+                        self.fault(
+                            "Main/readonly inconsistencies during rename. Not supported. FFs involved: ", exception=InconsistencyError)
+                    else:
+                        for receiver, msg in prop_adjust_messages:
+                            self.send(receiver, msg)
             else:  # caught in a move.
                 # step 0 -
                 move_target = any_moving_to
+                if ((ffs in renames.keys() or ffs in renames.values()) or (
+                        move_target in renames.keys() or move_target in renames.values())
+                    ):
+                    ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
+                        0] == move_target or x[1] == move_target]
+                    self.fault("Rename and move mixed. Unsupported: %s %s %s" % (
+                        ffs, move_target, ffs_involved), exception=InconsistencyError)
                 self.model[ffs]['_moving'] = move_target
                 if main is not None:
                     if main != any_moving_to:
@@ -608,8 +721,41 @@ class Engine:
                 # we can deal with main being None until the ffs:moving_to = -
                 # job  is done..
                 node_ffs_info['_main'] = main
+
+        for rename_from, rename_to in renames.items():
+            any_missing = False
+            for node, node_ffs_info in self.model[rename_to].items():
+                if not node.startswith('_'):
+                    ffs_renamed_from_missing = node_ffs_info[
+                        'properties'].get('ffs:renamed_from', '-') == '-'
+                    if ffs_renamed_from_missing:
+                        any_missing = True
+            if rename_from in self.model:  # at least one still needs to be renamed...
+                if any_missing: # this should only be removed once all were renamed. but there are open renames
+                    self.fault("In move, but some targets did not have ffs:renamed_from. FFS involved: %s %s " % (rename_from, rename_to),
+                            exception=InconsistencyError)
+
+                self.model[rename_from]['_renaming'] = ('to', rename_to)
+                self.model[rename_to]['_renaming'] = ('from', rename_from)
+                for node in sorted(self.model[rename_from]):
+                    if not node.startswith('_'):
+                        self.send(node, {
+                            'msg': 'rename',
+                            'ffs': rename_from,
+                            'new_name': rename_to,
+                        })
+            else:  # ok, properties need to be removed
+                for node, node_info in sorted(self.model[rename_to].items()):
+                    if not node.startswith('_'):
+                        if node_info['properties'].get('ffs:renamed_from', '-') != '-':
+                            self.send(node, {
+                                'msg': 'set_properties',
+                                'ffs': rename_to,
+                                'properties': {'ffs:renamed_from': '-'}
+                            })
+
         for ffs, node_ffs_info in self.model.items():
-            if node_ffs_info['_main'] is None:
+            if node_ffs_info['_main'] is None and not self.is_ffs_renaming(ffs):
                 raise CodingError("Main remained None")
 
     def _enforce_properties(self):
@@ -630,16 +776,19 @@ class Engine:
 
     def _prune_snapshots(self):
         for ffs in self.model.keys():
-            self._prune_snapshots_for_ffs(ffs)
+            if not self.is_ffs_renaming(ffs):
+                self._prune_snapshots_for_ffs(ffs)
 
-    def _prune_snapshots_for_ffs(self, ffs, restrict_to_node = None):
+    def _prune_snapshots_for_ffs(self, ffs, restrict_to_node=None):
         node_fss_info = self.model[ffs]
         main_node = node_fss_info['_main']
         main_snapshots = node_fss_info[main_node]['snapshots']
         if not main_snapshots:
             return
-        keep_snapshots = self.config.decide_snapshots_to_keep(ffs, main_snapshots)
-        keep_snapshots.add(main_snapshots[-1]) # always! keep the latest snapshot
+        keep_snapshots = self.config.decide_snapshots_to_keep(
+            ffs, main_snapshots)
+        # always! keep the latest snapshot
+        keep_snapshots.add(main_snapshots[-1])
         self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
         if restrict_to_node is None or restrict_to_node == main_node:
             remove_from_main = [
@@ -651,13 +800,13 @@ class Engine:
                 node_fss_info[main_node]['snapshots'].remove(snapshot)
         for node in sorted(node_fss_info):
             if node != main_node and not node.startswith('_'):
-                if restrict_to_node is None or restrict_to_node  == node:
+                if restrict_to_node is None or restrict_to_node == node:
                     target_snapshots = node_fss_info[node]['snapshots']
                     too_many = [
                         x for x in target_snapshots if x not in keep_snapshots]
                     for snapshot in too_many:
                         self.send(node, {'msg': 'remove_snapshot',
-                                            'ffs': ffs, 'snapshot': snapshot})
+                                         'ffs': ffs, 'snapshot': snapshot})
                         # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
@@ -666,12 +815,14 @@ class Engine:
         we send out pull requests for the missing snapshots
         and prunes for those that are too many"""
         for ffs, node_fss_info in self.model.items():
-            if self.is_ffs_moving(ffs):
+            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
-            snapshots_to_send = set(self.config.decide_snapshots_to_send(ffs, main_snapshots))
-            ordered_to_send = [x for x in main_snapshots if x in snapshots_to_send]
+            snapshots_to_send = set(
+                self.config.decide_snapshots_to_send(ffs, main_snapshots))
+            ordered_to_send = [
+                x for x in main_snapshots if x in snapshots_to_send]
             if ordered_to_send:
                 for node, node_info in node_fss_info.items():
                     if node.startswith('_'):
@@ -683,7 +834,7 @@ class Engine:
                         if sn not in node_info['snapshots']:
                             missing.append(sn)
                         else:
-                             break
+                            break
                     missing = reversed(missing)
                     for sn in missing:
                         self._send_snapshot(main, node, ffs, sn)
@@ -760,7 +911,6 @@ class Engine:
             self.fault("node_new_done from ffs not on that node",
                        msg, CodingError)
         if self.model[ffs][node] != {'_new': True}:
-            print(self.model[ffs][node])
             self.fault(
                 "node_new_done from an node/ffs where we already have data", msg, CodingError)
         if msg['properties']['ffs:main'] == 'on' and not self.model[ffs]['_main'] == node:
@@ -772,10 +922,16 @@ class Engine:
         main = self.model[ffs]['_main']
 
         # This happens if we were actually a add_new_target
-        if node != main and self.model[ffs][main]['snapshots']:
-            for sn in self.model[ffs][main]['snapshots']:
-                self._send_snapshot(main, node, ffs, sn)
-            
+        if node != main:
+            # case 1: adding a new ffs + replication targets
+            # and we've returned before the main is done
+            if self.model[ffs][main].get('_new', False):
+                pass  # no snapshots to send
+            else:  # either were in add_new_target, or the main was done before the rep targets
+                # should only have snapshots to send in the add_new_target case
+                if self.model[ffs][main]['snapshots']:
+                    for sn in self.model[ffs][main]['snapshots']:
+                        self._send_snapshot(main, node, ffs, sn)
 
     def node_capture_done(self, msg):
         node = msg['from']
@@ -805,7 +961,6 @@ class Engine:
                     self._send_snapshot(main, node, ffs, snapshot)
         if not self.is_ffs_moving(ffs):
             self._prune_snapshots_for_ffs(ffs, main)
-                    
 
     def node_send_snapshot_done(self, msg):
         main = msg['from']
@@ -829,9 +984,9 @@ class Engine:
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-            node == self.model[ffs]['_moving'] and
-            msg['snapshot'] == self.model[ffs]['_move_snapshot']
-            ):
+                    node == self.model[ffs]['_moving'] and
+                    msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -859,15 +1014,16 @@ class Engine:
     def node_remove_failed(self, msg):
         if msg['reason'] == 'target_is_busy':
             # just keep it in 'removing' status (or already removed).
-            # the node will have set ffs:remove_asap=on and that will retrigger 
+            # the node will have set ffs:remove_asap=on and that will retrigger
             # removal upon startup
             pass
-        elif msg['reason'] == 'target_does_not_exist':  
+        elif msg['reason'] == 'target_does_not_exist':
             # most likely a repeated request from the user
             # ignore
             pass
         else:
-            self.fault("remove_failed with something other than target_is_busy: %s" % msg)
+            self.fault(
+                "remove_failed with something other than target_is_busy: %s" % msg)
 
     def node_remove_snapshot_done(self, msg):
         node = msg['from']
@@ -903,6 +1059,53 @@ class Engine:
     def do_zpool_status_check(self):
         for node in sorted(self.node_config):
             self.send(node, {'msg': 'zpool_status'})
+
+    def node_rename_done(self, msg):
+        node = msg['from']
+        ffs = msg['ffs']
+        new_name = msg['new_name']
+        if '_renaming' not in self.model[ffs]:
+            self.fault("rename_done from non-renaming ffs?!",
+                       msg, InconsistencyError)
+        if node not in self.model[ffs]:
+            self.fault("rename_done from node not in model for this ffs",
+                       msg, InconsistencyError)
+        if self.model[ffs]['_renaming'][0] != 'to':
+            self.fault("rename_done for ffs that is not renaming-from?",
+                       msg, InconsistencyError)
+        if '_renaming' not in self.model[new_name]:
+            self.fault(
+                'rename_done for new_name that was not renaming target?', msg, InconsistencyError)
+        if self.model[new_name]['_renaming'][0] != 'from':
+            self.fault(
+                'rename_done for new_name that was not renaming target - case 2?', msg, InconsistencyError)
+        if self.model[new_name]['_renaming'][1] != ffs:
+            self.fault('rename_done for wrong source ffs?',
+                       msg, InconsistencyError)
+        rename_target = self.model[ffs]['_renaming'][1]
+        if new_name != rename_target:
+            self.fault(
+                "rename_done new_name disagrees with _renaming (to, new_name)", msg, InconsistencyError)
+        if node in self.model[rename_target]:
+            self.fault(
+                "rename_done for node that is already in the new target?", msg, InconsistencyError)
+        self.model[rename_target][node] = self.model[ffs][node]
+        del self.model[ffs][node]
+        if '_main' in self.model[ffs] and node == self.model[ffs]['_main']:
+            del self.model[ffs]['_main']
+            self.model[rename_target]['_main'] = node
+        if len([x for x in self.model[ffs] if not x.startswith('_')]) == 0:
+            del self.model[ffs]
+            del self.model[rename_target]['_renaming']
+            if not '_main' in self.model[rename_target]:
+                self.fault("No _main after rename?!", msg, InconsistencyError)
+            for node in sorted(self.model[rename_target]):
+                if not node.startswith('_'):
+                    self.send(node, {
+                        'msg': 'set_properties',
+                        'ffs': rename_target,
+                        'properties': {'ffs:renamed_from': '-'}
+                    })
 
     def shutdown(self):
         self.sender.shutdown()

@@ -24,12 +24,14 @@ def run_client(cmd_args):
     stdout, stderr = p.communicate()
     return p.returncode, stdout, stderr
 
+
 def run_expect_ok(cmd_args):
     rc, stdout, stderr = run_client(cmd_args)
     if rc != 0:
-        raise ValueError("Error return: %i, %s, %s" %(rc, stdout, stderr))
+        raise ValueError("Error return: %i, %s, %s" % (rc, stdout, stderr))
     return stdout
-    
+
+
 def client_wait_for_startup():
     start = time.time()
     while True:
@@ -42,6 +44,7 @@ def client_wait_for_startup():
             raise ValueError("timeout")
         time.sleep(0.5)
 
+
 def client_wait_for_empty_que():
     start = time.time()
     while True:
@@ -53,6 +56,21 @@ def client_wait_for_empty_que():
             raise ValueError("timeout")
         time.sleep(0.1)
 
+
+def zfs_output(cmd_line):
+    return subprocess.check_output(cmd_line).decode('utf-8')
+
+
+def _get_zfs_properties(zfs_name):
+    lines = zfs_output(['sudo', 'zfs', 'get', 'all', zfs_name, '-H']
+                       ).strip().split("\n")
+    lines = [x.split("\t") for x in lines]
+    result = {x[1]: x[2] for x in lines}
+    return result
+
+
+def get_zfs_property(zfs_name, property_name):
+    return _get_zfs_properties(zfs_name)[property_name]
 
 
 class ClientTests(unittest.TestCase):
@@ -73,6 +91,8 @@ class ClientTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
         subprocess.check_call(
             ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/rename_test'])
 
         run_expect_ok(['service', 'restart'])
         time.sleep(3)
@@ -82,7 +102,7 @@ class ClientTests(unittest.TestCase):
     def teardownClass(cls):
         p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-        
+
     def list_ffs(self):
         l = run_expect_ok(['list_ffs'])
         return json.loads(l.decode('utf-8'))
@@ -110,7 +130,6 @@ class ClientTests(unittest.TestCase):
     def test_list_targets(self):
         raise NotImplementedError()
 
-
     def test_add_target(self):
         raise NotImplementedError()
 
@@ -118,8 +137,17 @@ class ClientTests(unittest.TestCase):
         pass
 
     def test_rename(self):
-        pass
-
+        self.assertTrue(os.path.exists(
+            '/' + self.get_test_prefix() + 'rename_test'))
+        run_expect_ok(['rename_ffs', 'ffs_testing/rename_test',
+                       'ffs_testing/renamed_test'])
+        client_wait_for_empty_que()
+        self.assertFalse(os.path.exists(
+            '/' + self.get_test_prefix() + 'rename_test'))
+        self.assertTrue(os.path.exists(
+            '/' + self.get_test_prefix() + 'renamed_test'))
+        props = _get_zfs_properties(self.get_test_prefix() + 'renamed_test')
+        self.assertEqual(props.get('ffs:renamed_from', '-'), '-')
 
 
 if __name__ == '__main__':

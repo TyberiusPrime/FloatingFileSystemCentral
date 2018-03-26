@@ -93,7 +93,7 @@ def main():
     logger.debug("")
     logger.debug("Start")
     if dry_run:
-    logger.debug("Dry run!")
+        logger.debug("Dry run!")
     user = pwd.getpwuid(os.getuid())[0]
     if user != 'ffs':
         print(os.getuid())

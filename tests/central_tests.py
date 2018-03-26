@@ -981,8 +981,6 @@ class NewTests(PostStartupTests):
                 {'msg': 'add_targets', 'ffs': 'one', 'targets': ['alpha']})
         self.assertRaises(engine.RemoveInProgress, inner)
 
-    def test_move_while_new(self):
-        raise NotImplementedError()
 
     def test_new_sets_default_properties(self):
         cfg = self._get_test_config()
@@ -1009,13 +1007,14 @@ class CaptureTest(PostStartupTests):
 
     def test_pruning_after_capture(self):
         cfg = self._get_test_config()
+
         def decide(sffs, snapshots):
             return snapshots[-2:]
         cfg.decide_snapshots_to_keep = decide
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['b', 'a', ]},
             'beta':  {'one': ['b', 'a', ]},
-        },config=cfg)
+        }, config=cfg)
         self.assertFalse(outgoing_messages)
         e.incoming_client({'msg': 'capture', 'ffs': 'one'})
         self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
@@ -1128,7 +1127,7 @@ class CaptureTest(PostStartupTests):
             'target_host': 'gamma',
             'snapshot': sn
         })
-       
+
         self.assertEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'gamma',
@@ -1137,16 +1136,16 @@ class CaptureTest(PostStartupTests):
         })
         self.assertEqual(len(outgoing_messages), 1)
 
-
     def test_pruning_after_capture_always_leaves_at_least_one_snapshot(self):
         cfg = self._get_test_config()
+
         def decide(sffs, snapshots):
             return []
         cfg.decide_snapshots_to_keep = decide
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['a', ]},
             'beta':  {'one': ['a', ]},
-        },config=cfg)
+        }, config=cfg)
         self.assertFalse(outgoing_messages)
         e.incoming_client({'msg': 'capture', 'ffs': 'one'})
         self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
@@ -1364,6 +1363,20 @@ class CaptureTest(PostStartupTests):
         )
         self.assertEqual(len(outgoing_messages), 1)
 
+    def test_no_capture_during_rename(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        e.incoming_client({
+            'msg': 'rename', 'ffs': 'one', 'new_name': 'two'
+        })
+
+        def inner():
+            e.incoming_client({
+                'msg': 'capture', 'ffs': 'one'
+            })
+        self.assertRaises(engine.RenameInProgress, inner)
+
 
 class RemoveTarget(PostStartupTests):
 
@@ -1533,18 +1546,18 @@ class RemoveTarget(PostStartupTests):
 
         def inner():
             e.incoming_client(
-                {'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
-        self.assertRaises(ValueError, inner)
+                {'msg': 'remove_target', 'ffs': 'one', 'target': 'gamma'})
+        self.assertRaises(engine.MoveInProgress, inner)
 
         def inner():
             e.incoming_client(
                 {'msg': 'remove_target', 'ffs': 'one', 'target': 'beta'})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.MoveInProgress, inner)
 
         def inner():
             e.incoming_client(
                 {'msg': 'remove_target', 'ffs': 'one', 'target': 'gamma'})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.MoveInProgress, inner)
 
     def test_cant_move_during_remove_if_target_is_being_removed(self):
         e, outgoing_messages = self.get_engine({
@@ -1936,6 +1949,85 @@ class MoveTest(PostStartupTests):
                 {"msg": "move_main", 'ffs': 'two', 'target': 'gamma'})
         self.assertRaises(ValueError, inner)
 
+    def test_no_move_during_new(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        e.incoming_client({'msg': 'new', 'ffs': 'two',
+                           'targets': ['alpha', 'beta']})
+
+        def inner():
+            e.incoming_client(
+                {"msg": "move_main", 'ffs': 'two', 'target': 'beta'})
+        self.assertRaises(engine.NewInProgress, inner)
+
+    def test_no_move_during_new_main_done(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        e.incoming_client({'msg': 'new', 'ffs': 'two',
+                           'targets': ['alpha', 'beta']})
+        e.incoming_node({"msg": 'new_done', 'from': 'alpha', 'ffs': 'two', 'properties': {
+                        'ffs:main': 'on', 'readonly': 'off'}, 'snapshots': []})
+
+        def inner():
+            e.incoming_client(
+                {"msg": "move_main", 'ffs': 'two', 'target': 'beta'})
+        self.assertRaises(engine.NewInProgress, inner)
+
+    def test_no_move_during_new_non_main_done(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        e.incoming_client({'msg': 'new', 'ffs': 'two',
+                           'targets': ['alpha', 'beta']})
+        e.incoming_node({"msg": 'new_done', 'from': 'beta', 'ffs': 'two', 'properties': {
+                        'ffs:main': 'off', 'readonly': 'on'}, 'snapshots': []})
+
+        def inner():
+            e.incoming_client(
+                {"msg": "move_main", 'ffs': 'two', 'target': 'beta'})
+        self.assertRaises(engine.NewInProgress, inner)
+
+    def test_no_move_during_remove(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {'one': ['1', ]},
+            'gamma': {},
+        })
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'one',
+                           'target': 'beta'})
+
+        def inner():
+            e.incoming_client(
+                {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
+        self.assertRaises(engine.RemoveInProgress, inner)
+
+    def test_no_move_during_rename(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_one': ['1']},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'rename',
+                           'ffs': 'one',
+                           'new_name': 'two'})
+
+        def inner():
+            e.incoming_client({
+                "msg": "move_main",
+                'ffs': 'one',
+                'target': 'alpha'
+            })
+        self.assertRaises(engine.RenameInProgress, inner)
+
     def test_move_basic(self):
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1']},
@@ -2052,7 +2144,7 @@ class MoveTest(PostStartupTests):
         cfg.decide_snapshots_to_keep = lambda ffs, snapshots: []
         engine, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1']},
-            'beta':  {'one': ['1',]},
+            'beta':  {'one': ['1', ]},
             'gamma': {},
         }, config=cfg)
         # flow is as follows
@@ -2170,7 +2262,6 @@ class MoveTest(PostStartupTests):
             'ffs': 'one',
             'snapshot': '1'
         })
-
 
 
 class SnapshotPruningTests(EngineTests):
@@ -3180,31 +3271,472 @@ class OutgoingMessageTests(unittest.TestCase):
         raise NotImplementedError()
 
     def test_non_capture_chown_chmod(self):
-        pass
+        raise NotImplementedError()
 
 
 class RenameTests(PostStartupTests):
 
     def test_rename_non_replicated(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta':  {},
+            'gamma': {},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'rename',
+                           'to': 'alpha',
+                           'ffs': 'one',
+                           'new_name': 'two'})
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'rename',
+            'to': 'alpha',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertTrue('_renaming' in e.model['one'])
+        self.assertTrue('_renaming' in e.model['two'])
+        self.assertEqual(1, len(outgoing_messages))
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'alpha',
+                         'new_name': 'two'})
+        self.assertFalse('one' in e.model)
+        self.assertEqual(e.model['two']['alpha']['snapshots'], ['1'])
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'}
+        })
+
+    def test_rename_raises_duplicate_name(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1'], '_two': ['1']},
+            'beta':  {},
+            'gamma': {},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+
+        def inner():
+            e.incoming_client({"msg": 'rename',
+                               'ffs': 'one',
+                               'new_name': 'two'})
+        self.assertRaises(ValueError, inner)
+        self.assertEqual(0, len(outgoing_messages))
 
     def test_rename_replicated(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_one': ['1']},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'rename',
+                           'ffs': 'one',
+                           'new_name': 'two'})
+        # no need to send main first
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'rename',
+            'to': 'alpha',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'rename',
+            'to': 'beta',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(outgoing_messages[2], {
+            'msg': 'rename',
+            'to': 'gamma',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertTrue(e.model['one'].get('_renaming', False))
+        self.assertTrue(e.model['two'].get('_renaming', False))
 
-    def test_rename_replicated_interrupted(self):
-        raise NotImplementedError()
+        self.assertEqual(len(outgoing_messages), 3)
 
-    def test_no_move_during_rename(self):
-        raise NotImplementedError()
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'gamma',
+                         'new_name': 'two'})
+        self.assertFalse('gamma' in e.model['one'])
+        self.assertTrue('gamma' in e.model['two'])
+        self.assertEqual(len(outgoing_messages), 3)
+
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'beta',
+                         'new_name': 'two'})
+        self.assertFalse('beta' in e.model['one'])
+        self.assertFalse('_main' in e.model['one'])
+        self.assertTrue('beta' in e.model['two'])
+        self.assertTrue('_main' in e.model['two'])
+        self.assertEqual(len(outgoing_messages), 3)
+
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'alpha',
+                         'new_name': 'two'})
+        self.assertFalse('one' in e.model)
+        self.assertTrue('alpha' in e.model['two'])
+        self.assertEqual(len(outgoing_messages), 6)
+        self.assertEqual(outgoing_messages[3], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'}
+        })
+        self.assertEqual(outgoing_messages[4], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'}
+        })
+        self.assertEqual(outgoing_messages[5], {
+            'msg': 'set_properties',
+            'to': 'gamma',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'}
+        })
+
+
+
+    def test_rename_replicated_interrupted_main_was_renamed(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_two': ['1', ('ffs:renamed_from', 'one')]},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'rename',
+            'to': 'alpha',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'rename',
+            'to': 'gamma',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(len(outgoing_messages), 2)
+        self.assertTrue(e.model['one'].get('_renaming', False))
+        self.assertTrue(e.model['two'].get('_renaming', False))
+
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'alpha',
+                         'new_name': 'two'})
+        self.assertEqual(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'gamma',
+                         'new_name': 'two'})
+        self.assertEqual(len(outgoing_messages), 3)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[2], {
+            'msg': 'set_properties',
+            'to': 'gamma',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'ffs': 'two',
+            'from': 'alpha',
+            'properties': {"ffs:renamed_from": '-'}
+        })
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'ffs': 'two',
+            'from': 'beta',
+            'properties': {"ffs:renamed_from": '-'}
+        })
+        e.incoming_node({
+            'msg': 'set_properties_done',
+            'ffs': 'two',
+            'from': 'gamma',
+            'properties': {"ffs:renamed_from": '-'}
+        })
+
+
+        self.assertFalse('one' in e.model)
+        self.assertTrue('two' in e.model)
+        self.assertEqual(e.model['two']['beta']['properties'].get('ffs:renamed_from','-'), '-')
+        self.assertEqual(e.model['two']['_main'], 'beta')
+                         
+    def test_rename_replicated_interrupted_non_main_was_renamed(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+            'beta':  {'_one': ['1',]},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'rename',
+            'to': 'beta',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'rename',
+            'to': 'gamma',
+            'ffs': 'one',
+            'new_name': 'two'
+        })
+        self.assertEqual(len(outgoing_messages), 2)
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'beta',
+                         'new_name': 'two'})
+        self.assertEqual(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({"msg": 'rename_done',
+                         'ffs': 'one',
+                         'from': 'gamma',
+                         'new_name': 'two'})
+        self.assertEqual(len(outgoing_messages), 3)
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[2], {
+            'msg': 'set_properties',
+            'to': 'gamma',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertFalse('one' in e.model)
+        self.assertTrue('two' in e.model)
+        self.assertEqual(e.model['two']['beta']['properties'].get('ffs:renamed_from','-'), '-')
+        self.assertEqual(e.model['two']['_main'], 'beta')
+
+    def test_rename_interrupted_after_rename_before_any_set_properties(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+            'beta':  {'_two': ['1', ('ffs:renamed_from', 'one')]},
+            'gamma': {'two': ['1', ('ffs:renamed_from', 'one')]},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[2], {
+            'msg': 'set_properties',
+            'to': 'gamma',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+
+        self.assertEqual(len(outgoing_messages), 3)
+        self.assertFalse('one' in e.model)
+        self.assertFalse(e.model['two'].get('_renaming', False))
+                          
+    def test_rename_interrupted_after_rename_before_some_set_properties(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+            'beta':  {'_two': ['1', ('ffs:renamed_from', '-')]},
+            'gamma': {'two': ['1', ('ffs:renamed_from', 'one')]},
+        })
+        self.assertEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+        self.assertEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'gamma',
+            'ffs': 'two',
+            'properties': {'ffs:renamed_from': '-'},
+        })
+
+        self.assertEqual(len(outgoing_messages), 2)
+        self.assertFalse('one' in e.model)
+        self.assertFalse(e.model['two'].get('_renaming', False))
+                          
+
+
+    def test_conflicting_interrupted_rename_faults_engine(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+                'beta':  {'_two': ['1', ('ffs:renamed_from', 'shu')]},
+                'gamma': {'one': ['1']},
+            }) 
+        self.assertRaises(engine.InconsistencyError, inner)
+
+    def test_rename_but_other_already_without_rename_from(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+                'beta':  {'_two': ['1',]},
+                'gamma': {'one': ['1']},  #this one never saw the rename-command
+            }) 
+        self.assertRaises(engine.InconsistencyError, inner)
+
+    def test_moving_and_renaming_faults_engine(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+                'beta':  {'_two': ['1', ('ffs:moving_to', 'alpha')]},
+                'gamma': {'one': ['1']},
+            }) 
+        self.assertRaises(engine.InconsistencyError, inner)
+
+    def test_rename_and_having_to_restore_main_readonly_faults_engine(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
+                'beta':  {'two': ['1', ('readonly', 'off'), ('ffs:main', 'off')]},
+                'gamma': {'one': ['1']},
+            }) 
+        self.assertRaises(engine.InconsistencyError, inner)
 
     def test_no_remove_during_rename(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_one': ['1']},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'rename',
+                           'ffs': 'one',
+                           'new_name': 'two'})
+
+        def inner():
+            e.incoming_client({
+                "msg": "remove_target", 'ffs': 'one', 'target': 'alpha'
+            })
+        self.assertRaises(engine.RenameInProgress, inner)
 
     def test_no_rename_during_remove(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_one': ['1']},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'remove_target',
+                           'ffs': 'one',
+                           'target': 'alpha'})
 
-    def test_no_move_during_rename(self):
-        raise NotImplementedError()
+        def inner():
+            e.incoming_client({
+                "msg": "rename", 'ffs': 'one', 'new_name': 'two'
+            })
+        self.assertRaises(engine.RemoveInProgress, inner)
+
+    def test_no_rename_during_move(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'one': ['1']},
+            'beta':  {'_one': ['1']},
+            'gamma': {'one': ['1']},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'move_main',
+                           'ffs': 'one',
+                           'target': 'alpha'})
+
+        def inner():
+            e.incoming_client({
+                "msg": "rename", 'ffs': 'one', 'new_name': 'two'
+            })
+        self.assertRaises(engine.MoveInProgress, inner)
+
+    def test_no_rename_during_new(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {},
+            'beta':  {'_one': ['1']},
+            'gamma': {},
+        })
+        self.assertEqual(0, len(outgoing_messages))
+        e.incoming_client({"msg": 'add_targets',
+                           'ffs': 'one',
+                           'targets': ['alpha']})
+
+        def inner():
+            e.incoming_client({
+                "msg": "rename", 'ffs': 'one', 'new_name': 'two'
+            })
+        self.assertRaises(engine.NewInProgress, inner)
+
+    def test_rename_requires_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'new_name': 'two'
+            })
+        self.assertRaises(engine.CodingError, inner)
+
+    def test_rename_requires_new_name(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'ffs': 'one'
+            })
+        self.assertRaises(engine.CodingError, inner)
+
+    def test_rename_invalid_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'ffs': 'two', 'new_name': 'three'
+            })
+        self.assertRaises(ValueError, inner)
+
+    def test_duplicate_rename_raises(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        e.incoming_client({
+            'msg': 'rename', 'ffs': 'one', 'new_name': 'two'
+        })
+
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'ffs': 'one', 'new_name': 'three'
+            })
+        self.assertRaises(engine.RenameInProgress, inner)
 
 
 if __name__ == '__main__':
