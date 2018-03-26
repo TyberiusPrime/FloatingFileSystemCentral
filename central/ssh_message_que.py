@@ -136,6 +136,19 @@ class OutgoingMessages:
                 pass
         #os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
 
+class OutgoingMessagesDryRun(OutgoingMessages):
+    """Filter all messages that change the downstream.
+    Useful to check whether the system will do 
+    madness on first startup"""
+
+    def send_message(self, node_name, node_info, msg):
+        if msg['msg'] in ('deploy', 'list_ffs'):
+            OutgoingMessages.send_message(self, node_name, node_info, msg)
+        else:
+            self.logger.info(
+                "Msgfiltered to %s: %s", node_name, format_msg(msg))
+            return
+   
 
 class LoggingProcessProtocol(protocol.ProcessProtocol):
 

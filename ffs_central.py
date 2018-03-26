@@ -85,12 +85,15 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
 
 
 def main():
+    dry_run = '--dry-run' in sys.argv
     global our_engine
     logger.debug("")
     logger.debug("")
     logger.debug("")
     logger.debug("")
     logger.debug("Start")
+    if dry_run:
+    logger.debug("Dry run!")
     user = pwd.getpwuid(os.getuid())[0]
     if user != 'ffs':
         print(os.getuid())
@@ -108,7 +111,7 @@ def main():
 
         e = ZmqEndpoint('bind', 'tcp://*:%s' % cfg.get_zmq_port())
         s = EncryptedZmqREPConnection(zf, e)
-        our_engine = engine.Engine(cfg, sender=None)
+        our_engine = engine.Engine(cfg, sender=None, dry_run=dry_run)
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)
         l.start(1.0)  # call every second

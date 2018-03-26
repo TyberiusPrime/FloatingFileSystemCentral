@@ -63,7 +63,7 @@ def needs_startup(func):
 
 class Engine:
 
-    def __init__(self, config, sender=None):
+    def __init__(self, config, sender=None, dry_run=False):
         """Config is a dictionary node_name -> node info
         send_function handles sending  messages to nodes
         and get's the node_info and a message passed"""
@@ -73,7 +73,11 @@ class Engine:
             raise ValueError("Config must be a CheckedConfig instance")
         self.node_config = self.config.get_nodes()
         if sender is None:
-            sender = ssh_message_que.OutgoingMessages(
+            if dry_run:
+                sender = ssh_message_que.OutgoingMessagesDryRun(
+                    self.logger, self, self.config.get_ssh_cmd())
+            else:
+                sender = ssh_message_que.OutgoingMessages(
                 self.logger, self, self.config.get_ssh_cmd())
         self.sender = sender
         self.node_ffs_infos = {}
@@ -94,7 +98,7 @@ class Engine:
         if os.path.exists(fn):
             os.unlink(fn)
         with open(fn, 'wb') as op:
-            for node in self.node_config:
+            for node in sorted(self.node_config):
                 pub_key = self.node_config[node]['public_key']
                 op.write(b'command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n' %
                          pub_key)
@@ -135,7 +139,7 @@ class Engine:
         elif msg['msg'] == 'capture_done':
             self.node_capture_done(msg)
         elif msg['msg'] == 'send_snapshot_done':
-            self.send_snapshot_done(msg)
+            self.node_send_snapshot_done(msg)
         elif msg['msg'] == 'remove_snapshot_done':
             self.node_remove_snapshot_done(msg)
         elif msg['msg'] == 'remove_done':
@@ -240,7 +244,7 @@ class Engine:
             raise ValueError("Already present, can't create as new")
         main = targets[0]
         any_found = False
-        for node in self.node_config:
+        for node in sorted(self.node_config):
             if node in targets:
                 props = self.config.get_default_properties().copy()
                 props.update(self.config.get_enforced_properties())
@@ -554,7 +558,7 @@ class Engine:
             self.model[ffs]['_main'] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
-                for node in self.node_config:  # always in the same order
+                for node in sorted(self.node_config):  # always in the same order
                     if node in node_ffs_info:
                         node_info = node_ffs_info[node]
                         props = node_info['properties']
@@ -625,11 +629,19 @@ class Engine:
                     )
 
     def _prune_snapshots(self):
-        for ffs, node_fss_info in self.model.items():
-            main_node = node_fss_info['_main']
-            main_snapshots = node_fss_info[main_node]['snapshots']
-            keep_snapshots = self.config.decide_snapshots_to_keep(ffs, main_snapshots)
-            self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
+        for ffs in self.model.keys():
+            self._prune_snapshots_for_ffs(ffs)
+
+    def _prune_snapshots_for_ffs(self, ffs, restrict_to_node = None):
+        node_fss_info = self.model[ffs]
+        main_node = node_fss_info['_main']
+        main_snapshots = node_fss_info[main_node]['snapshots']
+        if not main_snapshots:
+            return
+        keep_snapshots = self.config.decide_snapshots_to_keep(ffs, main_snapshots)
+        keep_snapshots.add(main_snapshots[-1]) # always! keep the latest snapshot
+        self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
+        if restrict_to_node is None or restrict_to_node == main_node:
             remove_from_main = [
                 x for x in main_snapshots if x not in keep_snapshots]
             for snapshot in remove_from_main:
@@ -637,14 +649,15 @@ class Engine:
                     main_node, {'msg': 'remove_snapshot', 'ffs': ffs, 'snapshot': snapshot})
                 # and forget they existed for now.
                 node_fss_info[main_node]['snapshots'].remove(snapshot)
-            for node in sorted(node_fss_info):
-                if node != main_node and not node.startswith('_'):
+        for node in sorted(node_fss_info):
+            if node != main_node and not node.startswith('_'):
+                if restrict_to_node is None or restrict_to_node  == node:
                     target_snapshots = node_fss_info[node]['snapshots']
                     too_many = [
                         x for x in target_snapshots if x not in keep_snapshots]
                     for snapshot in too_many:
                         self.send(node, {'msg': 'remove_snapshot',
-                                         'ffs': ffs, 'snapshot': snapshot})
+                                            'ffs': ffs, 'snapshot': snapshot})
                         # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
@@ -714,6 +727,7 @@ class Engine:
                 if self.is_ffs_moving(ffs):
                     self.fault(
                         "Still moving after set_properties moving_to = -, Something is fishy ", msg, CodingError)
+                self._prune_snapshots_for_ffs(ffs)
         elif (  # happens after successful capture & replication.
                 self.is_ffs_moving(ffs) and
                 props.get('ffs:main', False) == 'off'):
@@ -775,24 +789,25 @@ class Engine:
         if main != node:
             self.fault("Capture message received from non main node",
                        msg, InconsistencyError)
-        if not 'snapshot' in msg:
+        if 'snapshot' not in msg:
             self.fault("No snapshot in msg", msg, CodingError)
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
             self.fault("Snapshot was already in model", msg, CodingError)
-        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
-            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+        self.model[ffs][node]['snapshots'].append(snapshot)
 
         main = self.model[ffs]['_main']
-        for node in self.node_config:
+        for node in sorted(self.node_config):
             if node != main and node in self.model[ffs] and not self.model[ffs][node]['removing']:
                 postfix = self.model[ffs][node][
                     'properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
                     self._send_snapshot(main, node, ffs, snapshot)
+        if not self.is_ffs_moving(ffs):
+            self._prune_snapshots_for_ffs(ffs, main)
                     
 
-    def send_snapshot_done(self, msg):
+    def node_send_snapshot_done(self, msg):
         main = msg['from']
         if 'ffs' not in msg:
             self.fault("missing ffs parameter", msg, CodingError)
@@ -809,6 +824,8 @@ class Engine:
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
             self.fault("Snapshot was already in model", msg, CodingError)
+        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
+            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
@@ -820,6 +837,9 @@ class Engine:
                 'ffs': ffs,
                 'properties': {'ffs:main': 'off'}
             })
+        else:
+            if not self.is_ffs_moving(ffs):
+                self._prune_snapshots_for_ffs(ffs, node)
 
     def node_remove_done(self, msg):
         node = msg['from']
@@ -881,7 +901,7 @@ class Engine:
         self.zpool_stati[node] = status
 
     def do_zpool_status_check(self):
-        for node in self.node_config:
+        for node in sorted(self.node_config):
             self.send(node, {'msg': 'zpool_status'})
 
     def shutdown(self):

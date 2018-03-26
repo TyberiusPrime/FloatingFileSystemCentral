@@ -136,7 +136,7 @@ class CheckedConfig:
         if not isinstance(res, dict):
             raise ValueError("get_default_properties must return a dict")
         for k in res:
-            res[k] = str(res[k])
+           res[k] = str(res[k])
         return res
 
     @must_return_type(dict)
@@ -183,10 +183,10 @@ class CheckedConfig:
         return self._logger
         
     def decide_snapshots_to_keep(self, ffs_name, snapshots):
-        return self.config.decide_snapshots_to_keep(ffs_name, snapshots)
+        return set(self.config.decide_snapshots_to_keep(ffs_name, snapshots))
 
     def decide_snapshots_to_send(self, ffs_name, snapshots):
-        return self.config.decide_snapshots_to_send(ffs_name, snapshots)
+        return set(self.config.decide_snapshots_to_send(ffs_name, snapshots))
 
     @must_return_type(str)
     def find_node(self, incoming_name):
