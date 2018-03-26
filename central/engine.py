@@ -190,6 +190,9 @@ class Engine:
             return self.client_service_restart()
         elif command == 'list_ffs':
             return self.client_list_ffs()
+        elif command == 'list_targets':
+            return self.client_list_targets()
+
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -204,6 +207,9 @@ class Engine:
             result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x !=
                                                  ffs_info['_main'] and not x.startswith('_')]
         return result
+
+    def client_list_targets(self):
+        return [x['hostname'] for x in self.config.get_nodes().values()]
 
     def client_service_is_started(self):
         return {'started': self.startup_done}
@@ -304,7 +310,7 @@ class Engine:
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
         if target == self.model[ffs]['_main']:
-            raise ValueError("Target is main - not removing")
+            raise ValueError("Remove failed, target is main - not removing")
 
         # little harm in sending it again if we're already removing
         self.send(target,
@@ -335,7 +341,7 @@ class Engine:
                     raise RemoveInProgress(
                         "Remove in progress - can't add again before remove is completed")
                 else:
-                    raise ValueError("Target already in list")
+                    raise ValueError("Add failed, target already in list")
         for target in targets:
             props = self.config.get_default_properties().copy()
             props.update(self.config.get_enforced_properties())
@@ -371,6 +377,7 @@ class Engine:
             raise RenameInProgress()
         postfix = msg.get('postfix', '')
         self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
+        return {'ok': True}
 
     def do_capture(self, ffs, chown_and_chmod, postfix=''):
         snapshot = self._name_snapshot(ffs, postfix)
@@ -428,11 +435,14 @@ class Engine:
             raise ValueError("Nonexistant ffs specified")
         if 'target' not in msg:
             raise ValueError("Missing target (=new_main) in msg")
-        target = msg['target']
+        try:
+            target = self.config.find_node(msg['target'])
+        except InvalidTarget:
+            raise InvalidTarget("Move failed, invalid target.")
         if target.startswith("_"):
-            raise ValueError("Invalid target.")
+            raise InvalidTarget("Move failed, invalid target.")
         if target not in self.model[ffs]:
-            raise ValueError("Target does not have this ffs")
+            raise InvalidTarget("Move failed, target does not have this ffs.")
         current_main = self.model[ffs]['_main']
         if target == current_main:
             raise ValueError("Target is already main")

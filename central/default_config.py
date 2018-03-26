@@ -193,7 +193,7 @@ class CheckedConfig:
         found = self.config.find_node(incoming_name)
         if not found in self.get_nodes():
             from .engine import InvalidTarget
-            raise InvalidTarget("invalid target: %s" % incoming_name)
+            raise InvalidTarget("invalid target: %s - %s" % (incoming_name, found))
         return found
 
     @must_return_type(bool)

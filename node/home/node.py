@@ -214,7 +214,7 @@ def msg_chown_and_chmod(msg):
         raise ValueError("invalid user")
     if 'rights' not in msg:
         raise ValueError("no rights set")
-    if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa][+=-][rwxXst]*)+$", msg['rights']):
+    if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", msg['rights']):
         raise ValueError("invalid rights - needs to look like 0777")
     subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path, '-R'])
     subprocess.check_call(

@@ -1,4 +1,5 @@
 import unittest
+import stat
 import time
 import pwd
 import subprocess
@@ -31,6 +32,15 @@ def run_expect_ok(cmd_args):
         raise ValueError("Error return: %i, %s, %s" % (rc, stdout, stderr))
     return stdout
 
+def run_expect_error(cmd_args, check_for_msg=None):
+    rc, stdout, stderr = run_client(cmd_args)
+    if rc == 0:
+        raise ValueError("Unexpected non error return: %i, %s, %s" % (rc, stdout, stderr))
+    if check_for_msg:
+        if check_for_msg not in stdout:
+            raise ValueError("stdout did not contain '%s': %i, %s, %s" % (check_for_msg, rc, stdout, stderr))
+    return stdout
+
 
 def client_wait_for_startup():
     start = time.time()
@@ -55,6 +65,10 @@ def client_wait_for_empty_que():
         if time.time() > start + 30:
             raise ValueError("timeout")
         time.sleep(0.1)
+
+
+def get_file_rights(filename):
+    return os.stat(filename)[stat.ST_MODE]
 
 
 def zfs_output(cmd_line):
@@ -91,8 +105,11 @@ class ClientTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
         subprocess.check_call(
             ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
-        subprocess.check_call(
-            ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/rename_test'])
+        for n in 'rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test',:
+            subprocess.check_call(
+                ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
+            subprocess.check_call(['sudo', 'chmod', '0777',
+                                   '/' + cls.get_test_prefix()[:-1] + '/' + n])
 
         run_expect_ok(['service', 'restart'])
         time.sleep(3)
@@ -116,25 +133,70 @@ class ClientTests(unittest.TestCase):
         self.assertTrue('ffs_testing/one' in self.list_ffs())
 
     def test_list_ffs(self):
-        raise NotImplementedError()
-
-    def test_list_ffs_json(self):
-        raise NotImplementedError()
+        r = run_expect_ok(['list_ffs'])
+        j = json.loads(r.decode('utf-8'))
+        self.assertTrue(isinstance(j, dict))
+        self.assertTrue('ffs_testing/orphan' in j)
 
     def test_capture(self):
-        raise NotImplementedError()
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test2/one', 'w') as op:
+            op.write("test")
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test2/one'])
+        self.assertFalse(os.listdir('/' + self.get_test_prefix()
+                                    [:-1] + '/capture_test2/.zfs/snapshot'))
+        run_expect_ok(['capture', 'ffs_testing/capture_test2'])
+        client_wait_for_empty_que()
+        self.assertTrue(os.listdir('/' + self.get_test_prefix()
+                                   [:-1] + '/capture_test2/.zfs/snapshot'))
+        self.assertTrue(os.listdir('/' + self.get_test_prefix()
+                                   [:-1] + '/capture_test2/.zfs/snapshot'))
+        # config default permissions are uog+rw
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/capture_test2/one') & 0o0777,
+                        0o000)
+
+    def test_capture_and_chmod(self):
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test/one', 'w') as op:
+            op.write("test")
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test/one'])
+        self.assertFalse(os.listdir('/' + self.get_test_prefix()
+                                    [:-1] + '/capture_test/.zfs/snapshot'))
+        run_expect_ok(['capture', 'ffs_testing/capture_test',
+                       '--chown_and_chmod', '--postfix=shu'])
+        client_wait_for_empty_que()
+        self.assertTrue(os.listdir('/' + self.get_test_prefix()
+                                   [:-1] + '/capture_test/.zfs/snapshot'))
+        self.assertTrue([
+            x for x in
+            os.listdir('/' + self.get_test_prefix()
+                       [:-1] + '/capture_test/.zfs/snapshot')
+            if x.endswith('-shu')
+        ])
+        # config default permissions are uog+rw
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/capture_test/one') & 0o0777,
+                        0o666)
 
     def test_list_orphans(self):
-        raise NotImplementedError()
+        r = run_expect_ok(['list_orphans'])
+        j = json.loads(r.decode('utf-8'))
+        self.assertTrue(isinstance(j, list))
+        self.assertTrue('ffs_testing/orphan' in j)
 
     def test_list_targets(self):
-        raise NotImplementedError()
+        r = run_expect_ok(['list_targets'])
+        j = json.loads(r.decode('utf-8'))
+        self.assertTrue(isinstance(j, list))
+        self.assertTrue(j)
 
     def test_add_target(self):
-        raise NotImplementedError()
+        run_expect_error(['add_targets', 'ffs_testing/remove_test', hostname], b'Add failed, target already in list')
 
     def test_remove_target(self):
-        pass
+        run_expect_error(['remove_target', 'ffs_testing/remove_test', hostname], b'Remove failed, target is main')
+
+    def test_move(self):
+        run_expect_error(['move', 'ffs_testing/remove_test', 'shu'], b'Move failed, invalid target')
 
     def test_rename(self):
         self.assertTrue(os.path.exists(

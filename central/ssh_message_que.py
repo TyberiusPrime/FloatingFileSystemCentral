@@ -39,12 +39,6 @@ class OutgoingMessages:
                 node] if x.status != 'unsent']
 
     def send_message(self, node_name, node_info, msg):
-        if msg['msg'] not in ('deploy', 'list_ffs', 'set_properties',
-                              'remove_snapshot', 'send_snapshot', 'rename',
-                              'new'):
-            self.logger.info(
-                "Msgfiltered to %s: %s", node_name, format_msg(msg))
-            return
         self.logger.info("Outgoing to %s: %s",
                          node_name, format_msg(msg))
         if node_name not in self.outgoing:
