@@ -9,7 +9,20 @@ from twisted.internet import reactor, task, error
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqREPConnection
 import hashlib
 import logging
-from central import config, default_config
+from central import default_config
+if len(sys.argv) == 2:
+    config_file = sys.argv[1]
+    if not os.path.exists(config_file):
+        raise ValueError("Could not import config, config file does not exist")
+    if not config_file.endswith('.py'):
+        raise ValueError("Could not import config, config file is not python")
+    config_file = os.path.abspath(config_file)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("config", config_file)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+else:
+    from central import config
 cfg = default_config.CheckedConfig(config.config)
 logger = cfg.config.get_logging()
 from central import engine
@@ -140,7 +153,7 @@ def main():
                                 (j, repr(e)))
                 reply = {"error": "exception", 'content': repr(e)}
             logger.info("Reply to client: (%i) %s",
-                        len(reply), repr(reply)[:80])
+                        len(repr(reply)), repr(reply)[:80])
             reply = json.dumps(reply)
             reply = reply.encode("utf-8")
             s.reply(msgId, reply)
