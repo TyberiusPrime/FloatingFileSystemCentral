@@ -19,15 +19,15 @@ import node
 hostname = subprocess.check_output('hostname')
 
 
-def run_client(cmd_args):
-    p = subprocess.Popen([os.path.join(os.path.dirname(__file__), '../../FloatingFileSystemClient/ffs.py')] + cmd_args,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run_client(cmd_args, cwd=None):
+    p = subprocess.Popen([os.path.abspath(os.path.join(os.path.dirname(__file__), '../../FloatingFileSystemClient/ffs.py'))] + cmd_args,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
     stdout, stderr = p.communicate()
     return p.returncode, stdout, stderr
 
 
-def run_expect_ok(cmd_args):
-    rc, stdout, stderr = run_client(cmd_args)
+def run_expect_ok(cmd_args, cwd=None):
+    rc, stdout, stderr = run_client(cmd_args, cwd)
     if rc != 0:
         raise ValueError("Error return: %i, %s, %s" % (rc, stdout, stderr))
     return stdout
@@ -105,7 +105,7 @@ class ClientTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
         subprocess.check_call(
             ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
-        for n in 'rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test',:
+        for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test']:
             subprocess.check_call(
                 ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(['sudo', 'chmod', '0777',
@@ -210,6 +210,58 @@ class ClientTests(unittest.TestCase):
             '/' + self.get_test_prefix() + 'renamed_test'))
         props = _get_zfs_properties(self.get_test_prefix() + 'renamed_test')
         self.assertEqual(props.get('ffs:renamed_from', '-'), '-')
+
+    def test_chown_and_chmod(self):
+        with open('/' + self.get_test_prefix()[:-1] + '/chown_test/one', 'w') as op:
+            op.write("test")
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/one'])
+
+        os.mkdir('/' + self.get_test_prefix()[:-1] + '/chown_test/two')
+        with open('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three', 'w') as op:
+            op.write("test")
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
+
+        #first test: absolute path.
+        run_expect_ok(['chown', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        client_wait_for_empty_que()
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
+
+        #second: relative path to ffs
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
+
+        run_expect_ok(['chown',  'ffs_testing/chown_test/two/three'])
+        client_wait_for_empty_que()
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
+
+        #third: using current directory.
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
+        run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test/two/')
+        client_wait_for_empty_que()
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
+
+
+        #fourth: current directory is ffs
+        subprocess.check_call(
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
+        run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test')
+        client_wait_for_empty_que()
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
+
+
+
+
+        
+
 
 
 if __name__ == '__main__':

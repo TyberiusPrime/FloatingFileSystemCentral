@@ -139,9 +139,9 @@ def main():
                 cfg.complain("Exception occured handling %s: %s" %
                                 (j, repr(e)))
                 reply = {"error": "exception", 'content': repr(e)}
-            reply = json.dumps(reply)
             logger.info("Reply to client: (%i) %s",
                         len(reply), repr(reply)[:80])
+            reply = json.dumps(reply)
             reply = reply.encode("utf-8")
             s.reply(msgId, reply)
             if restart:

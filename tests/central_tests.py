@@ -618,6 +618,9 @@ class StartupTests(EngineTests):
             'to': 'beta'
         })
 
+    def test_nested_roots_raise(self):
+        raise NotImplementedError()
+
 
 class PostStartupTests(EngineTests):
 
@@ -1516,7 +1519,7 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue('beta' in e.model['one'])
         self.assertTrue(e.model['one']['beta']['removing'])
-        snapshot = e.incoming_client({'msg': 'capture', 'ffs': 'one'})
+        snapshot = e.incoming_client({'msg': 'capture', 'ffs': 'one'})['snapshot']
         outgoing_messages.clear()
         e.incoming_node({
             'from': 'alpha',
@@ -1920,19 +1923,19 @@ class MoveTest(PostStartupTests):
         self.assertRaises(ValueError, inner)
 
     def test_move_raises_on_moving_to_non_target(self):
-        engine, outgoing_messages = self.get_engine({
+        e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1']},
             'beta':  {'one': ['1', ('ffs:test', '2')]},
             'gamma': {},
         })
-        self.assertEqual(engine.model['one']['beta'][
+        self.assertEqual(e.model['one']['beta'][
                          'properties']['ffs:test'], '2')
-        self.assertEqual(engine.model['one']['_main'], 'alpha')
+        self.assertEqual(e.model['one']['_main'], 'alpha')
 
         def inner():
-            engine.incoming_client(
+            e.incoming_client(
                 {"msg": "move_main", 'ffs': 'one', 'target': 'gamma'})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.InvalidTarget, inner)
 
     def test_move_raises_on_moving_to_non_existing_ffs(self):
         engine, outgoing_messages = self.get_engine({
@@ -2714,11 +2717,13 @@ class ChownTests(PostStartupTests):
         })
         e.incoming_client({
             'msg': 'chown_and_chmod',
-            'ffs': 'one'
+            'ffs': 'one',
+            'sub_path': '/',
         })
         self.assertEqual(outgoing_messages[0], {
             'msg': 'chown_and_chmod',
             'ffs': 'one',
+            'sub_path': '/',
             'to': 'alpha',
             'user': e.config.get_chown_user('one'),
             'rights': e.config.get_chmod_rights('one'),
@@ -3270,9 +3275,6 @@ class OutgoingMessageTests(unittest.TestCase):
     def test_client_list_ffs_in_case_of_new(self):
         raise NotImplementedError()
 
-    def test_non_capture_chown_chmod(self):
-        raise NotImplementedError()
-
 
 class RenameTests(PostStartupTests):
 
@@ -3737,6 +3739,77 @@ class RenameTests(PostStartupTests):
                 'msg': 'rename', 'ffs': 'one', 'new_name': 'three'
             })
         self.assertRaises(engine.RenameInProgress, inner)
+
+
+class ChmodTests(PostStartupTests):
+
+    def test_basic(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        r = e.incoming_client({
+            'msg': 'chown_and_chmod',
+            'ffs': 'one',
+            'sub_path': '/code'
+        })
+        self.assertEqual(r, {'ok': True})
+        self.assertEqual(outgoing_messages, [
+            {
+                'msg': 'chown_and_chmod',
+                'ffs': 'one',
+                'sub_path': '/code',
+                'to': 'beta',
+                'user': e.config.get_chown_user('one'),
+                'rights': e.config.get_chmod_rights('one')
+            }
+        ])
+
+    def test_raises_no_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'chown_and_chmod',
+                'sub_path': 'code'
+            })
+        self.assertRaises(engine.CodingError, inner)
+
+    def test_raises_invalid_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'chown_and_chmod',
+                'ffs': 'two',
+                'sub_path': 'code',
+            })
+        self.assertRaises(ValueError, inner)
+          
+    def test_raises_no_sub_path(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'chown_and_chmod',
+                'ffs': 'one',
+            })
+        self.assertRaises(engine.CodingError, inner)
+
+    
+    def test_raises_invalid_sub_path(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'chown_and_chmod',
+                'ffs': 'one',
+                'sub_path': '../code'
+            })
+        self.assertRaises(ValueError, inner)
 
 
 if __name__ == '__main__':

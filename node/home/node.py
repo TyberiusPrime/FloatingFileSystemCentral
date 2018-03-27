@@ -148,6 +148,7 @@ def msg_capture(msg):
     if combined in list_snapshots():
         raise ValueError("Snapshot already exists")
     if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
+        msg['sub_path'] = '/'
         msg_chown_and_chmod(msg)  # fields do match
 
     subprocess.check_call(
@@ -204,10 +205,15 @@ def list_all_users():
 
 def msg_chown_and_chmod(msg):
     ffs = msg['ffs']
+    sub_path = msg['sub_path']
+    if '/..' in sub_path or '../' in sub_path:
+        raise ValueError("sub path must not contain ../")
+    if not sub_path.startswith('/'):
+        raise ValueError("sub path must start with /")
     full_ffs_path = find_ffs_prefix() + ffs
     if full_ffs_path not in list_ffs(False, True):
         raise ValueError("invalid ffs")
-    if not 'user' in msg:
+    if 'user' not in msg:
         raise ValueError("no user set")
     user = msg['user']
     if user not in list_all_users():
@@ -216,10 +222,10 @@ def msg_chown_and_chmod(msg):
         raise ValueError("no rights set")
     if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", msg['rights']):
         raise ValueError("invalid rights - needs to look like 0777")
-    subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path, '-R'])
+    subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path + sub_path, '-R'])
     subprocess.check_call(
-        ['sudo', 'chmod', msg['rights'], '/' + full_ffs_path, '-R'])
-    return {'msg': 'chmod_and_chown_done', 'ffs': ffs}
+        ['sudo', 'chmod', msg['rights'], '/' + full_ffs_path + sub_path, '-R'])
+    return {'msg': 'chown_and_chmod_done', 'ffs': ffs}
 
 
 def clean_up_clones():

@@ -159,6 +159,9 @@ class Engine:
             self.node_zpool_status(msg)
         elif msg['msg'] == 'rename_done':
             self.node_rename_done(msg)
+        elif msg['msg'] == 'chown_and_chmod_done':
+            self.node_chown_and_chmod_done(msg)
+         
         else:
             self.fault("Invalid msg from node: %s" % msg)
 
@@ -376,8 +379,8 @@ class Engine:
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
         postfix = msg.get('postfix', '')
-        self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
-        return {'ok': True}
+        snapshot = self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
+        return {'ok': True, 'snapshot': snapshot}
 
     def do_capture(self, ffs, chown_and_chmod, postfix=''):
         snapshot = self._name_snapshot(ffs, postfix)
@@ -407,24 +410,34 @@ class Engine:
     @needs_startup
     def client_chown_and_chmod(self, msg):
         if 'ffs' not in msg:
-            raise ValueError("No ffs specified")
+            raise CodingError("No ffs specified")
+        if 'sub_path' not in msg:
+            raise CodingError("No sub_path specified")
+
         ffs = msg['ffs']
+        sub_path = msg['sub_path']
+        if '..' in sub_path:
+            raise ValueError("../ paths not allowed")
+        if not sub_path.startswith('/'):
+            raise ValueError("sub_path must start with /")
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
         if self.is_ffs_moving(ffs):
             raise MoveInProgress(
                 "This ffs is moving to a different main - you should not have been able to change the files anyhow")
+        if self.is_ffs_renaming(ffs):
+            raise RenameInProgress()
         self.send(
             self.model[ffs]['_main'],
             {
                 'msg': 'chown_and_chmod',
                 'ffs': ffs,
+                'sub_path': sub_path,
                 'user': self.config.get_chown_user(ffs),
                 'rights': self.config.get_chmod_rights(ffs)
             }
-
-
         )
+        return {"ok": True}
 
     @needs_startup
     def client_move_main(self, msg):
@@ -1116,6 +1129,9 @@ class Engine:
                         'ffs': rename_target,
                         'properties': {'ffs:renamed_from': '-'}
                     })
+
+    def node_chown_and_chmod_done(self, msg):
+        pass
 
     def shutdown(self):
         self.sender.shutdown()

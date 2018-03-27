@@ -764,14 +764,14 @@ class NodeTests(unittest.TestCase):
             ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac'])
 
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac',
-                  'user': 'nobody', 'rights': '0567'}
+                  'user': 'nobody', 'rights': '0567', 'sub_path': '/'}
         fn = '/' + NodeTests.get_test_prefix() + 'cac/file_one'
         touch(fn)
         out_msg = node.dispatch(in_msg)
         self.assertNotError(out_msg)
         self.assertEqual(get_file_user(fn), 'nobody')
         self.assertEqual(get_file_rights(fn) & 0o567, 0o567)
-        self.assertEqual(out_msg['msg'], 'chmod_and_chown_done')
+        self.assertEqual(out_msg['msg'], 'chown_and_chmod_done')
 
     def test_chown_and_chmod_rgwx(self):
         subprocess.check_call(
@@ -780,7 +780,7 @@ class NodeTests(unittest.TestCase):
             ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac3'])
 
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac3',
-                  'user': 'nobody', 'rights': 'o+rwX'}
+                  'user': 'nobody', 'rights': 'o+rwX', 'sub_path': '/'}
         fn = '/' + NodeTests.get_test_prefix() + 'cac3/two/file_two'
         os.mkdir(os.path.dirname(fn))
         touch(fn)
@@ -791,11 +791,11 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(get_file_user(os.path.dirname(fn)), 'nobody')
         self.assertEqual(get_file_rights(fn) & 0o006, 0o006)
         self.assertEqual(get_file_rights(os.path.dirname(fn)) & 0o007, 0o007)
-        self.assertEqual(out_msg['msg'], 'chmod_and_chown_done')
+        self.assertEqual(out_msg['msg'], 'chown_and_chmod_done')
 
     def test_chown_and_chmod_invalid_ffs(self):
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac_not_existant',
-                  'user': 'nobody', 'rights': '0567'}
+                  'user': 'nobody', 'rights': '0567', 'sub_path': '/'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue('invalid ffs' in out_msg['content'])
@@ -804,7 +804,7 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac4'])
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac4',
-                  'user': 'not_present_here', 'rights': '0567'}
+                  'user': 'not_present_here', 'rights': '0567', 'sub_path': '/'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue('invalid user' in out_msg['content'])
@@ -813,7 +813,7 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'cac5'])
         in_msg = {'msg': 'chown_and_chmod', 'ffs': '.ffs_testing/cac5',
-                  'user': 'nobody', 'rights': '+nope'}
+                  'user': 'nobody', 'rights': '+nope', 'sub_path': '/'}
         out_msg = node.dispatch(in_msg)
         self.assertError(out_msg)
         self.assertTrue('invalid rights' in out_msg['content'])
@@ -824,7 +824,7 @@ class NodeTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'cac2'])
         in_msg = {'msg': 'capture', 'ffs': '.ffs_testing/cac2', 'snapshot': 'a',
-                  'chown_and_chmod': True, 'user': 'nobody', 'rights': '0567'}
+                  'chown_and_chmod': True, 'user': 'nobody', 'rights': '0567', 'sub_path': '/'}
         self.assertNotSnapshot('.ffs_testing/cac2', 'b')
         fn = '/' + NodeTests.get_test_prefix() + 'cac2/file_one'
         touch(fn)
@@ -1048,5 +1048,50 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(node.get_zfs_property(NodeTests.get_test_prefix() + 'from_7_r', 'ffs:renamed_from'),
         '.ffs_testing/from_7')
 
+    def test_chown_and_chmod(self):
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_8'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_8']) 
+        write_file('/' + NodeTests.get_test_prefix() + 'from_8/one', 'hello')
+        subprocess.check_call(
+            ['sudo', 'chmod', '000', '/' + NodeTests.get_test_prefix() + 'from_8/one']) 
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_8/one') & 0o777, 0)
+        in_msg = {'msg': 'chown_and_chmod',
+                  'ffs': '.ffs_testing/from_8',
+                  'sub_path': '/',
+                  'user': 'nobody',
+                  'rights': 'uog+rwX',
+        }
+        out_msg = node.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_8/one') & 0o777, 0o666)
+       
+    def test_chmod_and_chown_sub_dir(self):
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_9'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_9']) 
+        os.makedirs('/' + NodeTests.get_test_prefix() + 'from_9/one')
+        write_file('/' + NodeTests.get_test_prefix() + 'from_9/one/two', 'hello')
+        write_file('/' + NodeTests.get_test_prefix() + 'from_9/a', 'hello')
+        subprocess.check_call(
+            ['sudo', 'chmod', '000', '/' + NodeTests.get_test_prefix() + 'from_9/one/two']) 
+        subprocess.check_call(
+            ['sudo', 'chmod', '000', '/' + NodeTests.get_test_prefix() + 'from_9/a']) 
+
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_9/one/two') & 0o777, 0)
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_9/a') & 0o777, 0)
+        in_msg = {'msg': 'chown_and_chmod',
+                  'ffs': '.ffs_testing/from_9',
+                  'sub_path': '/one',
+                   'user': 'nobody',
+                  'rights': 'uog+rwX',
+
+        }
+        out_msg = node.dispatch(in_msg)
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_9/one/two') & 0o777, 0o666)
+        self.assertEqual(get_file_rights('/' + NodeTests.get_test_prefix() + 'from_9/a') & 0o777, 0)
+ 
 if __name__ == '__main__':
     unittest.main()
