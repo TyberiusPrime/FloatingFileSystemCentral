@@ -8,7 +8,13 @@ import hashlib
 
 
 def zfs_output(cmd_line):
-    return subprocess.check_output(cmd_line).decode('utf-8')
+    p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+    stdout, stderr = p.communicate()
+    if p.returncode != 0:
+        raise subprocess.CalledProcessError(
+            p.returncode, cmd_line, stdout + stderr)
+    return stdout.decode('utf-8')
 
 
 def _get_zfs_properties(zfs_name):
@@ -16,6 +22,9 @@ def _get_zfs_properties(zfs_name):
                        ).strip().split("\n")
     lines = [x.split("\t") for x in lines]
     result = {x[1]: x[2] for x in lines}
+    result = {x[1]: x[2] for x in lines if not(
+        x[1].startswith('ffs:') and x[3].startswith('inherited')
+    )}
     return result
 
 
@@ -31,24 +40,26 @@ def list_zfs():
 _cached_ffs_prefix = None
 
 
-def find_ffs_prefix():
-    global _cached_ffs_prefix
-    if _cached_ffs_prefix is None:
-        for x in list_zfs():
-            if x.endswith('/ffs'):
-                _cached_ffs_prefix = x + "/"
-    if _cached_ffs_prefix is None:
-        raise KeyError()
-    return _cached_ffs_prefix
-
-clone_dir = find_ffs_prefix() + '.ffs_sync_clones'
+def find_ffs_prefix(storage_prefix_or_msg):  # also takes msg
+    if isinstance(storage_prefix_or_msg, dict):
+        storage_prefix = storage_prefix_or_msg['storage_prefix']
+    else:
+        storage_prefix = storage_prefix_or_msg
+    result = storage_prefix[1:]
+    if not result.endswith('/'):
+        result += '/'
+    return result
 
 
-def list_ffs(strip_prefix=False, include_testing=False):
-    res = [x for x in list_zfs() if x.startswith(find_ffs_prefix()) and (not x.startswith(
-        find_ffs_prefix() + '.') or x.startswith(find_ffs_prefix() + '.ffs_testing'))]
+def get_clone_dir(msg):
+    return find_ffs_prefix(msg) + '.ffs_sync_clones'
+
+
+def list_ffs(storage_prefix, strip_prefix=False, include_testing=False):
+    res = [x for x in list_zfs() if x.startswith(find_ffs_prefix(storage_prefix)) and (not x.startswith(
+        find_ffs_prefix(storage_prefix) + '.'))]
     if strip_prefix:
-        ffs_prefix = find_ffs_prefix()
+        ffs_prefix = find_ffs_prefix(storage_prefix)
         res = [x[len(ffs_prefix):] for x in res]
     return res
 
@@ -57,18 +68,18 @@ def list_snapshots():
     return [x.split("\t")[0] for x in zfs_output(['sudo', 'zfs', 'list', '-t', 'snapshot', '-H', '-s', 'creation']).strip().split("\n")]
 
 
-def get_snapshots(ffs):
+def get_snapshots(ffs, storage_prefix):
     all_snapshots = list_snapshots()
-    prefix = find_ffs_prefix() + ffs + '@'
+    prefix = find_ffs_prefix(storage_prefix) + ffs + '@'
     matching = [x[x.find("@") + 1:]
                 for x in all_snapshots if x.startswith(prefix)]
     return matching
 
 
-def msg_list_ffs():
+def msg_list_ffs(msg):
     result = {'msg': 'ffs_list', 'ffs': {}}
-    ffs_prefix = find_ffs_prefix()
-    ffs_list = list_ffs()
+    ffs_prefix = find_ffs_prefix(msg)
+    ffs_list = list_ffs(msg['storage_prefix'])
     ffs_info = {x[len(ffs_prefix):]: {'snapshots': [],
                                       'properties': _get_zfs_properties(x)} for x in ffs_list}
     snapshots = list_snapshots()
@@ -96,9 +107,9 @@ def check_property_name_and_value(name, value):
 
 def msg_set_properties(msg):
     ffs = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs
-    if full_ffs_path not in list_ffs(False, True):
-        raise ValueError("invalid ffs")
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
+        raise ValueError("invalid ffs: '%s'" % full_ffs_path)
     for prop, value in msg['properties'].items():
         check_property_name_and_value(prop, value)
 
@@ -114,7 +125,7 @@ def msg_set_properties(msg):
 
 def msg_new(msg):
     ffs = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs
+    full_ffs_path = find_ffs_prefix(msg) + ffs
     for prop, value in msg['properties'].items():
         check_property_name_and_value(prop, value)
 
@@ -141,8 +152,8 @@ def msg_new(msg):
 def msg_capture(msg):
     ffs = msg['ffs']
     snapshot_name = msg['snapshot']
-    full_ffs_path = find_ffs_prefix() + ffs
-    if full_ffs_path not in list_ffs(False, True):
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
     if combined in list_snapshots():
@@ -158,11 +169,9 @@ def msg_capture(msg):
 
 def msg_remove(msg):
     ffs = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs
-    if full_ffs_path not in list_ffs(False, True):
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         return {'msg': 'remove_failed', 'reason': 'target_does_not_exists', 'ffs': ffs}
-    if not '/ffs' in full_ffs_path:
-        raise ValueError("Unexpected")
     p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
@@ -179,17 +188,15 @@ def msg_remove(msg):
 
 def msg_remove_snapshot(msg):
     ffs = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs
-    if full_ffs_path not in list_ffs(False, True):
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     snapshot_name = msg['snapshot']
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
     if combined not in list_snapshots():
         raise ValueError("invalid snapshot")
-    if not '/ffs' in full_ffs_path:
-        raise ValueError("Unexpected")
     subprocess.check_call(['sudo', 'zfs', 'destroy', combined])
-    return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs), 'snapshot': snapshot_name}
+    return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs, msg['storage_prefix']), 'snapshot': snapshot_name}
 
 
 def msg_zpool_status(msg):
@@ -210,8 +217,8 @@ def msg_chown_and_chmod(msg):
         raise ValueError("sub path must not contain ../")
     if not sub_path.startswith('/'):
         raise ValueError("sub path must start with /")
-    full_ffs_path = find_ffs_prefix() + ffs
-    if full_ffs_path not in list_ffs(False, True):
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     if 'user' not in msg:
         raise ValueError("no user set")
@@ -222,30 +229,38 @@ def msg_chown_and_chmod(msg):
         raise ValueError("no rights set")
     if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", msg['rights']):
         raise ValueError("invalid rights - needs to look like 0777")
-    subprocess.check_call(['sudo', 'chown', user, '/' + full_ffs_path + sub_path, '-R'])
+    subprocess.check_call(
+        ['sudo', 'chown', user, '/' + full_ffs_path + sub_path, '-R'])
     subprocess.check_call(
         ['sudo', 'chmod', msg['rights'], '/' + full_ffs_path + sub_path, '-R'])
     return {'msg': 'chown_and_chmod_done', 'ffs': ffs}
 
 
-def clean_up_clones():
-    for fn in os.listdir('/' + clone_dir):
-        cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn]
-        p = subprocess.Popen(cmd).communicate()
+def clean_up_clones(storage_prefix):
+    clone_dir = get_clone_dir(storage_prefix)
+    try:
+        for fn in os.listdir('/' + clone_dir):
+            cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn]
+            p = subprocess.Popen(cmd).communicate()
+    except OSError:
+        pass
 
 
 def msg_send_snapshot(msg):
     ffs_from = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs_from
-    if full_ffs_path not in list_ffs(False, True):
+    full_ffs_path = find_ffs_prefix(msg) + ffs_from
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     target_host = msg['target_host']
     target_user = msg['target_user']
     target_ssh_cmd = msg['target_ssh_cmd']
     if not target_ssh_cmd[0] == 'ssh':
         raise ValueError("Invalid ssh command - first value must be 'ssh'")
-    target_path = msg['target_path']
-    target_ffs = target_path[target_path.find("/%%ffs%%/") + len('/%%ffs%%/'):]
+    target_ffs = msg['target_ffs']
+    target_storage_prefix = msg['target_storage_prefix']
+    if not target_storage_prefix.startswith('/') or target_storage_prefix.endswith('/'):
+        raise ValueError("Malformated target_storage_prefix")
+    target_path = target_storage_prefix + '/' + target_ffs
     snapshot = msg['snapshot']
     my_hash = hashlib.md5()
     my_hash.update(ffs_from.encode('utf-8'))
@@ -253,6 +268,7 @@ def msg_send_snapshot(msg):
     my_hash.update(target_host.encode('utf-8'))
     my_hash = my_hash.hexdigest()
     clone_name = "%f_%s" % (time.time(), my_hash)
+    clone_dir = get_clone_dir(msg['storage_prefix'])
     try:
         # step -1 - make sure we have an .ffs_sync_clones directory.
         subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
@@ -277,7 +293,8 @@ def msg_send_snapshot(msg):
         stdout, stderr = p.communicate(json.dumps({
             'msg': 'set_properties',
             'ffs': target_ffs,
-            'properties': {'readonly': 'off'}
+            'properties': {'readonly': 'off'},
+            'storage_prefix': target_storage_prefix,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -309,7 +326,8 @@ def msg_send_snapshot(msg):
         stdout, stderr = p.communicate(json.dumps({
             'msg': 'set_properties',
             'ffs': target_ffs,
-            'properties': {'readonly': 'on'}
+            'properties': {'readonly': 'on'},
+            'storage_prefix': target_storage_prefix,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -323,7 +341,9 @@ def msg_send_snapshot(msg):
         stdout, stderr = p.communicate(json.dumps({
             'msg': 'capture',
             'ffs': target_ffs,
-            'snapshot': snapshot
+            'snapshot': snapshot,
+
+            'storage_prefix': target_storage_prefix,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -339,7 +359,7 @@ def msg_send_snapshot(msg):
         }
 
     finally:
-        clean_up_clones()
+        clean_up_clones(msg['storage_prefix'])
 
 
 def msg_deploy(msg):
@@ -363,14 +383,14 @@ def msg_deploy(msg):
 
 def msg_rename(msg):
     ffs = msg['ffs']
-    full_ffs_path = find_ffs_prefix() + ffs
-    lf = list_ffs(False, True)
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    lf = list_ffs(msg['storage_prefix'], False, True)
     if full_ffs_path not in lf:
         raise ValueError("invalid ffs")
     if not 'new_name' in msg:
         raise ValueError("no new_name set")
     new_name = msg['new_name']
-    full_new_path = find_ffs_prefix() + new_name
+    full_new_path = find_ffs_prefix(msg) + new_name
     if full_new_path in lf:
         raise ValueError("new_name already exists")
     subprocess.check_call(
@@ -382,6 +402,28 @@ def msg_rename(msg):
             'new_name': new_name}
 
 
+def iterate_parent_paths(path):
+    parts = path.split("/")
+    for i in reversed(range(2, len(parts) + 1)):
+        yield "/".join(parts[:i])
+
+
+def is_inside_ffs_root(path):
+    zfs = list_zfs()
+    if not path.startswith('/'):
+        return False
+    for pp in iterate_parent_paths(path):
+        if pp[1:] in zfs:
+            try:
+                if get_zfs_property(pp[1:], 'ffs:root') == 'on':
+                    return True
+                else:
+                    pass
+            except KeyError:
+                continue
+    return False
+
+
 def shell_cmd_rprsync(cmd_line):
     """The receiving end of an rsync sync"""
     def path_ok(target_path):
@@ -391,14 +433,11 @@ def shell_cmd_rprsync(cmd_line):
             return True
         if target_path.startswith('/mf/scb'):
             return True
-        if target_path.startswith('/' + find_ffs_prefix()):
+        if is_inside_ffs_root(target_path):
             return True
-        return False
+        raise ValueError("Path rejected: '%s" % target_path)
 
     target_path = cmd_line[cmd_line.find('/'):]
-    target_path = target_path.replace(
-        "/%%ffs%%/", '/' + find_ffs_prefix() + '/')
-    cmd_line = cmd_line.replace("/%%ffs%%/", '/' + find_ffs_prefix() + '/')
     path_ok(target_path)
     reset_rights = False
     if target_path.endswith('/.'):
@@ -414,10 +453,27 @@ def shell_cmd_rprsync(cmd_line):
     #subprocess.check_call(['sudo','chmod', '%.3o'  % (org_rights & 0o777), target_path])
 
 
+def check_storage_prefix(msg):
+    if 'storage_prefix' not in msg:
+        raise ValueError("No storage_prefix in msg")
+    zfs_name = msg['storage_prefix'][1:]
+    try:
+        is_root = get_zfs_property(zfs_name, 'ffs:root') == 'on'
+        if not is_root:
+            raise ValueError("ffs:root not set to 'on' on storage_prefix %s" % msg[
+                             'storage_prefix'][1:])
+    except KeyError:
+        raise ValueError("ffs:root not set on storage_prefix %s" %
+                         msg['storage_prefix'][1:])
+    except subprocess.CalledProcessError:
+        raise ValueError("storage prefix not a ZFS")
+
+
 def dispatch(msg):
     try:
+        check_storage_prefix(msg)
         if msg['msg'] == 'list_ffs':
-            result = msg_list_ffs()
+            result = msg_list_ffs(msg)
         elif msg['msg'] == 'set_properties':
             result = msg_set_properties(msg)
         elif msg['msg'] == 'new':

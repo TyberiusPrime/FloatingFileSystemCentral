@@ -31,6 +31,21 @@ class EngineTests(unittest.TestCase):
                 del msg[k]
         return msg
 
+    def assertMsgEqual(self, msgA, msgB):
+        def strip_storage(msg):
+            msg = msg.copy()
+            for k in ['storage_prefix']:
+                if k in msg:
+                    del msg[k]
+            return msg
+        # at least one needs be auto generated
+        self.assertTrue('storage_prefix' in msgA or 'storage_prefix' in msgB)
+        # if they're both specifed, must be the same, otherwise: ignore
+        if 'storage_prefix' not in msgA or 'storage_prefix' not in msgB:
+            msgA = strip_storage(msgA)
+            msgB = strip_storage(msgB)
+        self.assertEqual(msgA, msgB)
+
     @classmethod
     def tearDownClass(cls):
         try:
@@ -157,14 +172,14 @@ class StartupTests(EngineTests):
         e.incoming_client({'msg': 'startup', })
         self.assertFalse(e.startup_done)
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertEqual(strip_node_zip(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(strip_node_zip(outgoing_messages[0]),
+                            {
             'to': 'alpha',
             'msg': 'deploy',
             'node.zip': '...base64...',
         })
-        self.assertEqual(strip_node_zip(outgoing_messages[1]),
-                         {
+        self.assertMsgEqual(strip_node_zip(outgoing_messages[1]),
+                            {
             'to': 'beta',
             'msg': 'deploy',
             'node.zip': '...base64...',
@@ -173,13 +188,13 @@ class StartupTests(EngineTests):
         e.incoming_node({'msg': 'deploy_done', 'from': 'alpha'})
         e.incoming_node({'msg': 'deploy_done', 'from': 'beta'})
         self.assertFalse(e.startup_done)
-        self.assertEqual(outgoing_messages[0],
-                         {
+        self.assertMsgEqual(outgoing_messages[0],
+                            {
             'to': 'alpha',
             'msg': 'list_ffs'
         })
-        self.assertEqual(outgoing_messages[1],
-                         {
+        self.assertMsgEqual(outgoing_messages[1],
+                            {
             'to': 'beta',
             'msg': 'list_ffs'
         })
@@ -196,6 +211,15 @@ class StartupTests(EngineTests):
         self.assertTrue(e.startup_done)
         # no ffs info -> nothing happens
         self.assertEqual(len(outgoing_messages), 0)
+
+    def test_list_ffs_failure_leads_to_faulted_engine(self):
+        e, outgoing_messages = self.ge()
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        def inner():
+            e.incoming_node({"error": "exception", "content": "storage prefix not a ZFS", "traceback": "Traceback (most recent call last):\n  File \"/home/ffs/node.py\", line 451, in check_storage_prefix\n    is_root = get_zfs_property(zfs_name, 'ffs:root') == 'on'\n  File \"/home/ffs/node.py\", line 27, in get_zfs_property\n    return _get_zfs_properties(zfs_name)[property_name]\n  File \"/home/ffs/node.py\", line 19, in _get_zfs_properties\n    lines = zfs_output(['sudo', 'zfs', 'get', 'all', zfs_name, '-H']\n  File \"/home/ffs/node.py\", line 14, in zfs_output\n    raise subprocess.CalledProcessError(p.returncode, cmd_line, stdout + stderr)\nsubprocess.CalledProcessError: Command '['sudo', 'zfs', 'get', 'all', 'doesnotexist', '-H']' returned non-zero exit status 1\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/ffs/node.py\", line 462, in dispatch\n    check_storage_prefix(msg)\n  File \"/home/ffs/node.py\", line 457, in check_storage_prefix\n    raise ValueError(\"storage prefix not a ZFS\")\nValueError: storage prefix not a ZFS\n"})
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+        self.assertTrue(e.faulted)
 
     def test_restoring_main_from_ro(self):
         e, outgoing_messages = self.ge()
@@ -225,7 +249,7 @@ class StartupTests(EngineTests):
                          'properties']['readonly'], 'off')
         # no ffs info -> nothing happens
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -272,13 +296,13 @@ class StartupTests(EngineTests):
                                 }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'ffs:main': 'off'}
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -315,13 +339,13 @@ class StartupTests(EngineTests):
                                 }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'readonly': 'off'}
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -420,13 +444,13 @@ class StartupTests(EngineTests):
                              }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'readonly': 'on'}
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -470,13 +494,13 @@ class StartupTests(EngineTests):
                                 }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'ffs:test': 'shu'}
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -517,7 +541,7 @@ class StartupTests(EngineTests):
                                 }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -556,25 +580,25 @@ class StartupTests(EngineTests):
                                 }
                          }
                          })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'readonly': 'off'}
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'readonly': 'on'}
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
             'properties': {'ffs:test': 'shu'}
         })
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -593,25 +617,25 @@ class StartupTests(EngineTests):
             'beta': {'one': ['1', '2', '3']},
         }, config=cfg)
         self.assertEqual(4, len(outgoing_messages))
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1',
             'to': 'alpha'
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '2',
             'to': 'alpha'
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1',
             'to': 'beta'
         })
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '2',
@@ -619,7 +643,31 @@ class StartupTests(EngineTests):
         })
 
     def test_nested_roots_raise(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.ge()
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {}
+                         })
+
+
+        def inner():
+            e.incoming_node({'msg': 'ffs_list',
+                         'from': 'alpha',
+                         'ffs': {
+                                'one': {'snapshots': [],
+                                        'properties': {
+                                    'ffs:main': 'on',
+                                    'readonly': 'on',
+                                    'ffs:root': True,
+                                }
+                                }
+                         }
+                         })
+
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+        self.assertTrue(e.faulted)
 
 
 class PostStartupTests(EngineTests):
@@ -733,7 +781,7 @@ class NewTests(PostStartupTests):
         e.incoming_client(
             {"msg": 'new', 'ffs': 'two', 'targets': ['alpha']})
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'new',
             'ffs': 'two',
@@ -765,7 +813,7 @@ class NewTests(PostStartupTests):
         e.incoming_client({"msg": 'new', 'ffs': 'two',
                            'targets': ['beta', 'alpha']})
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'new',
             'ffs': 'two',
@@ -773,7 +821,7 @@ class NewTests(PostStartupTests):
                 'ffs:main': 'on',
                 'readonly': 'off',
             }})
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'new',
             'ffs': 'two',
@@ -984,7 +1032,6 @@ class NewTests(PostStartupTests):
                 {'msg': 'add_targets', 'ffs': 'one', 'targets': ['alpha']})
         self.assertRaises(engine.RemoveInProgress, inner)
 
-
     def test_new_sets_default_properties(self):
         cfg = self._get_test_config()
         cfg.get_default_properties = lambda: {
@@ -1020,7 +1067,7 @@ class CaptureTest(PostStartupTests):
         }, config=cfg)
         self.assertFalse(outgoing_messages)
         e.incoming_client({'msg': 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'msg': 'capture',
             'ffs': 'one',
             'to': 'alpha',
@@ -1031,14 +1078,14 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertEqual({
+        self.assertMsgEqual({
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'beta'
         }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -1055,7 +1102,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': sn
         })
 
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
@@ -1074,7 +1121,7 @@ class CaptureTest(PostStartupTests):
         }, config=cfg)
         self.assertFalse(outgoing_messages)
         e.incoming_client({'msg': 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'msg': 'capture',
             'ffs': 'one',
             'to': 'beta',
@@ -1085,14 +1132,14 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertEqual({
+        self.assertMsgEqual({
             'msg': 'send_snapshot',
             'to': 'beta',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'alpha'
         }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
-        self.assertEqual({
+        self.assertMsgEqual({
             'msg': 'send_snapshot',
             'to': 'beta',
             'ffs': 'one',
@@ -1100,7 +1147,7 @@ class CaptureTest(PostStartupTests):
             'target_host': 'gamma'
         }, self.strip_send_snapshot_target_stuff(outgoing_messages[2]))
 
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
@@ -1115,7 +1162,7 @@ class CaptureTest(PostStartupTests):
             'target_host': 'alpha',
             'snapshot': sn
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -1131,7 +1178,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': sn
         })
 
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'gamma',
             'ffs': 'one',
@@ -1151,7 +1198,7 @@ class CaptureTest(PostStartupTests):
         }, config=cfg)
         self.assertFalse(outgoing_messages)
         e.incoming_client({'msg': 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'msg': 'capture',
             'ffs': 'one',
             'to': 'alpha',
@@ -1162,14 +1209,14 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertEqual({
+        self.assertMsgEqual({
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'beta'
         }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -1187,7 +1234,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': sn
         })
 
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
@@ -1200,8 +1247,8 @@ class CaptureTest(PostStartupTests):
     def test_capture_sends_capture_message(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'beta',
             'msg': 'capture',
             'ffs': 'one'
@@ -1211,8 +1258,8 @@ class CaptureTest(PostStartupTests):
     def test_unexpected_capture_explodes(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'beta',
             'msg': 'capture',
             'ffs': 'one'
@@ -1232,8 +1279,8 @@ class CaptureTest(PostStartupTests):
     def test_capture_done_triggers_sync(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'beta',
             'msg': 'capture',
             'ffs': 'one'
@@ -1246,13 +1293,13 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': snapshot_name
                          })
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
-                         {
-                             'to': 'beta',
-                             'msg': 'send_snapshot',
-                             'ffs': 'one',
-                             'target_host': 'alpha',
-                             'snapshot': snapshot_name,
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
+                            {
+            'to': 'beta',
+            'msg': 'send_snapshot',
+            'ffs': 'one',
+            'target_host': 'alpha',
+            'snapshot': snapshot_name,
         }
 
         )
@@ -1268,8 +1315,8 @@ class CaptureTest(PostStartupTests):
     def test_capture_done_adds_to_snapshot_list(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'beta',
             'msg': 'capture',
             'ffs': 'one'
@@ -1287,8 +1334,8 @@ class CaptureTest(PostStartupTests):
     def test_capture_with_postfix(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one', 'postfix': 'test'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'beta',
             'msg': 'capture',
             'ffs': 'one'
@@ -1304,8 +1351,8 @@ class CaptureTest(PostStartupTests):
 
         e, outgoing_messages = self.get_engine(config)
         e.incoming_client({"msg": 'capture', 'ffs': 'one', 'postfix': 'test'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one'
@@ -1320,8 +1367,8 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_test
         })
 
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]),
-                         {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]),
+                            {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -1329,8 +1376,8 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_test,
         }
         )
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]),
-                         {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]),
+                            {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'gamma',
@@ -1340,8 +1387,8 @@ class CaptureTest(PostStartupTests):
         )
 
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[3]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[3]),
+                            {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one'
@@ -1355,8 +1402,8 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_no_test
         })
 
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
+                            {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -1390,11 +1437,12 @@ class RemoveTarget(PostStartupTests):
         e.incoming_client(
             {"msg": 'remove_target', 'ffs': 'one', 'target': 'alpha'})
         self.assertTrue(e.model['one']['alpha']['removing'])
-        self.assertEqual(outgoing_messages, [
-            {'msg': 'remove',
-             'ffs': 'one',
-             'to': 'alpha'}
-        ])
+        self.assertMsgEqual(outgoing_messages[0],
+                            {'msg': 'remove',
+                             'ffs': 'one',
+                             'to': 'alpha'}
+                            )
+        self.assertEqual(len(outgoing_messages), 1)
         e.incoming_node({
             'from': 'alpha',
             'msg': 'remove_done',
@@ -1439,11 +1487,12 @@ class RemoveTarget(PostStartupTests):
         e.incoming_client(
             {"msg": 'remove_target', 'ffs': 'one', 'target': 'alpha'})
         self.assertTrue(e.model['one']['alpha']['removing'])
-        self.assertEqual(outgoing_messages, [
-            {'msg': 'remove',
-             'ffs': 'one',
-             'to': 'alpha'}
-        ])
+        self.assertMsgEqual(outgoing_messages[0],
+                            {'msg': 'remove',
+                             'ffs': 'one',
+                             'to': 'alpha'}
+                            )
+        self.assertEqual(len(outgoing_messages), 1)
 
         e.incoming_node({
             'from': 'alpha',
@@ -1459,7 +1508,7 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove',
             'ffs': 'one',
             'to': 'beta'
@@ -1496,7 +1545,7 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove',
             'ffs': 'one',
             'to': 'beta'
@@ -1512,14 +1561,15 @@ class RemoveTarget(PostStartupTests):
         })
         self.assertTrue(e.startup_done)
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove',
             'ffs': 'one',
             'to': 'beta'
         })
         self.assertTrue('beta' in e.model['one'])
         self.assertTrue(e.model['one']['beta']['removing'])
-        snapshot = e.incoming_client({'msg': 'capture', 'ffs': 'one'})['snapshot']
+        snapshot = e.incoming_client(
+            {'msg': 'capture', 'ffs': 'one'})['snapshot']
         outgoing_messages.clear()
         e.incoming_node({
             'from': 'alpha',
@@ -1528,7 +1578,7 @@ class RemoveTarget(PostStartupTests):
             'snapshot': snapshot,
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'target_host': 'gamma',
@@ -1647,8 +1697,8 @@ class RemoveTarget(PostStartupTests):
         e.incoming_client(
             {'msg': 'remove_target', 'ffs': 'one', 'target': 'shu'})
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
-                         'msg': 'remove', 'ffs': 'one', 'to': 'gamma'})
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'remove', 'ffs': 'one', 'to': 'gamma'})
         self.assertEqual(e.model['one']['gamma'], {'removing': True})
 
 
@@ -1739,12 +1789,13 @@ class AddTargetTests(PostStartupTests):
                            'add_targets',
                            'ffs': 'one',
                            'targets': ['gamma']})
-        self.assertEqual(outgoing_messages, [
-            {'msg': 'new',
-             'to': 'gamma',
-             'ffs': 'one',
-             'properties': {'ffs:main': 'off', 'readonly': 'on'}}
-        ])
+        self.assertMsgEqual(outgoing_messages[0],
+                            {'msg': 'new',
+                             'to': 'gamma',
+                             'ffs': 'one',
+                             'properties': {'ffs:main': 'off', 'readonly': 'on'}}
+                            )
+        self.assertEqual(1, len(outgoing_messages))
         outgoing_messages.clear()
         e.incoming_node({'msg': 'new_done',
                          'from': 'gamma',
@@ -1755,14 +1806,14 @@ class AddTargetTests(PostStartupTests):
                          }
 
                          })
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
             'msg': 'send_snapshot',
             'ffs': 'one',
             'to': 'beta',
             'target_host': 'gamma',
             'snapshot': '1'
         })
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
             'msg': 'send_snapshot',
             'ffs': 'one',
             'to': 'beta',
@@ -1789,16 +1840,16 @@ class AddTargetTests(PostStartupTests):
                            'targets': ['gamma', 'alpha']})
         self.assertEqual(2, len(outgoing_messages))
         # alphabetical order!
-        self.assertEqual(outgoing_messages[0],
-                         {
+        self.assertMsgEqual(outgoing_messages[0],
+                            {
             'to': 'alpha',
             'msg': 'new',
             'ffs': 'two',
             'properties': {'ffs:main': 'off', 'readonly': 'on'}
         }
         )
-        self.assertEqual(outgoing_messages[1],
-                         {
+        self.assertMsgEqual(outgoing_messages[1],
+                            {
             'to': 'gamma',
             'msg': 'new',
             'ffs': 'two',
@@ -2050,7 +2101,7 @@ class MoveTest(PostStartupTests):
         self.assertEqual(engine.model['one']['_main'], 'alpha')
         engine.incoming_client(
             {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2064,7 +2115,7 @@ class MoveTest(PostStartupTests):
             'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
         })
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[1]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[1]), {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -2076,7 +2127,7 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot'],
         })
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -2091,7 +2142,7 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot']
         })
         self.assertEqual(len(outgoing_messages), 4)
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2104,7 +2155,7 @@ class MoveTest(PostStartupTests):
             'properties': {'ffs:main': 'off'}
         })
         self.assertEqual(len(outgoing_messages), 5)
-        self.assertEqual(outgoing_messages[4], {
+        self.assertMsgEqual(outgoing_messages[4], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2117,7 +2168,7 @@ class MoveTest(PostStartupTests):
             'properties': {'ffs:main': 'on', 'readonly': 'off'}
         })
         self.assertEqual(len(outgoing_messages), 6)
-        self.assertEqual(outgoing_messages[5], {
+        self.assertMsgEqual(outgoing_messages[5], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2161,7 +2212,7 @@ class MoveTest(PostStartupTests):
         self.assertEqual(engine.model['one']['_main'], 'alpha')
         engine.incoming_client(
             {"msg": "move_main", 'ffs': 'one', 'target': 'beta'})
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2175,7 +2226,7 @@ class MoveTest(PostStartupTests):
             'properties': {'readonly': 'on', 'ffs:moving_to': 'beta'}
         })
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[1]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[1]), {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -2187,7 +2238,7 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot'],
         })
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -2202,7 +2253,7 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot']
         })
         self.assertEqual(len(outgoing_messages), 4)
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2215,7 +2266,7 @@ class MoveTest(PostStartupTests):
             'properties': {'ffs:main': 'off'}
         })
         self.assertEqual(len(outgoing_messages), 5)
-        self.assertEqual(outgoing_messages[4], {
+        self.assertMsgEqual(outgoing_messages[4], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2228,7 +2279,7 @@ class MoveTest(PostStartupTests):
             'properties': {'ffs:main': 'on', 'readonly': 'off'}
         })
         self.assertEqual(len(outgoing_messages), 6)
-        self.assertEqual(outgoing_messages[5], {
+        self.assertMsgEqual(outgoing_messages[5], {
             'to': 'alpha',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2253,13 +2304,13 @@ class MoveTest(PostStartupTests):
                          'properties']['ffs:moving_to'], '-')
         self.assertFalse('_moving' in engine.model['one'])
 
-        self.assertEqual(outgoing_messages[6], {
+        self.assertMsgEqual(outgoing_messages[6], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
             'snapshot': '1'
         })
-        self.assertEqual(outgoing_messages[7], {
+        self.assertMsgEqual(outgoing_messages[7], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -2280,7 +2331,7 @@ class SnapshotPruningTests(EngineTests):
         engine.model['one']['alpha']['snapshots'].remove('1')
         engine._prune_snapshots()
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1',
@@ -2303,7 +2354,7 @@ class ZpoolStatusChecks(EngineTests):
         e, outgoing, errors = self.ge()
         e.do_zpool_status_check()
         self.assertEqual(len(outgoing), 1)
-        self.assertEqual(outgoing[0], {
+        self.assertMsgEqual(outgoing[0], {
             'msg': 'zpool_status',
             'to': 'alpha',
         })
@@ -2371,7 +2422,7 @@ config:
         e, outgoing, errors = self.ge()
         e.do_zpool_status_check()
         self.assertEqual(len(outgoing), 1)
-        self.assertEqual(outgoing[0], {
+        self.assertMsgEqual(outgoing[0], {
             'msg': 'zpool_status',
             'to': 'alpha',
         })
@@ -2720,7 +2771,7 @@ class ChownTests(PostStartupTests):
             'ffs': 'one',
             'sub_path': '/',
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'chown_and_chmod',
             'ffs': 'one',
             'sub_path': '/',
@@ -2737,8 +2788,8 @@ class ChownTests(PostStartupTests):
         })
         e.incoming_client(
             {"msg": 'capture', 'ffs': 'one', 'chown_and_chmod': True})
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]),
-                         {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -2760,7 +2811,7 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -2777,14 +2828,14 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
             'ffs': 'one',
             'snapshot': '2'
         })
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -2814,7 +2865,7 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
@@ -2828,7 +2879,7 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -2840,7 +2891,7 @@ class TestStartupTriggeringActions(EngineTests):
             'beta':  {'one': ['1']},
             'gamma': {},
         })
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'to': 'alpha',
             'msg': 'capture',
             'ffs': 'one',
@@ -2862,7 +2913,7 @@ class TestStartupTriggeringActions(EngineTests):
             'beta':  {'one': ['1', '2']},
             'gamma': {},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'beta',
             'msg': 'set_properties',
             'ffs': 'one',
@@ -2881,7 +2932,7 @@ class TestStartupTriggeringActions(EngineTests):
                               ]},
             'gamma': {},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'one',
@@ -2896,12 +2947,12 @@ class TestStartupTriggeringActions(EngineTests):
             'beta':  {'one': ['1', '2']},
             'gamma': {},
         }, config=cfg)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
@@ -2916,17 +2967,17 @@ class TestStartupTriggeringActions(EngineTests):
             'beta':  {'one': ['0', '1', '2']},
             'gamma': {},
         }, config=cfg)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '0'})
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
@@ -2941,22 +2992,22 @@ class TestStartupTriggeringActions(EngineTests):
             'beta':  {'one': ['0', '1', '2']},
             'gamma': {},
         }, config=cfg)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '0'})
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[3]), {
+        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[3]), {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -2976,17 +3027,17 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         },
             config=cfg)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '0'})
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -3078,7 +3129,7 @@ class CrossTalkTest(EngineTests):
             'ffs': 'one'
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'msg': 'capture',
             'to': 'beta',
             'ffs': 'one'
@@ -3094,7 +3145,7 @@ class CrossTalkTest(EngineTests):
             'msg': 'capture',
             'ffs': 'one'
         })
-        self.assertEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
             'msg': 'capture',
             'to': 'alpha',
             'ffs': 'one'
@@ -3142,7 +3193,7 @@ class CrossTalkTest(EngineTests):
             'snapshot': right_snapshot_name,
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'one',
@@ -3289,7 +3340,7 @@ class RenameTests(PostStartupTests):
                            'to': 'alpha',
                            'ffs': 'one',
                            'new_name': 'two'})
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'rename',
             'to': 'alpha',
             'ffs': 'one',
@@ -3304,7 +3355,7 @@ class RenameTests(PostStartupTests):
                          'new_name': 'two'})
         self.assertFalse('one' in e.model)
         self.assertEqual(e.model['two']['alpha']['snapshots'], ['1'])
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
@@ -3337,19 +3388,19 @@ class RenameTests(PostStartupTests):
                            'ffs': 'one',
                            'new_name': 'two'})
         # no need to send main first
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'rename',
             'to': 'alpha',
             'ffs': 'one',
             'new_name': 'two'
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'rename',
             'to': 'beta',
             'ffs': 'one',
             'new_name': 'two'
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'rename',
             'to': 'gamma',
             'ffs': 'one',
@@ -3385,26 +3436,24 @@ class RenameTests(PostStartupTests):
         self.assertFalse('one' in e.model)
         self.assertTrue('alpha' in e.model['two'])
         self.assertEqual(len(outgoing_messages), 6)
-        self.assertEqual(outgoing_messages[3], {
+        self.assertMsgEqual(outgoing_messages[3], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'}
         })
-        self.assertEqual(outgoing_messages[4], {
+        self.assertMsgEqual(outgoing_messages[4], {
             'msg': 'set_properties',
             'to': 'beta',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'}
         })
-        self.assertEqual(outgoing_messages[5], {
+        self.assertMsgEqual(outgoing_messages[5], {
             'msg': 'set_properties',
             'to': 'gamma',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'}
         })
-
-
 
     def test_rename_replicated_interrupted_main_was_renamed(self):
         e, outgoing_messages = self.get_engine({
@@ -3412,13 +3461,13 @@ class RenameTests(PostStartupTests):
             'beta':  {'_two': ['1', ('ffs:renamed_from', 'one')]},
             'gamma': {'one': ['1']},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'rename',
             'to': 'alpha',
             'ffs': 'one',
             'new_name': 'two'
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'rename',
             'to': 'gamma',
             'ffs': 'one',
@@ -3439,19 +3488,19 @@ class RenameTests(PostStartupTests):
                          'from': 'gamma',
                          'new_name': 'two'})
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'set_properties',
             'to': 'beta',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'set_properties',
             'to': 'gamma',
             'ffs': 'two',
@@ -3476,25 +3525,25 @@ class RenameTests(PostStartupTests):
             'properties': {"ffs:renamed_from": '-'}
         })
 
-
         self.assertFalse('one' in e.model)
         self.assertTrue('two' in e.model)
-        self.assertEqual(e.model['two']['beta']['properties'].get('ffs:renamed_from','-'), '-')
+        self.assertEqual(e.model['two']['beta']['properties'].get(
+            'ffs:renamed_from', '-'), '-')
         self.assertEqual(e.model['two']['_main'], 'beta')
-                         
+
     def test_rename_replicated_interrupted_non_main_was_renamed(self):
         e, outgoing_messages = self.get_engine({
             'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
-            'beta':  {'_one': ['1',]},
+            'beta':  {'_one': ['1', ]},
             'gamma': {'one': ['1']},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'rename',
             'to': 'beta',
             'ffs': 'one',
             'new_name': 'two'
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'rename',
             'to': 'gamma',
             'ffs': 'one',
@@ -3512,19 +3561,19 @@ class RenameTests(PostStartupTests):
                          'from': 'gamma',
                          'new_name': 'two'})
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'set_properties',
             'to': 'beta',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'set_properties',
             'to': 'gamma',
             'ffs': 'two',
@@ -3532,7 +3581,8 @@ class RenameTests(PostStartupTests):
         })
         self.assertFalse('one' in e.model)
         self.assertTrue('two' in e.model)
-        self.assertEqual(e.model['two']['beta']['properties'].get('ffs:renamed_from','-'), '-')
+        self.assertEqual(e.model['two']['beta']['properties'].get(
+            'ffs:renamed_from', '-'), '-')
         self.assertEqual(e.model['two']['_main'], 'beta')
 
     def test_rename_interrupted_after_rename_before_any_set_properties(self):
@@ -3541,19 +3591,19 @@ class RenameTests(PostStartupTests):
             'beta':  {'_two': ['1', ('ffs:renamed_from', 'one')]},
             'gamma': {'two': ['1', ('ffs:renamed_from', 'one')]},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'set_properties',
             'to': 'beta',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[2], {
+        self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'set_properties',
             'to': 'gamma',
             'ffs': 'two',
@@ -3563,20 +3613,20 @@ class RenameTests(PostStartupTests):
         self.assertEqual(len(outgoing_messages), 3)
         self.assertFalse('one' in e.model)
         self.assertFalse(e.model['two'].get('_renaming', False))
-                          
+
     def test_rename_interrupted_after_rename_before_some_set_properties(self):
         e, outgoing_messages = self.get_engine({
             'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
             'beta':  {'_two': ['1', ('ffs:renamed_from', '-')]},
             'gamma': {'two': ['1', ('ffs:renamed_from', 'one')]},
         })
-        self.assertEqual(outgoing_messages[0], {
+        self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'set_properties',
             'to': 'alpha',
             'ffs': 'two',
             'properties': {'ffs:renamed_from': '-'},
         })
-        self.assertEqual(outgoing_messages[1], {
+        self.assertMsgEqual(outgoing_messages[1], {
             'msg': 'set_properties',
             'to': 'gamma',
             'ffs': 'two',
@@ -3586,8 +3636,6 @@ class RenameTests(PostStartupTests):
         self.assertEqual(len(outgoing_messages), 2)
         self.assertFalse('one' in e.model)
         self.assertFalse(e.model['two'].get('_renaming', False))
-                          
-
 
     def test_conflicting_interrupted_rename_faults_engine(self):
         def inner():
@@ -3595,16 +3643,17 @@ class RenameTests(PostStartupTests):
                 'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
                 'beta':  {'_two': ['1', ('ffs:renamed_from', 'shu')]},
                 'gamma': {'one': ['1']},
-            }) 
+            })
         self.assertRaises(engine.InconsistencyError, inner)
 
     def test_rename_but_other_already_without_rename_from(self):
         def inner():
             e, outgoing_messages = self.get_engine({
                 'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
-                'beta':  {'_two': ['1',]},
-                'gamma': {'one': ['1']},  #this one never saw the rename-command
-            }) 
+                'beta':  {'_two': ['1', ]},
+                # this one never saw the rename-command
+                'gamma': {'one': ['1']},
+            })
         self.assertRaises(engine.InconsistencyError, inner)
 
     def test_moving_and_renaming_faults_engine(self):
@@ -3613,7 +3662,7 @@ class RenameTests(PostStartupTests):
                 'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
                 'beta':  {'_two': ['1', ('ffs:moving_to', 'alpha')]},
                 'gamma': {'one': ['1']},
-            }) 
+            })
         self.assertRaises(engine.InconsistencyError, inner)
 
     def test_rename_and_having_to_restore_main_readonly_faults_engine(self):
@@ -3622,7 +3671,7 @@ class RenameTests(PostStartupTests):
                 'alpha': {'two': ['1', ('ffs:renamed_from', 'one')]},
                 'beta':  {'two': ['1', ('readonly', 'off'), ('ffs:main', 'off')]},
                 'gamma': {'one': ['1']},
-            }) 
+            })
         self.assertRaises(engine.InconsistencyError, inner)
 
     def test_no_remove_during_rename(self):
@@ -3753,21 +3802,23 @@ class ChmodTests(PostStartupTests):
             'sub_path': '/code'
         })
         self.assertEqual(r, {'ok': True})
-        self.assertEqual(outgoing_messages, [
-            {
-                'msg': 'chown_and_chmod',
-                'ffs': 'one',
-                'sub_path': '/code',
-                'to': 'beta',
-                'user': e.config.get_chown_user('one'),
-                'rights': e.config.get_chmod_rights('one')
-            }
-        ])
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(outgoing_messages[0],
+                            {
+            'msg': 'chown_and_chmod',
+            'ffs': 'one',
+            'sub_path': '/code',
+            'to': 'beta',
+            'user': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one')
+        }
+        )
 
     def test_raises_no_ffs(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'chown_and_chmod',
@@ -3779,6 +3830,7 @@ class ChmodTests(PostStartupTests):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'chown_and_chmod',
@@ -3786,11 +3838,12 @@ class ChmodTests(PostStartupTests):
                 'sub_path': 'code',
             })
         self.assertRaises(ValueError, inner)
-          
+
     def test_raises_no_sub_path(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'chown_and_chmod',
@@ -3798,11 +3851,11 @@ class ChmodTests(PostStartupTests):
             })
         self.assertRaises(engine.CodingError, inner)
 
-    
     def test_raises_invalid_sub_path(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'chown_and_chmod',

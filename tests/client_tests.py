@@ -1,4 +1,5 @@
 import unittest
+import signal
 import stat
 import time
 import pwd
@@ -17,55 +18,6 @@ sys.path.insert(0, '../node/home')
 import node
 
 hostname = subprocess.check_output('hostname')
-
-
-def run_client(cmd_args, cwd=None):
-    p = subprocess.Popen([os.path.abspath(os.path.join(os.path.dirname(__file__), '../../FloatingFileSystemClient/ffs.py'))] + cmd_args,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
-    stdout, stderr = p.communicate()
-    return p.returncode, stdout, stderr
-
-
-def run_expect_ok(cmd_args, cwd=None):
-    rc, stdout, stderr = run_client(cmd_args, cwd)
-    if rc != 0:
-        raise ValueError("Error return: %i, %s, %s" % (rc, stdout, stderr))
-    return stdout
-
-def run_expect_error(cmd_args, check_for_msg=None):
-    rc, stdout, stderr = run_client(cmd_args)
-    if rc == 0:
-        raise ValueError("Unexpected non error return: %i, %s, %s" % (rc, stdout, stderr))
-    if check_for_msg:
-        if check_for_msg not in stdout:
-            raise ValueError("stdout did not contain '%s': %i, %s, %s" % (check_for_msg, rc, stdout, stderr))
-    return stdout
-
-
-def client_wait_for_startup():
-    start = time.time()
-    while True:
-        stdout = run_expect_ok(['service', 'is_started'])
-        q = json.loads(stdout.decode('utf-8'))
-        if q['started']:
-            print("startup done")
-            break
-        if time.time() > start + 30:
-            raise ValueError("timeout")
-        time.sleep(0.5)
-
-
-def client_wait_for_empty_que():
-    start = time.time()
-    while True:
-        stdout = run_expect_ok(['service', 'que'])
-        q = json.loads(stdout.decode('utf-8'))
-        if not any(q.values()):
-            break
-        if time.time() > start + 30:
-            raise ValueError("timeout")
-        time.sleep(0.1)
-
 
 def get_file_rights(filename):
     return os.stat(filename)[stat.ST_MODE]
@@ -90,53 +42,163 @@ def get_zfs_property(zfs_name, property_name):
 class ClientTests(unittest.TestCase):
 
     @classmethod
-    def get_prefix(cls):
-        if not hasattr(cls, '_prefix'):
-            cls._prefix = node.find_ffs_prefix()
-        return cls._prefix
+    def get_pool(cls):
+        if not hasattr(cls, '_pool'):
+            lines = subprocess.check_output(['sudo','zpool','status']).split(b"\n")  # use status, it's in the sudoers
+            for l in lines:
+                l = l.strip()
+                if l.startswith(b'pool:'):
+                    pool = l[l.find(b':') + 2:].strip().decode('utf-8')
+                    cls._pool =  pool + '/'
+                    break
+            else:
+                raise ValueError("Could not find a zpool to create .ffs_testing zfs on")
+        return cls._pool
 
     @classmethod
     def get_test_prefix(cls):
-        return cls.get_prefix() + 'ffs_testing/'
+        return cls.get_pool() + '.ffs_testing_client_from/'
+        
+    @classmethod
+    def get_test_prefix2(cls):
+        return cls.get_pool() + '.ffs_testing_client_to/'
+    
+    @classmethod
+    def start_engine(cls):
+        if not hasattr(cls, 'engine_process'):
+            cls.engine_process = subprocess.Popen(['../ffs_central.sh', 
+                os.path.abspath('_config_engine_a.py')])
+
+
+    @classmethod
+    def run_client(cls, cmd_args, cwd=None):
+        cls.engine_process.poll()
+        if cls.engine_process.returncode is not None:
+            raise ValueError("engine has gone away")
+        p = subprocess.Popen([os.path.abspath(os.path.join(os.path.dirname(__file__), 
+        '../../FloatingFileSystemClient/ffs.py')),
+            '--host=localhost',
+            '--port=47776',
+        ]  + cmd_args,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
+        stdout, stderr = p.communicate()
+        return p.returncode, stdout, stderr
+
+
+    @classmethod
+    def run_expect_ok(cls, cmd_args, cwd=None):
+        rc, stdout, stderr = cls.run_client(cmd_args, cwd)
+        if rc != 0:
+            raise ValueError("Error return: %i, %s, %s" % (rc, stdout, stderr))
+        return stdout
+
+    @classmethod
+    def run_expect_error(cls, cmd_args, check_for_msg=None):
+        rc, stdout, stderr = cls.run_client(cmd_args)
+        if rc == 0:
+            raise ValueError("Unexpected non error return: %i, %s, %s" % (rc, stdout, stderr))
+        if check_for_msg:
+            if check_for_msg not in stdout:
+                raise ValueError("stdout did not contain '%s': %i, %s, %s" % (check_for_msg, rc, stdout, stderr))
+        return stdout
+
+    @classmethod
+    def client_wait_for_startup(cls):
+        start = time.time()
+        while True:
+            stdout = cls.run_expect_ok(['service', 'is_started'])
+            q = json.loads(stdout.decode('utf-8'))
+            if q['started']:
+                break
+            if time.time() > start + 30:
+                raise ValueError("timeout")
+            time.sleep(0.5)
+
+
+    @classmethod
+    def client_wait_for_empty_que(cls):
+        start = time.time()
+        while True:
+            stdout = cls.run_expect_ok(['service', 'que'])
+            q = json.loads(stdout.decode('utf-8'))
+            if not any(q.values()):
+                break
+            if time.time() > start + 30:
+                raise ValueError("timeout")
+            time.sleep(0.1)
+
+
 
     @classmethod
     def setUpClass(cls):
-        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-        subprocess.check_call(
-            ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1]])
-        for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test']:
+        for root in [cls.get_test_prefix()[:-1], cls.get_test_prefix2()[:-1]]:
+            p = subprocess.Popen(['sudo', 'zfs', 'destroy', root, '-R'],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+            subprocess.check_call(
+                ['sudo', 'zfs', 'create', root])
+            subprocess.check_call(
+                ['sudo', 'zfs', 'set', 'ffs:root=on', root])
+
+        for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test',
+            'add_target_test']:
             subprocess.check_call(
                 ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(['sudo', 'chmod', '0777',
                                    '/' + cls.get_test_prefix()[:-1] + '/' + n])
+        for n in ['remove_target_test']:
+            subprocess.check_call(
+                ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
+            subprocess.check_call(['sudo','zfs','set', 'ffs:main=on', cls.get_test_prefix()[:-1] + '/' + n])
+            subprocess.check_call(['sudo', 'chmod', '0777',
+                                   '/' + cls.get_test_prefix()[:-1] + '/' + n])
+            subprocess.check_call(
+                ['sudo', 'zfs', 'create', cls.get_test_prefix2()[:-1] + '/' + n])
+            subprocess.check_call(['sudo','zfs','set', 'ffs:main=off', cls.get_test_prefix2()[:-1] + '/' + n])
 
-        run_expect_ok(['service', 'restart'])
+        time.sleep(3) # give the ffs time to catch up ;)
+        cls.start_engine()
+        #self.run_expect_ok(['service', 'restart'])
         time.sleep(3)
-        client_wait_for_startup()
+        cls.client_wait_for_startup()
+    
+
 
     @classmethod
     def teardownClass(cls):
+        cls.engine_process.terminate()
         p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix2()[:-1], '-R'],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+
 
     def list_ffs(self):
-        l = run_expect_ok(['list_ffs'])
+        l = self.run_expect_ok(['list_ffs'])
         return json.loads(l.decode('utf-8'))
 
     def test_new(self):
         self.assertFalse(os.path.exists('/' + self.get_test_prefix() + 'one'))
-        self.assertFalse('ffs_testing/one' in self.list_ffs())
-        run_expect_ok(['new', 'ffs_testing/one', hostname])
-        client_wait_for_empty_que()
+        self.assertFalse('one' in self.list_ffs())
+        self.run_expect_ok(['new', 'one', 'A'])
+        self.client_wait_for_empty_que()
         self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'one'))
-        self.assertTrue('ffs_testing/one' in self.list_ffs())
+        self.assertTrue('one' in self.list_ffs())
+
+    def test_new_replicated(self):
+        self.assertFalse(os.path.exists('/' + self.get_test_prefix() + 'one_two'))
+        self.assertFalse('one_two' in self.list_ffs())
+        self.run_expect_ok(['new', 'one_two', 'A', 'B'])
+        self.client_wait_for_empty_que()
+        self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'one_two'))
+        self.assertTrue(os.path.exists('/' + self.get_test_prefix2() + 'one_two'))
+        self.assertTrue('one' in self.list_ffs())
+
 
     def test_list_ffs(self):
-        r = run_expect_ok(['list_ffs'])
+        r = self.run_expect_ok(['list_ffs'])
         j = json.loads(r.decode('utf-8'))
         self.assertTrue(isinstance(j, dict))
-        self.assertTrue('ffs_testing/orphan' in j)
+        self.assertTrue('orphan' in j)
 
     def test_capture(self):
         with open('/' + self.get_test_prefix()[:-1] + '/capture_test2/one', 'w') as op:
@@ -145,8 +207,8 @@ class ClientTests(unittest.TestCase):
             ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test2/one'])
         self.assertFalse(os.listdir('/' + self.get_test_prefix()
                                     [:-1] + '/capture_test2/.zfs/snapshot'))
-        run_expect_ok(['capture', 'ffs_testing/capture_test2'])
-        client_wait_for_empty_que()
+        self.run_expect_ok(['capture', 'capture_test2'])
+        self.client_wait_for_empty_que()
         self.assertTrue(os.listdir('/' + self.get_test_prefix()
                                    [:-1] + '/capture_test2/.zfs/snapshot'))
         self.assertTrue(os.listdir('/' + self.get_test_prefix()
@@ -162,9 +224,9 @@ class ClientTests(unittest.TestCase):
             ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test/one'])
         self.assertFalse(os.listdir('/' + self.get_test_prefix()
                                     [:-1] + '/capture_test/.zfs/snapshot'))
-        run_expect_ok(['capture', 'ffs_testing/capture_test',
+        self.run_expect_ok(['capture', 'capture_test',
                        '--chown_and_chmod', '--postfix=shu'])
-        client_wait_for_empty_que()
+        self.client_wait_for_empty_que()
         self.assertTrue(os.listdir('/' + self.get_test_prefix()
                                    [:-1] + '/capture_test/.zfs/snapshot'))
         self.assertTrue([
@@ -178,32 +240,49 @@ class ClientTests(unittest.TestCase):
                         0o666)
 
     def test_list_orphans(self):
-        r = run_expect_ok(['list_orphans'])
+        r = self.run_expect_ok(['list_orphans'])
         j = json.loads(r.decode('utf-8'))
         self.assertTrue(isinstance(j, list))
-        self.assertTrue('ffs_testing/orphan' in j)
+        self.assertTrue('orphan' in j)
 
     def test_list_targets(self):
-        r = run_expect_ok(['list_targets'])
+        r = self.run_expect_ok(['list_targets'])
         j = json.loads(r.decode('utf-8'))
         self.assertTrue(isinstance(j, list))
         self.assertTrue(j)
 
     def test_add_target(self):
-        run_expect_error(['add_targets', 'ffs_testing/remove_test', hostname], b'Add failed, target already in list')
+        self.assertFalse(os.path.exists('/' + self.get_test_prefix2() + 'add_target_test'))
+        self.run_expect_ok(['add_targets', 'add_target_test', 'B'])
+        self.client_wait_for_empty_que()
+        self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'add_target_test'))
+        self.assertTrue(os.path.exists('/' + self.get_test_prefix2() + 'add_target_test'))
+        self.assertTrue('B' in self.list_ffs()['add_target_test'])
+
 
     def test_remove_target(self):
-        run_expect_error(['remove_target', 'ffs_testing/remove_test', hostname], b'Remove failed, target is main')
+        self.assertTrue(os.path.exists('/' + self.get_test_prefix2() + 'remove_target_test'))
+        self.assertTrue('B' in self.list_ffs()['remove_target_test'])
+        self.run_expect_ok(['remove_target', 'remove_target_test', 'B'])
+        self.client_wait_for_empty_que()
+        self.assertFalse(os.path.exists('/' + self.get_test_prefix2() + 'remove_target_test'))
+        self.assertFalse('B' in self.list_ffs()['remove_target_test'])
+
+    def test_add_target_already(self):
+        self.run_expect_error(['add_targets', 'remove_test', 'A'], b'Add failed, target already in list')
+
+    def test_remove_target_target_is_main(self):
+        self.run_expect_error(['remove_target', 'remove_test', 'A'], b'Remove failed, target is main')
 
     def test_move(self):
-        run_expect_error(['move', 'ffs_testing/remove_test', 'shu'], b'Move failed, invalid target')
+        self.run_expect_error(['move', 'remove_test', 'shu'], b'Move failed, invalid target')
 
     def test_rename(self):
         self.assertTrue(os.path.exists(
             '/' + self.get_test_prefix() + 'rename_test'))
-        run_expect_ok(['rename_ffs', 'ffs_testing/rename_test',
-                       'ffs_testing/renamed_test'])
-        client_wait_for_empty_que()
+        self.run_expect_ok(['rename_ffs', 'rename_test',
+                       'renamed_test'])
+        self.client_wait_for_empty_que()
         self.assertFalse(os.path.exists(
             '/' + self.get_test_prefix() + 'rename_test'))
         self.assertTrue(os.path.exists(
@@ -227,8 +306,8 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
 
         #first test: absolute path.
-        run_expect_ok(['chown', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
-        client_wait_for_empty_que()
+        self.run_expect_ok(['chown', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
+        self.client_wait_for_empty_que()
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
 
         #second: relative path to ffs
@@ -236,16 +315,16 @@ class ClientTests(unittest.TestCase):
             ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
 
-        run_expect_ok(['chown',  'ffs_testing/chown_test/two/three'])
-        client_wait_for_empty_que()
+        self.run_expect_ok(['chown',  'chown_test/two/three'])
+        self.client_wait_for_empty_que()
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
 
         #third: using current directory.
         subprocess.check_call(
             ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
-        run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test/two/')
-        client_wait_for_empty_que()
+        self.run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test/two/')
+        self.client_wait_for_empty_que()
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
 
 
@@ -253,16 +332,28 @@ class ClientTests(unittest.TestCase):
         subprocess.check_call(
             ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/chown_test/two/three'])
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0)
-        run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test')
-        client_wait_for_empty_que()
+        self.run_expect_ok(['chown'],  cwd='/' + self.get_test_prefix()[:-1] + '/chown_test')
+        self.client_wait_for_empty_que()
         self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/chown_test/two/three') & 0o777, 0o666)
 
 
 
 
         
+class CleanChildProcesses:
+  def __enter__(self):
+    os.setpgrp() # create new process group, become its leader
+  def __exit__(self, type, value, traceback):
+    try:
+      os.killpg(0, signal.SIGINT) # kill all processes in my group
+    except KeyboardInterrupt:
+      # SIGINT is delievered to this process as well as the child processes.
+      # Ignore it so that the existing exception, if any, is returned. This
+      # leaves us with a clean exit code if there was no exception.
+      pass
 
 
 
 if __name__ == '__main__':
-    unittest.main()
+    with CleanChildProcesses():
+        unittest.main()

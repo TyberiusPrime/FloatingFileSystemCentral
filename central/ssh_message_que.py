@@ -86,7 +86,7 @@ class OutgoingMessages:
         found = None
         for msgs in self.outgoing.values():
             for m in msgs:
-                if m.job_id == job_id:
+                if hasattr(m, 'job_id') and m.job_id == job_id: # non sent messages don't have a job_id
                     found = m
                     break
             if found:

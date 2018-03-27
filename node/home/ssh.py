@@ -77,7 +77,11 @@ if True:
             j = json.loads(json_input)
             result = node.dispatch(j)
             sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
-            sys.exit(0)
+            if 'error' in result:
+                sys.exit(1)
+            else:
+                sys.exit(0)
+
         except Exception as e:  # pylint: disable=W0703
             import traceback
             tb = traceback.format_exc()

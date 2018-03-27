@@ -19,6 +19,9 @@ class DefaultConfig:
             if node_info['hostname'] == incoming_name:
                 return node
 
+    def do_deploy(self):
+        return True
+
     def complain(self, message):
         """This gets called on (catastrophic) failures. Contact your admin stuff basically"""
         pass
@@ -109,10 +112,19 @@ class CheckedConfig:
             raise ValueError(
                 "Config.nodes must be a dictionary node -> node_def")
         for node, node_info in nodes.items():
-            if not 'public_key' in node_info:
+            if 'public_key' not in node_info:
                 raise ValueError("no public key for node" % node)
+            if 'storage_prefix' not in node_info:
+                raise ValueError("No storage_prefix (eg. pool/ffs) specified for node: %s" % node)
+            storage_prefix = node_info['storage_prefix']
+            if not storage_prefix.startswith('/'):
+                raise ValueError("Storage prefix must be an absolute path")
+            if storage_prefix.endswith('/'):
+                raise ValueError("Storage prefix must not end in /")
             if node.startswith('_'):
                 raise ValueError("Node can not start with _: %s" % node)
+            if isinstance(node_info['public_key'], str):
+                node_info['public_key'] = node_info['public_key'].encode('ascii')
  
 
         # stuff that ascertains that the config is as expected - no need to edit
@@ -200,3 +212,7 @@ class CheckedConfig:
     def accepted_ffs_name(self, ffs):
         return self.config.accepted_ffs_name(ffs)
 
+
+    @must_return_type(bool)
+    def do_deploy(self):
+        return self.config.do_deploy()

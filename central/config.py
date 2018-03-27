@@ -47,7 +47,7 @@ class Config(DefaultConfig):
         return {
             'pcmt283': {
                 'hostname': 'mm',
-                'storage_prefix': 'mm/ffs',
+                'storage_prefix': '/mm/ffs',
                 'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
             },
         }
@@ -158,7 +158,6 @@ class Config(DefaultConfig):
                 snapshot_times.remove((parse_snapshot(found), found))
                 keep.add(found)
         return keep
-
 
 config = Config()
 all = [config]

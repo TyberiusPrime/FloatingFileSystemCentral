@@ -118,6 +118,7 @@ class Engine:
 
     def send(self, node_name, message):
         """allow sending by name"""
+        message['storage_prefix'] = self.node_config[node_name]['storage_prefix']
         self.sender.send_message(
             node_name, self.node_config[node_name], message)
 
@@ -161,11 +162,12 @@ class Engine:
             self.node_rename_done(msg)
         elif msg['msg'] == 'chown_and_chmod_done':
             self.node_chown_and_chmod_done(msg)
-         
         else:
             self.fault("Invalid msg from node: %s" % msg)
 
     def incoming_client(self, msg):
+        if self.faulted:
+            raise EngineFaulted(self.faulted)
         command = msg['msg']
         if command == 'startup':
             return self.client_startup()
@@ -230,12 +232,17 @@ class Engine:
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
-        msg = {'msg': 'deploy'}
-        with open(self.deployment_zip_filename, 'rb') as op:
-            d = op.read()
-            msg['node.zip'] = base64.b64encode(d).decode('utf-8')
-        for node_name, node_info in sorted(self.node_config.items()):
-            self.sender.send_message(node_name, node_info, msg)
+        if self.config.do_deploy():
+            msg = {'msg': 'deploy'}
+            with open(self.deployment_zip_filename, 'rb') as op:
+                d = op.read()
+                msg['node.zip'] = base64.b64encode(d).decode('utf-8')
+            for node_name, node_info in sorted(self.node_config.items()):
+                self.send(node_name, msg)
+        else:
+            msg = {'msg': 'list_ffs'}
+            for node_name, node_info in sorted(self.node_config.items()):
+                self.send(node_name, msg)
 
     def check_ffs_name(self, path):
         if not re.match("^[a-zA-Z0-9][A-Za-z0-9/_-]*$", path):
@@ -321,6 +328,7 @@ class Engine:
                    'ffs': ffs}
                   )
         self.model[ffs][target] = {'removing': True}
+        return {'ok': True}
 
     @needs_startup
     def client_add_targets(self, msg):
@@ -356,6 +364,7 @@ class Engine:
                        }
                       )
             self.model[ffs][target] = {'_new': True}
+        return {'ok': True}
 
     def any_new(self, ffs):
         for node, node_info in self.model[ffs].items():
@@ -559,7 +568,7 @@ class Engine:
 
     def node_deploy_done(self, sender):
         msg = {'msg': 'list_ffs'}
-        self.sender.send_message(sender, self.node_config[sender], msg)
+        self.send(sender, msg)
 
     def node_ffs_list(self, ffs_list, sender):
         # remove those starting with .ffs_testing - only '.' filesystem that
@@ -584,6 +593,7 @@ class Engine:
                 if ffs not in self.model:
                     self.model[ffs] = {}
                 self.model[ffs][node] = ffs_info
+        self._check_invalid_properties()
         self._parse_main_and_readonly()
         # do removal after assigning a main, so we can trigger on ffs:main=on
         # and ffs:remove_asap=on!
@@ -591,6 +601,14 @@ class Engine:
         self._enforce_properties()
         self._prune_snapshots()
         self._send_missing_snapshots()
+
+    def _check_invalid_properties(self):
+        for ffs in self.model:
+            for node, node_info in self.model[ffs].items():
+                if not node.startswith('_'):
+                    if node_info['properties'].get('ffs:root', '-') != '-':
+                        self.fault("ffs:root set on sub ffs - nesting is not suported: %s" % ffs,
+                        exception=ManualInterventionNeeded)
 
     def _handle_remove_asap(self):
         for ffs in self.model:
