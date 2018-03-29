@@ -150,7 +150,8 @@ class ClientTests(unittest.TestCase):
                 ['sudo', 'zfs', 'set', 'ffs:root=on', root])
 
         for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test',
-                  'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main']:
+                  'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main',
+                  'time_based_snapshot_tests']:
             subprocess.check_call(
                 ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(['sudo', 'chmod', '0777',
@@ -407,6 +408,20 @@ class ClientTests(unittest.TestCase):
         self.run_expect_error(['move', 'move_test_move_to_main', 'A'],
                               b'target is already main')
                             
+    def test_set_snapshot_interval(self):
+        # tests only the setting of the snapshot property
+        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '15')
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', 'off'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '-')
+
+
+
+
 
 
 class CleanChildProcesses:

@@ -38,6 +38,9 @@ class Config(DefaultConfig):
 
         }
 
+    def do_timebased_actions(self):
+        return False
+
     def get_logging(self):
         self._get_logging_count += 1 
         if self._get_logging_count > 1:

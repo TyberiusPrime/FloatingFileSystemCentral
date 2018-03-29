@@ -1,4 +1,5 @@
 import unittest
+import time
 import shutil
 from pprint import pprint
 import collections
@@ -2770,6 +2771,8 @@ config:
         self.assertEqual(len(
             errors), 4)  # for now, the all clear also comes via the error reporting mechanism
 
+    def test_no_repeated_requests_if_outstanding(self):
+        raise NotImplementedError()
 
 class ChownTests(PostStartupTests):
 
@@ -3876,6 +3879,127 @@ class ChmodTests(PostStartupTests):
                 'sub_path': '../code'
             })
         self.assertRaises(ValueError, inner)
+
+class TimeBasedSnapshotTests(PostStartupTests):
+
+    def test_setting_interval_on(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        e.incoming_client({
+            "msg": 'set_snapshot_interval',
+            'ffs': 'one',
+            'interval': 34
+        })
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:snapshot_interval': '34'}
+        })
+        self.assertMsgEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'one',
+            'properties': {'ffs:snapshot_interval': '34'}
+        })
+    
+    def test_setting_interval_no_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+            "msg": 'set_snapshot_interval',
+            'interval': 34
+        })
+        self.assertRaises(ValueError, inner)
+
+    def test_setting_interval_invalid_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+            "msg": 'set_snapshot_interval',
+            'ffs': 'four',
+            'interval': 34
+        })
+        self.assertRaises(ValueError, inner)
+
+    def test_setting_interval_invalid_interval(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+            "msg": 'set_snapshot_interval',
+            'ffs': 'one',
+            'interval': '34',
+        })
+        self.assertRaises(ValueError, inner)
+
+    def test_setting_interval_no_interval(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+        })
+
+        def inner():
+            e.incoming_client({
+            "msg": 'set_snapshot_interval',
+            'ffs': 'one',
+        })
+        self.assertRaises(ValueError, inner)
+
+
+    def test_invalid_interval_during_startup_faults(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:snapshot_interval', 'shu')]},
+        })
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+
+    def test_auto_snapshot(self):
+        def name_snapshot(offset_for_testing):
+            t = time.gmtime(time.time() + offset_for_testing)
+            t = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
+                "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
+            return 'ffs-' + '-'.join(t)
+    
+        e, outgoing_messages = self.get_engine({
+            'beta':  {
+                '_one': ['1', ('ffs:snapshot_interval', 15)],
+                '_two': [('ffs:snapshot_interval', 30)],
+                '_three': ['ffs-shubidudh', ('ffs:snapshot_interval', 15)],
+                '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15)],
+                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
+                '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
+            },
+        })
+        self.assertFalse(e.model['one']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['two']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['three']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['four']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['six']['beta']['upcoming_snapshots'])
+        #fake an outgoing snapshot
+        e.model['six']['beta']['upcoming_snapshots'] = ['blocks_auto'] 
+        e.one_minute_passed()
+        # no snapshot before
+        self.assertTrue(e.model['two']['beta']['upcoming_snapshots'])
+        #unparsable - not ffs before.
+        self.assertTrue(e.model['one']['beta']['upcoming_snapshots'])
+        self.assertTrue(e.model['three']['beta']['upcoming_snapshots'])
+        #time has not passed
+        self.assertFalse(e.model['four']['beta']['upcoming_snapshots'])
+        #time has passed
+        self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
+        #not if there's a currently outgoing snapshot
+        self.assertEqual(len(e.model['six']['beta']['upcoming_snapshots']), 1)
 
 
 if __name__ == '__main__':

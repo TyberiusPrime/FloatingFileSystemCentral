@@ -1,4 +1,5 @@
 import base64
+import time
 import pprint
 import shutil
 import os
@@ -198,6 +199,8 @@ class Engine:
             return self.client_list_ffs()
         elif command == 'list_targets':
             return self.client_list_targets()
+        elif command == 'set_snapshot_interval':
+            return self.client_set_snapshot_interval(msg)
 
         else:
             raise ValueError("invalid message from client, ignoring")
@@ -414,8 +417,6 @@ class Engine:
         )
         # so we don't reuse the name. ever
         node_info = self.model[ffs][self.model[ffs]['_main']]
-        if not 'upcoming_snapshots' in node_info:
-            node_info['upcoming_snapshots'] = []
         if snapshot in node_info['upcoming_snapshots']:
             self.fault(
                 "Adding a snapshot to upcoming snapshot that was already present", exception=CodingError)
@@ -463,7 +464,6 @@ class Engine:
         # 4 - set ffs:main = False on old main
         # 5 - set main and remove ro on new main
         # 6 - remove ffs:moving on old_main
-
 
         if 'ffs' not in msg:
             raise CodingError("no ffs specified'")
@@ -538,6 +538,36 @@ class Engine:
                 })
         return {'ok': True}
 
+    @needs_startup
+    def client_set_snapshot_interval(self, msg):
+        if 'ffs' not in msg:
+            raise CodingError("no ffs specified'")
+        ffs = msg['ffs']
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if 'interval' not in msg:
+            raise CodingError("no interval specified'")
+        interval = msg['interval']
+        if not isinstance(interval, int):
+            raise ValueError("interval parameter must be an integer")
+        if interval < 0:
+            raise ValueError("Interval must be positive")
+        if interval == 0:
+            interval = '-'
+        else:
+            interval = str(interval)
+        # store on evyr node in order to remain stored on move
+        for node in sorted(self.model[ffs]):
+            if not node.startswith('_'):
+                self.send(node, {
+                    'msg': 'set_properties',
+                    'ffs': ffs,
+                    'properties': {'ffs:snapshot_interval': interval}
+                })
+        return {'ok': True}
+
     def is_ffs_moving(self, ffs):
         if '_moving' in self.model[ffs]:
             return True
@@ -561,7 +591,6 @@ class Engine:
         return '_renaming' in self.model[ffs]
 
     def _name_snapshot(self, ffs, postfix=''):
-        import time
         t = time.localtime()
         t = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
              "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
@@ -579,8 +608,21 @@ class Engine:
             if postfix:
                 res += '-' + postfix
             no = chr(ord(no) + 1)
-
         return res
+    
+    def parse_time_from_snapshot(self, snapshot):
+        if not snapshot.startswith('ffs-'):
+            raise ValueError("Not an ffs- snapshot")
+        import calendar
+        parts = snapshot.split('-')
+        year = int(parts[1])
+        month = int(parts[2])
+        day = int(parts[3])
+        hour = int(parts[4])
+        minute = int(parts[5])
+        second = int(parts[6])
+        return calendar.timegm((year, month, day, hour, minute, second, 0, 0, 0))
+
 
     def node_deploy_done(self, sender):
         msg = {'msg': 'list_ffs'}
@@ -601,6 +643,7 @@ class Engine:
             self.logger.info("Startup complete")
             self.config.inform("Startup completed, sending syncs.")
 
+
     def build_model(self):
         self.logger.info("All list_ffs returned")
         self.model = {}
@@ -609,6 +652,7 @@ class Engine:
                 if ffs not in self.model:
                     self.model[ffs] = {}
                 self.model[ffs][node] = ffs_info
+                self.model[ffs][node]['upcoming_snapshots'] = []
         self._check_invalid_properties()
         self._parse_main_and_readonly()
         # do removal after assigning a main, so we can trigger on ffs:main=on
@@ -625,6 +669,18 @@ class Engine:
                     if node_info['properties'].get('ffs:root', '-') != '-':
                         self.fault("ffs:root set on sub ffs - nesting is not suported: %s" % ffs,
                                    exception=ManualInterventionNeeded)
+                    snapshot_interval = node_info['properties'].get(
+                        'ffs:snapshot_interval', '-')
+                    if snapshot_interval != '-':
+                        try:
+                            if int(snapshot_interval) < 0:
+                                self.fault("ffs:snapshot_interval was less than 0: %s on %s" % (ffs, node),
+                                       exception=ManualInterventionNeeded)
+
+
+                        except ValueError:
+                            self.fault("ffs:snapshot_interval was not numeric: %s on %s" % (ffs, node),
+                                       exception=ManualInterventionNeeded)
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -746,8 +802,8 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                    move_target in renames.keys() or move_target in renames.values())
-                    ):
+                            move_target in renames.keys() or move_target in renames.values())
+                        ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
                     self.fault("Rename and move mixed. Unsupported: %s %s %s" % (
@@ -930,7 +986,7 @@ class Engine:
                 self.fault(
                     "Received unexpected set_propertes_done containing ffs:moving_to on an unmoving ffs", msg, InconsistencyError)
             if (props.get('ffs:main', False) == 'off' and
-                    node == self.model[ffs]['_main']):  
+                    node == self.model[ffs]['_main']):
                 # move step 4 done, happens after successful capture & replication & main=off on old main.
                 # set main=on on new main.
                 self.send(self.model[ffs]['_moving'], {
@@ -940,9 +996,10 @@ class Engine:
                 })
             else:
                 moving_to = props['ffs:moving_to']
-                if moving_to != '-': # move step 1 done, proceed with step 2
+                if moving_to != '-':  # move step 1 done, proceed with step 2
                     if '_move_snapshot' in self.model[ffs]:
-                        self.fault('Repeated capture during move. A test case that does not correctly send ffs:moving_to?', msg, CodingError)
+                        self.fault(
+                            'Repeated capture during move. A test case that does not correctly send ffs:moving_to?', msg, CodingError)
                     self.model[ffs][
                         '_move_snapshot'] = self.do_capture(ffs, False)
                 else:  # move step 7 done, remove our _moving flag
@@ -978,6 +1035,7 @@ class Engine:
             self.fault("ffs:main=on from non-main node", msg, CodingError)
         self.model[ffs][node] = {
             'snapshots': [],
+            'upcoming_snapshots': [],
             'properties': msg['properties']
         }
         main = self.model[ffs]['_main']
@@ -1045,9 +1103,9 @@ class Engine:
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-                node == self.model[ffs]['_moving'] and
-                msg['snapshot'] == self.model[ffs]['_move_snapshot']
-                ):
+            node == self.model[ffs]['_moving'] and
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+            ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -1120,6 +1178,42 @@ class Engine:
     def do_zpool_status_check(self):
         for node in sorted(self.node_config):
             self.send(node, {'msg': 'zpool_status'})
+
+
+    def get_snapshot_interval(self, ffs):
+        info = self.model[ffs]
+        main = info['_main']
+        interval = info[main]['properties'].get('ffs:snapshot_interval','-')
+        if interval == '-':
+            return False
+        else:
+            return int(interval)
+
+    def one_minute_passed(self):
+        now = time.time() 
+        for ffs, ffs_info in self.model.items():
+            iv = self.get_snapshot_interval(ffs)
+            if iv and iv > 0:
+                main = ffs_info['_main']
+                do_snapshot = False
+                if ffs_info[main]['upcoming_snapshots']:
+                    # never auto snapshot while we're lagging behind.
+                    pass
+                else:
+                    if len(ffs_info[main]['snapshots']) == 0:
+                        do_snapshot = True
+                    else:
+                        try:
+                            snapshot_time = self.parse_time_from_snapshot(
+                                ffs_info[main]['snapshots'][-1]
+                            )
+                            if snapshot_time + (iv * 60) < now:
+                                do_snapshot = True
+                        except ValueError:  # could not parse time, assume we need to redo it
+                            do_snapshot = True
+                            pass
+                    if do_snapshot:
+                        self.do_capture(ffs, False, 'auto')
 
     def node_rename_done(self, msg):
         node = msg['from']

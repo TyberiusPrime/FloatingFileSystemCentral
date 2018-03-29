@@ -161,5 +161,10 @@ class Config(DefaultConfig):
                 keep.add(found)
         return keep
 
+    def get_zpool_frequency_check(self):
+        #in seconds
+        return  15*60 # 0 = disabled, seconds otherwise
+
+
 config = Config()
 all = [config]

@@ -38,7 +38,7 @@ class DefaultConfig:
 
     def get_zpool_frequency_check(self):
         #in seconds
-        return  60 * 15  # in seconds
+        return  0 # 0 = disabled, seconds otherwise
 
     def get_zmq_port(self):
         return 47777
@@ -84,6 +84,9 @@ class DefaultConfig:
         logger = logging.Logger(name='Dummy')
         logger.addHandler(logging.NullHandler())
         return logger
+    
+    def do_timebased_actions(self):
+        return True
         
 def must_return_type(typ):
     def deco(func):
@@ -104,7 +107,7 @@ class CheckedConfig:
         mine = set(dir(self))
         for k in dir(config):
             if not k.startswith('_') and not k in mine:
-                raise ValueError("Missing config wrapper: %s" % k)
+                raise ValueError("Missing config wrapper / invalid configuration function (typo?): %s" % k)
 
     def get_nodes(self):
         nodes = self.config.get_nodes()
@@ -216,3 +219,7 @@ class CheckedConfig:
     @must_return_type(bool)
     def do_deploy(self):
         return self.config.do_deploy()
+
+    @must_return_type(bool)
+    def do_timebased_actions(self):
+        return self.config.do_timebased_actions()

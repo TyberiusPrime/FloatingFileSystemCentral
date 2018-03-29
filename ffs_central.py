@@ -128,8 +128,13 @@ def main():
         check_if_changed()  # capture hashes
         l = task.LoopingCall(check_if_changed)
         l.start(1.0)  # call every second
-        #l3 = task.LoopingCall(lambda: engine.cmd_check_zpools({}))
-        # l3.start(config.zpool_check_frequency)
+        if cfg.do_timebased_actions():
+            l2 = task.LoopingCall(lambda: our_engine.one_minute_passed())
+            l2.start(60)
+        if cfg.get_zpool_frequency_check()>  0 and configcfgdo_timebased_actions():
+            l3 = task.LoopingCall(lambda: our_engine.do_zpool_status_check())
+            l3.start(cfg.get_zpool_frequency_check())
+        
 
         reactor.addSystemEventTrigger('before', 'shutdown', on_shutdown)
 
