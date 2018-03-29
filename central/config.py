@@ -64,8 +64,10 @@ class Config(DefaultConfig):
             open('/var/log/ffs/debug.log', 'a')
         except PermissionError:
             raise ValueError("Please check that ffs can write to /var/log/ffs")
-
-        logger = logging.getLogger()
+        #zmq_auth = logging.getLogger('zmq.auth')
+        #zmq_auth.addHandler(logging.NullHandler())
+        
+        logger = logging.getLogger('FFS')
         logger.setLevel(logging.DEBUG)
 
         debug_logger = logging.handlers.RotatingFileHandler(
@@ -161,3 +163,8 @@ class Config(DefaultConfig):
 
 config = Config()
 all = [config]
+
+echo '{"ffs": "orphan",
+"msg": "set_properties",
+"properties": {"ffs:main": "on"},
+"storage_prefix": "/mm/.ffs_testing_client_from"} | /home/ffs/ssh.py

@@ -24,11 +24,17 @@ class FakeMessageSender():
 
 class EngineTests(unittest.TestCase):
 
+    def assertMsgEqualMinusSnapshot(self, actual, supposed):
+        msg = actual.copy()
+        for k in ['target_ssh_cmd', 'target_user', 'target_ffs', 'target_node', 'target_storage_prefix']:
+            if k in msg and not k in supposed:
+                del msg[k]
+        self.assertMsgEqual(msg, supposed)
+
+
+
     def strip_send_snapshot_target_stuff(self, msg):
         msg = msg.copy()
-        for k in ['target_ssh_cmd', 'target_path', 'target_user']:
-            if k in msg:
-                del msg[k]
         return msg
 
     def assertMsgEqual(self, msgA, msgB):
@@ -1078,13 +1084,13 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertMsgEqual({
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'beta'
-        }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
+        }) 
         self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
@@ -1092,24 +1098,22 @@ class CaptureTest(PostStartupTests):
             'snapshot': 'b'
         })
         self.assertEqual(len(outgoing_messages), 3)
-        # prune on targets only happens after sucessfull snapshot_done
+        self.assertEqual(e.model['one']['alpha']['snapshots'], ['a', sn])
         outgoing_messages.clear()
-        e.incoming_node({
-            'msg': 'send_snapshot_done',
+        e.incoming_node({"msg": "send_snapshot_done",
             'from': 'alpha',
+            'target_node': 'beta',
             'ffs': 'one',
-            'target_host': 'beta',
             'snapshot': sn
         })
-
+        self.assertEqual(len(outgoing_messages), 1)
         self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove_snapshot',
             'to': 'beta',
             'ffs': 'one',
             'snapshot': 'b'
         })
-        self.assertEqual(len(outgoing_messages), 1)
-        self.assertEqual(e.model['one']['beta']['snapshots'], ['a', sn])
+ 
 
     def test_pruning_after_capture_main_first_then_multiple_in_reply_order(self):
         cfg = self._get_test_config()
@@ -1132,20 +1136,20 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertMsgEqual({
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'beta',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'alpha'
-        }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
-        self.assertMsgEqual({
+        })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
             'msg': 'send_snapshot',
             'to': 'beta',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'gamma'
-        }, self.strip_send_snapshot_target_stuff(outgoing_messages[2]))
+        })
 
         self.assertMsgEqual(outgoing_messages[3], {
             'msg': 'remove_snapshot',
@@ -1160,6 +1164,7 @@ class CaptureTest(PostStartupTests):
             'from': 'beta',
             'ffs': 'one',
             'target_host': 'alpha',
+            'target_node': 'alpha',
             'snapshot': sn
         })
         self.assertMsgEqual(outgoing_messages[0], {
@@ -1174,6 +1179,7 @@ class CaptureTest(PostStartupTests):
             'msg': 'send_snapshot_done',
             'from': 'beta',
             'ffs': 'one',
+            'target_node': 'gamma',
             'target_host': 'gamma',
             'snapshot': sn
         })
@@ -1209,13 +1215,13 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': sn
                          })
-        self.assertMsgEqual({
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
             'snapshot': sn,
             'target_host': 'beta'
-        }, self.strip_send_snapshot_target_stuff(outgoing_messages[1]))
+        })
         self.assertMsgEqual(outgoing_messages[2], {
             'msg': 'remove_snapshot',
             'to': 'alpha',
@@ -1231,6 +1237,7 @@ class CaptureTest(PostStartupTests):
             'from': 'alpha',
             'ffs': 'one',
             'target_host': 'beta',
+            'target_node': 'beta',
             'snapshot': sn
         })
 
@@ -1243,6 +1250,9 @@ class CaptureTest(PostStartupTests):
         self.assertEqual(len(outgoing_messages), 1)
         self.assertEqual(e.model['one']['beta']['snapshots'], [sn])
         self.assertEqual(e.model['one']['alpha']['snapshots'], [sn])
+    
+    def test_never_prune_snapshots_in_outgoing_que(self):
+        raise NotImplementedError()
 
     def test_capture_sends_capture_message(self):
         e, outgoing_messages = self.ge()
@@ -1293,7 +1303,7 @@ class CaptureTest(PostStartupTests):
                          'ffs': 'one',
                          'snapshot': snapshot_name
                          })
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],
                             {
             'to': 'beta',
             'msg': 'send_snapshot',
@@ -1307,6 +1317,7 @@ class CaptureTest(PostStartupTests):
         e.incoming_node({'msg': 'send_snapshot_done',
                          'from': 'beta',
                          'ffs': 'one',
+                         'target_node': 'alpha',
                          'target_host': 'alpha',
                          'snapshot': snapshot_name,
                          })
@@ -1367,8 +1378,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_test
         })
 
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]),
-                            {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -1376,7 +1386,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_test,
         }
         )
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]),
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2],
                             {
             'msg': 'send_snapshot',
             'to': 'alpha',
@@ -1402,7 +1412,7 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_no_test
         })
 
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]),
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],
                             {
             'msg': 'send_snapshot',
             'to': 'alpha',
@@ -1578,7 +1588,7 @@ class RemoveTarget(PostStartupTests):
             'snapshot': snapshot,
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'target_host': 'gamma',
@@ -1806,14 +1816,14 @@ class AddTargetTests(PostStartupTests):
                          }
 
                          })
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'ffs': 'one',
             'to': 'beta',
             'target_host': 'gamma',
             'snapshot': '1'
         })
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'ffs': 'one',
             'to': 'beta',
@@ -2127,10 +2137,11 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot'],
         })
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
+            'target_node': 'beta',
             'target_host': 'beta',
             'snapshot': outgoing_messages[1]['snapshot']
         })
@@ -2138,6 +2149,7 @@ class MoveTest(PostStartupTests):
             'msg': 'send_snapshot_done',
             'from': 'alpha',
             'target_host': 'beta',
+            'target_node': 'beta',
             'ffs': 'one',
             'snapshot': outgoing_messages[1]['snapshot']
         })
@@ -2152,7 +2164,7 @@ class MoveTest(PostStartupTests):
             'msg': 'set_properties_done',
             'from': 'alpha',
             'ffs': 'one',
-            'properties': {'ffs:main': 'off'}
+            'properties': {'ffs:main': 'off', 'ffs:moving_to': 'beta'}
         })
         self.assertEqual(len(outgoing_messages), 5)
         self.assertMsgEqual(outgoing_messages[4], {
@@ -2178,7 +2190,7 @@ class MoveTest(PostStartupTests):
             'msg': 'set_properties_done',
             'from': 'alpha',
             'ffs': 'one',
-            'properties': {'ffs:moving_to': '-'}
+            'properties': {'ffs:moving_to': '-', 'ffs:main': 'off', 'readonly': 'on'}
         })
         self.assertEqual(engine.model['one']['_main'], 'beta')
         self.assertEqual(engine.model['one']['alpha'][
@@ -2238,7 +2250,7 @@ class MoveTest(PostStartupTests):
             'snapshot': outgoing_messages[1]['snapshot'],
         })
         self.assertEqual(len(outgoing_messages), 3)
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[2]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -2250,7 +2262,8 @@ class MoveTest(PostStartupTests):
             'from': 'alpha',
             'target_host': 'beta',
             'ffs': 'one',
-            'snapshot': outgoing_messages[1]['snapshot']
+            'snapshot': outgoing_messages[1]['snapshot'],
+            'target_node': "beta",
         })
         self.assertEqual(len(outgoing_messages), 4)
         self.assertMsgEqual(outgoing_messages[3], {
@@ -2263,7 +2276,7 @@ class MoveTest(PostStartupTests):
             'msg': 'set_properties_done',
             'from': 'alpha',
             'ffs': 'one',
-            'properties': {'ffs:main': 'off'}
+            'properties': {'ffs:main': 'off',  'ffs:moving_to': 'beta'}
         })
         self.assertEqual(len(outgoing_messages), 5)
         self.assertMsgEqual(outgoing_messages[4], {
@@ -2811,7 +2824,7 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -2828,14 +2841,14 @@ class TestStartupTriggeringActions(EngineTests):
             'gamma': {},
         })
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[0]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
             'ffs': 'one',
             'snapshot': '2'
         })
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[1]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'target_host': 'beta',
@@ -3007,7 +3020,7 @@ class TestStartupTriggeringActions(EngineTests):
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '1'})
-        self.assertMsgEqual(self.strip_send_snapshot_target_stuff(outgoing_messages[3]), {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[3], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -3037,15 +3050,12 @@ class TestStartupTriggeringActions(EngineTests):
             'msg': 'remove_snapshot',
             'ffs': 'one',
             'snapshot': '0'})
-        self.assertMsgEqual(outgoing_messages[2], {
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
             'snapshot': '3',
             'target_host': 'beta',
-            'target_path': '/%%ffs%%/one',
-            'target_ssh_cmd': engine.config.get_ssh_cmd(),
-            'target_user': 'ffs',
         })
         self.assertEqual(len(outgoing_messages), 3)
 
@@ -3086,6 +3096,7 @@ class CrossTalkTest(EngineTests):
             'msg': 'send_snapshot_done',
             'from': 'alpha',
             'target_host': 'beta',
+            'target_node': 'beta',
             'ffs': 'one',
             'snapshot': snapshot_name,
         })
@@ -3172,6 +3183,7 @@ class CrossTalkTest(EngineTests):
             'msg': 'send_snapshot_done',
             'from': 'alpha',
             'target_host': 'beta',
+            'target_node': 'beta',
             'ffs': 'one',
             'snapshot': wrong_snapshot_name,
         })
@@ -3188,6 +3200,7 @@ class CrossTalkTest(EngineTests):
         e.incoming_node({
             'msg': 'send_snapshot_done',
             'from': 'alpha',
+            'target_node': 'beta',
             'target_host': 'beta',
             'ffs': 'one',
             'snapshot': right_snapshot_name,

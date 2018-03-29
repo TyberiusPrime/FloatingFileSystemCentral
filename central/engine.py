@@ -118,7 +118,8 @@ class Engine:
 
     def send(self, node_name, message):
         """allow sending by name"""
-        message['storage_prefix'] = self.node_config[node_name]['storage_prefix']
+        message['storage_prefix'] = self.node_config[
+            node_name]['storage_prefix']
         self.sender.send_message(
             node_name, self.node_config[node_name], message)
 
@@ -232,6 +233,10 @@ class Engine:
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
+        self.logger.info("Client startup: %s %s" % (id(self), os.getpid()))
+        import traceback
+        self.logger.error(traceback.format_stack())
+
         if self.config.do_deploy():
             msg = {'msg': 'deploy'}
             with open(self.deployment_zip_filename, 'rb') as op:
@@ -388,7 +393,8 @@ class Engine:
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
         postfix = msg.get('postfix', '')
-        snapshot = self.do_capture(ffs, msg.get('chown_and_chmod', False), postfix)
+        snapshot = self.do_capture(ffs, msg.get(
+            'chown_and_chmod', False), postfix)
         return {'ok': True, 'snapshot': snapshot}
 
     def do_capture(self, ffs, chown_and_chmod, postfix=''):
@@ -450,6 +456,15 @@ class Engine:
 
     @needs_startup
     def client_move_main(self, msg):
+        # flow is as follows
+        # 1 - set ffs:moving=target on old main, set read only.
+        # 2 - capture on old main
+        # 3 - replicate
+        # 4 - set ffs:main = False on old main
+        # 5 - set main and remove ro on new main
+        # 6 - remove ffs:moving on old_main
+
+
         if 'ffs' not in msg:
             raise CodingError("no ffs specified'")
         ffs = msg['ffs']
@@ -467,7 +482,7 @@ class Engine:
             raise InvalidTarget("Move failed, target does not have this ffs.")
         current_main = self.model[ffs]['_main']
         if target == current_main:
-            raise ValueError("Target is already main")
+            raise ValueError("Move failed, target is already main")
         if self.is_ffs_removing_any(ffs):
             raise RemoveInProgress()
         if self.is_ffs_renaming(ffs):
@@ -484,6 +499,7 @@ class Engine:
                 'ffs:moving_to': target,
             }
         })
+        return {"ok": True}
 
     @needs_startup
     def client_rename(self, msg):
@@ -547,8 +563,8 @@ class Engine:
     def _name_snapshot(self, ffs, postfix=''):
         import time
         t = time.localtime()
-        t = [t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec]
-        t = [str(x) for x in t]
+        t = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
+             "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
         res = 'ffs-' + '-'.join(t)
         if postfix:
             res += '-' + postfix
@@ -608,7 +624,7 @@ class Engine:
                 if not node.startswith('_'):
                     if node_info['properties'].get('ffs:root', '-') != '-':
                         self.fault("ffs:root set on sub ffs - nesting is not suported: %s" % ffs,
-                        exception=ManualInterventionNeeded)
+                                   exception=ManualInterventionNeeded)
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -703,7 +719,7 @@ class Engine:
                         if node == main:
                             if props.get('readonly', False) != 'off':
                                 prop_adjust_messages.append((node, {'msg': 'set_properties', 'ffs': ffs,
-                                                                   'properties': {'readonly': 'off'}}))
+                                                                    'properties': {'readonly': 'off'}}))
 
                             if props.get('ffs:main', 'off') != 'on':
                                 prop_adjust_messages.append((
@@ -730,7 +746,7 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                        move_target in renames.keys() or move_target in renames.values())
+                    move_target in renames.keys() or move_target in renames.values())
                     ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
@@ -772,9 +788,9 @@ class Engine:
                     if ffs_renamed_from_missing:
                         any_missing = True
             if rename_from in self.model:  # at least one still needs to be renamed...
-                if any_missing: # this should only be removed once all were renamed. but there are open renames
+                if any_missing:  # this should only be removed once all were renamed. but there are open renames
                     self.fault("In move, but some targets did not have ffs:renamed_from. FFS involved: %s %s " % (rename_from, rename_to),
-                            exception=InconsistencyError)
+                               exception=InconsistencyError)
 
                 self.model[rename_from]['_renaming'] = ('to', rename_to)
                 self.model[rename_to]['_renaming'] = ('from', rename_from)
@@ -885,10 +901,13 @@ class Engine:
             'msg': 'send_snapshot',
             'ffs': ffs,
             'snapshot': snapshot_name,
-            'target_host': receiving_node,
+            'target_host': self.node_config[receiving_node]['hostname'],
+            # to be able to find it again later.
+            'target_node': receiving_node,
             'target_user': 'ffs',
             'target_ssh_cmd': self.config.get_ssh_cmd(),
-            'target_path': '/%%ffs%%/' + ffs,
+            'target_ffs': ffs,
+            'target_storage_prefix': self.node_config[receiving_node]['storage_prefix'],
         }
         )
 
@@ -907,31 +926,32 @@ class Engine:
         props = msg['properties']
         self.model[ffs][node]['properties'].update(props)
         if 'ffs:moving_to' in props:  # first step in moving to a new main
-            moving_to = props['ffs:moving_to']
-            if moving_to != '-':
-                if not self.is_ffs_moving(ffs):
-                    self.fault(
-                        "Received unexpected set_propertes_done for ffs:moving_to", msg, InconsistencyError)
-                self.model[ffs]['_move_snapshot'] = self.do_capture(ffs, False)
-
-            else:
-                del self.model[ffs]['_moving']
-                if self.is_ffs_moving(ffs):
-                    self.fault(
-                        "Still moving after set_properties moving_to = -, Something is fishy ", msg, CodingError)
-                self._prune_snapshots_for_ffs(ffs)
-        elif (  # happens after successful capture & replication.
-                self.is_ffs_moving(ffs) and
-                props.get('ffs:main', False) == 'off'):
-            if node != self.model[ffs]['_main']:
+            if not self.is_ffs_moving(ffs):
                 self.fault(
-                    "Received unexpected set_propertes_done for ffs:main=off for non main", msg, InconsistencyError)
-                raise InconsistencyError(self.fault)
-            self.send(self.model[ffs]['_moving'], {
-                'msg': 'set_properties',
-                'ffs': ffs,
-                'properties': {'readonly': 'off', 'ffs:main': 'on'},
-            })
+                    "Received unexpected set_propertes_done containing ffs:moving_to on an unmoving ffs", msg, InconsistencyError)
+            if (props.get('ffs:main', False) == 'off' and
+                    node == self.model[ffs]['_main']):  
+                # move step 4 done, happens after successful capture & replication & main=off on old main.
+                # set main=on on new main.
+                self.send(self.model[ffs]['_moving'], {
+                    'msg': 'set_properties',
+                    'ffs': ffs,
+                    'properties': {'readonly': 'off', 'ffs:main': 'on'},
+                })
+            else:
+                moving_to = props['ffs:moving_to']
+                if moving_to != '-': # move step 1 done, proceed with step 2
+                    if '_move_snapshot' in self.model[ffs]:
+                        self.fault('Repeated capture during move. A test case that does not correctly send ffs:moving_to?', msg, CodingError)
+                    self.model[ffs][
+                        '_move_snapshot'] = self.do_capture(ffs, False)
+                else:  # move step 7 done, remove our _moving flag
+                    del self.model[ffs]['_moving']
+                    del self.model[ffs]['_move_snapshot']
+                    if self.is_ffs_moving(ffs):
+                        self.fault(
+                            "Still moving after set_properties moving_to = -, Something is fishy ", msg, CodingError)
+                    self._prune_snapshots_for_ffs(ffs)
         elif (  # happens after ffs:main=off on the old main.
                 self.is_ffs_moving(ffs) and
                 props.get('ffs:main', False) == 'on'):
@@ -1011,7 +1031,7 @@ class Engine:
         if ffs not in self.model:
             self.fault("send_snapshot_done from ffs not in model.",
                        msg, InconsistencyError)
-        node = msg['target_host']
+        node = msg['target_node']
         if main == node:
             self.fault("Send done from main to main?!",
                        msg, InconsistencyError)
@@ -1025,8 +1045,8 @@ class Engine:
         self.model[ffs][node]['snapshots'].append(snapshot)
 
         if (self.is_ffs_moving(ffs) and
-                    node == self.model[ffs]['_moving'] and
-                    msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                node == self.model[ffs]['_moving'] and
+                msg['snapshot'] == self.model[ffs]['_move_snapshot']
                 ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',

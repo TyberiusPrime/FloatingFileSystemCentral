@@ -24,7 +24,7 @@ if len(sys.argv) == 2:
 else:
     from central import config
 cfg = default_config.CheckedConfig(config.config)
-logger = cfg.config.get_logging()
+logger = cfg.get_logging()
 from central import engine
 from central import ssh_message_que
 from twisted.python import log

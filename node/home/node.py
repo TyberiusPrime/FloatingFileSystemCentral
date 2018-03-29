@@ -251,6 +251,7 @@ def msg_send_snapshot(msg):
     full_ffs_path = find_ffs_prefix(msg) + ffs_from
     if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
+    target_node = msg['target_node']
     target_host = msg['target_host']
     target_user = msg['target_user']
     target_ssh_cmd = msg['target_ssh_cmd']
@@ -265,7 +266,7 @@ def msg_send_snapshot(msg):
     my_hash = hashlib.md5()
     my_hash.update(ffs_from.encode('utf-8'))
     my_hash.update(target_path.encode('utf-8'))
-    my_hash.update(target_host.encode('utf-8'))
+    my_hash.update(target_node.encode('utf-8'))
     my_hash = my_hash.hexdigest()
     clone_name = "%f_%s" % (time.time(), my_hash)
     clone_dir = get_clone_dir(msg['storage_prefix'])
@@ -352,7 +353,7 @@ def msg_send_snapshot(msg):
             }
         return {
             'msg': 'send_snapshot_done',
-            'target_host': target_host,
+            'target_node': target_node,
             'ffs': ffs_from,
             'clone_name': clone_name,
             'snapshot': snapshot,
