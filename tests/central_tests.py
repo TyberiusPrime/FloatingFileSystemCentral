@@ -3474,9 +3474,6 @@ class OutgoingMessageTests(unittest.TestCase):
         # this reflects the submission order, not the send order!
         self.assertEqual(sent[2].msg['msg'], 'send_snapshot')
 
-    def test_client_list_ffs_in_case_of_new(self):
-        raise NotImplementedError()
-
 
 class RenameTests(PostStartupTests):
 
@@ -4135,6 +4132,42 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
         #not if there's a currently outgoing snapshot
         self.assertEqual(len(e.model['six']['beta']['upcoming_snapshots']), 1)
+
+class ClientFacingTests(PostStartupTests):
+
+
+    def test_list_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta', 'alpha']})
+
+    def test_client_list_ffs_in_case_of_new(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta', 'alpha']})
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['beta']})
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta', 'alpha'], 'two': ['beta']})
+
+    def test_client_list_ffs_in_case_of_add_target(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha': {},
+        })
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta']})
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'one', 'targets': ['alpha']})
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta', 'alpha']})
+
+
+
 
 
 if __name__ == '__main__':
