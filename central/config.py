@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import logging
+import subprocess
 import sys
 import logging.handlers
 import os
@@ -7,7 +8,13 @@ import re
 from . default_config import DefaultConfig
 
 # nodes configuration
-"""nodes = {
+"""nodes = """
+
+
+class Config(DefaultConfig):
+
+    def get_nodes(self):
+        return {
     'pcmt391': {
         'hostname': 'amy',
         'storage_prefix': 'amy/ffs',
@@ -38,25 +45,7 @@ from . default_config import DefaultConfig
         'storage_prefix': 'nostromo/ffs',
         'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383\n',
     },
-}"""
-
-
-class Config(DefaultConfig):
-
-    def get_nodes(self):
-        return {
-            'pcmt283': {
-                'hostname': 'mm',
-                'storage_prefix': '/mm/ffs',
-                'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
-            },
-        }
-    #'pcmt335': {
-        #'hostname': 'donna',
-        #'storage_prefix': 'donna/ffs',
-        #'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVBWJOP1VCBDLbgp6uChMD/PSKAg2VoqUAP/ztT5CuvuEXfnRJbrghVsZ6r08ttOYD3JrtVmclclUPqs3ValVORpmuCydxU9zSGcmtca4JtooDi2aBYBLy4KlOPM30EQqEvGFcl+lRLJW6rHBO8KC28nbpDHEgZauCbDKA0PvLDT71XvDZAaJd7VKz00nsI+7kc6Ez2wkXnENNCWLEtC0Sw7elOn17Td2JoHkpi8TSk7W8HiRPJSkJOA1jkkgrxYDfC0TPTe85WML2ah9I3nz/iLBxPSooGY+g4CacKnaS0i6p7IYMqTocchjjmlHhSIMrwgbfxhkXM5wIQKx4D77R ffs@pcmt335'
-    #}
-
+}
     def get_logging(self):
         if not os.path.exists('/var/log/ffs'):
             raise ValueError("Please create /var/log/ffs")
@@ -65,8 +54,8 @@ class Config(DefaultConfig):
         except PermissionError:
             raise ValueError("Please check that ffs can write to /var/log/ffs")
         #zmq_auth = logging.getLogger('zmq.auth')
-        #zmq_auth.addHandler(logging.NullHandler())
-        
+        # zmq_auth.addHandler(logging.NullHandler())
+
         logger = logging.getLogger('FFS')
         logger.setLevel(logging.DEBUG)
 
@@ -94,6 +83,9 @@ class Config(DefaultConfig):
             print(message, file=op)
             print("-----------EndComplain----------", file=op)
             print('', file=op)
+        message = 'FFS Complaining about: ' + message
+        p = subprocess.Popen(["/machine/opt/infrastructure/client/call_mattermost.py"], stdin=subprocess.PIPE)
+        p.communicate(message.encode('utf-8'))
 
     def inform(self, message):
         """Keep your users informed."""
@@ -103,6 +95,10 @@ class Config(DefaultConfig):
             print(message, file=op)
             print("-----------EndInform----------", file=op)
             print('', file=op)
+        message = 'FFS Informing about: ' + message
+        p = subprocess.Popen(["/machine/opt/infrastructure/client/call_mattermost.py"], stdin=subprocess.PIPE)
+        p.communicate(message.encode('utf-8'))
+
 
     def decide_snapshots_to_keep(self, dummy_ffs_name, snapshots):
         """  
@@ -162,8 +158,8 @@ class Config(DefaultConfig):
         return keep
 
     def get_zpool_frequency_check(self):
-        #in seconds
-        return  15*60 # 0 = disabled, seconds otherwise
+        # in seconds
+        return 15 * 60  # 0 = disabled, seconds otherwise
 
 
 config = Config()
