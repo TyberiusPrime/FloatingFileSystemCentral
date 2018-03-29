@@ -1,4 +1,5 @@
 import base64
+import collections
 import time
 import pprint
 import shutil
@@ -302,6 +303,7 @@ class Engine:
                 if ffs not in self.model:
                     self.model[ffs] = {'_main': main}
                 self.model[ffs][node] = {'_new': True}
+                self.model[ffs]['_snapshots_in_transit'] = collections.Counter()
         if any_found:
             return {'ok': True}
         else:
@@ -651,6 +653,7 @@ class Engine:
             for ffs, ffs_info in ffs_list.items():
                 if ffs not in self.model:
                     self.model[ffs] = {}
+                    self.model[ffs]['_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
                 self.model[ffs][node]['upcoming_snapshots'] = []
         self._check_invalid_properties()
@@ -709,15 +712,16 @@ class Engine:
 
         for ffs, node_ffs_info in self.model.items():
             for node, node_info in node_ffs_info.items():
-                props = node_info['properties']
-                ffs_rename_from = props.get('ffs:renamed_from', '-')
-                if ffs_rename_from != '-':
-                    if ffs_rename_from in renames:
-                        if renames[ffs_rename_from] != ffs:
-                            self.fault("Multiple renames to different targets: %s: %s %s" %
-                                       (ffs, renames[ffs_rename_from], ffs_rename_from), exception=InconsistencyError)
-                    else:
-                        renames[ffs_rename_from] = ffs
+                if not node.startswith('_'):
+                    props = node_info['properties']
+                    ffs_rename_from = props.get('ffs:renamed_from', '-')
+                    if ffs_rename_from != '-':
+                        if ffs_rename_from in renames:
+                            if renames[ffs_rename_from] != ffs:
+                                self.fault("Multiple renames to different targets: %s: %s %s" %
+                                        (ffs, renames[ffs_rename_from], ffs_rename_from), exception=InconsistencyError)
+                        else:
+                            renames[ffs_rename_from] = ffs
         if len(renames) != len(set(renames.values())):
             self.fault("Multiple renames to the same target",
                        exception=InconsistencyError)
@@ -730,23 +734,24 @@ class Engine:
             any_moving_to = None
             any_moving_from = None
             for node, node_info in node_ffs_info.items():
-                props = node_info['properties']
-                if props.get('readonly', 'off') == 'on':
-                    ro_count += 1
-                else:
-                    non_ro_count += 1
-                    last_non_ro = node
-                if props.get('ffs:main', 'off') == 'on':
-                    if main is None:
-                        main = node
-                        # no break, - need to check for multiple
+                if not node.startswith('_'):
+                    props = node_info['properties']
+                    if props.get('readonly', 'off') == 'on':
+                        ro_count += 1
                     else:
-                        self.fault("Multiple mains for %s" % ffs)
-                if props.get('ffs:moving_to', '-') != '-':
-                    if any_moving_to is not None:
-                        self.fault("Multiple moving_to for %s" % ffs)
-                    any_moving_to = props['ffs:moving_to']
-                    any_moving_from = node
+                        non_ro_count += 1
+                        last_non_ro = node
+                    if props.get('ffs:main', 'off') == 'on':
+                        if main is None:
+                            main = node
+                            # no break, - need to check for multiple
+                        else:
+                            self.fault("Multiple mains for %s" % ffs)
+                    if props.get('ffs:moving_to', '-') != '-':
+                        if any_moving_to is not None:
+                            self.fault("Multiple moving_to for %s" % ffs)
+                        any_moving_to = props['ffs:moving_to']
+                        any_moving_from = node
             if main is None:
                 if non_ro_count == 1:
                     # treat the only non-ro as the man
@@ -902,6 +907,8 @@ class Engine:
             ffs, main_snapshots)
         # always! keep the latest snapshot
         keep_snapshots.add(main_snapshots[-1])
+        #also if a snapshot is yet to be send / is currently sending, we keep it
+        keep_snapshots.update(node_fss_info.get('_snapshots_in_transit', {}).keys())
         self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
         if restrict_to_node is None or restrict_to_node == main_node:
             remove_from_main = [
@@ -917,9 +924,12 @@ class Engine:
                     target_snapshots = node_fss_info[node]['snapshots']
                     too_many = [
                         x for x in target_snapshots if x not in keep_snapshots]
+                    #never delete the last snapshot from a target 
+                    if len(too_many) == len(target_snapshots):
+                        too_many = too_many[:-1]
                     for snapshot in too_many:
                         self.send(node, {'msg': 'remove_snapshot',
-                                         'ffs': ffs, 'snapshot': snapshot})
+                                        'ffs': ffs, 'snapshot': snapshot})
                         # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
@@ -966,6 +976,7 @@ class Engine:
             'target_storage_prefix': self.node_config[receiving_node]['storage_prefix'],
         }
         )
+        self.model[ffs]['_snapshots_in_transit'][snapshot_name] += 1
 
     def node_set_properties_done(self, msg):
         node = msg['from']
@@ -1073,7 +1084,7 @@ class Engine:
 
         main = self.model[ffs]['_main']
         for node in sorted(self.node_config):
-            if node != main and node in self.model[ffs] and not self.model[ffs][node]['removing']:
+            if node != main and node in self.model[ffs] and not self.model[ffs][node].get('removing', False):
                 postfix = self.model[ffs][node][
                     'properties'].get('ffs:postfix_only', True)
                 if postfix is True or snapshot.endswith('-' + postfix):
@@ -1101,6 +1112,9 @@ class Engine:
         if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
             self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
         self.model[ffs][node]['snapshots'].append(snapshot)
+        self.model[ffs]['_snapshots_in_transit'][snapshot] -= 1
+        if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
+            del self.model[ffs]['_snapshots_in_transit'][snapshot]
 
         if (self.is_ffs_moving(ffs) and
             node == self.model[ffs]['_moving'] and
@@ -1113,6 +1127,7 @@ class Engine:
             })
         else:
             if not self.is_ffs_moving(ffs):
+                self._prune_snapshots_for_ffs(ffs, main)
                 self._prune_snapshots_for_ffs(ffs, node)
 
     def node_remove_done(self, msg):

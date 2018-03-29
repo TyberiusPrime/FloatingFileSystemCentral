@@ -1174,6 +1174,7 @@ class CaptureTest(PostStartupTests):
             'ffs': 'one',
             'snapshot': 'b'
         })
+        self.assertEqual(len(outgoing_messages), 1)
 
         outgoing_messages.clear()
         e.incoming_node({
@@ -1253,8 +1254,113 @@ class CaptureTest(PostStartupTests):
         self.assertEqual(e.model['one']['alpha']['snapshots'], [sn])
     
     def test_never_prune_snapshots_in_outgoing_que(self):
-        raise NotImplementedError()
+        cfg = self._get_test_config()
 
+        def decide(sffs, snapshots):
+            return []
+        cfg.decide_snapshots_to_keep = decide
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['a', ]},
+            'beta':  {'one': ['a', ]},
+            'gamma': {}
+        }, config=cfg)
+        self.assertFalse(outgoing_messages)
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'one', 'targets': ['gamma']})
+        outgoing_messages.clear()
+        e.incoming_node({
+            'msg': 'new_done',
+            'from': 'gamma',
+            'ffs': 'one',
+            'properties': {'ffs:main': 'off', 'readonly': 'on'}
+        })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': 'a',
+            'target_host': 'gamma'
+        })
+
+        e.incoming_client({'msg': 'capture', 'ffs': 'one'})
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[1]), {
+            'msg': 'capture',
+            'ffs': 'one',
+            'to': 'alpha',
+        })
+        sn = outgoing_messages[1]['snapshot']
+
+        e.incoming_node({'msg': 'capture_done',
+                         'from': 'alpha',
+                         'ffs': 'one',
+                         'snapshot': sn
+                         })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': sn,
+            'target_host': 'beta'
+        })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[3], {
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': sn,
+            'target_host': 'gamma'
+        })
+        # no removal of a at this point in time.
+        self.assertEqual(len(outgoing_messages), 4)
+        e.incoming_node({'msg': 'send_snapshot_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': 'a',
+            'target_host': 'gamma',
+            'target_node': 'gamma',
+        })
+
+        #now at this point, we can remove the a snapshot from alpha
+        # but not yet from beta or gamma
+        # because both would not have a snapshot remaining otherwise
+        self.assertMsgEqual(outgoing_messages[4], {
+            'msg': 'remove_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': 'a'
+        })
+        self.assertEqual(len(outgoing_messages), 5)
+        e.incoming_node({'msg': 'send_snapshot_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': sn,
+            'target_host': 'beta',
+            'target_node': 'beta',
+        })
+
+        self.assertMsgEqual(outgoing_messages[5], {
+            'msg': 'remove_snapshot',
+            'to': 'beta',
+            'ffs': 'one',
+            'snapshot': 'a'
+        })
+        self.assertEqual(len(outgoing_messages), 6)
+
+        e.incoming_node({'msg': 'send_snapshot_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'snapshot': sn,
+            'target_host': 'gamma',
+            'target_node': 'gamma',
+        })
+
+        self.assertMsgEqual(outgoing_messages[6], {
+            'msg': 'remove_snapshot',
+            'to': 'gamma',
+            'ffs': 'one',
+            'snapshot': 'a'
+        })
+        self.assertEqual(len(outgoing_messages), 7)
+
+ 
     def test_capture_sends_capture_message(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture', 'ffs': 'one'})
@@ -3038,8 +3144,8 @@ class TestStartupTriggeringActions(EngineTests):
         cfg.decide_snapshots_to_send = lambda dummy_ffs, snapshots: ['3']
 
         engine, outgoing_messages = self.get_engine({
-            'alpha': {'_one': ['1', '2', '3', ]},
-            'beta':  {'one': ['0']},
+            'alpha': {'_one': ['1', '1b', '2', '3', ]},
+            'beta':  {'one': ['-1', '0']},
             'gamma': {},
         },
             config=cfg)
@@ -3049,18 +3155,29 @@ class TestStartupTriggeringActions(EngineTests):
             'ffs': 'one',
             'snapshot': '1'})
         self.assertMsgEqual(outgoing_messages[1], {
+            'to': 'alpha',
+            'msg': 'remove_snapshot',
+            'ffs': 'one',
+            'snapshot': '1b'})
+        self.assertMsgEqual(outgoing_messages[2], {
             'to': 'beta',
             'msg': 'remove_snapshot',
             'ffs': 'one',
-            'snapshot': '0'})
-        self.assertMsgEqualMinusSnapshot(outgoing_messages[2], {
+            'snapshot': '-1'})
+        #no removal of 0 - it would be the last snapshot
+        #self.assertMsgEqual(outgoing_messages[1], {
+            #'to': 'beta',
+            #'msg': 'remove_snapshot',
+            #'ffs': 'one',
+            #'snapshot': '0'})
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[3], {
             'to': 'alpha',
             'msg': 'send_snapshot',
             'ffs': 'one',
             'snapshot': '3',
             'target_host': 'beta',
         })
-        self.assertEqual(len(outgoing_messages), 3)
+        self.assertEqual(len(outgoing_messages), 4)
 
 
 class CrossTalkTest(EngineTests):
