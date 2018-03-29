@@ -163,8 +163,3 @@ class Config(DefaultConfig):
 
 config = Config()
 all = [config]
-
-echo '{"ffs": "orphan",
-"msg": "set_properties",
-"properties": {"ffs:main": "on"},
-"storage_prefix": "/mm/.ffs_testing_client_from"} | /home/ffs/ssh.py
