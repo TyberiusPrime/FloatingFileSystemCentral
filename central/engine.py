@@ -1191,8 +1191,15 @@ class Engine:
         self.zpool_stati[node] = status
 
     def do_zpool_status_check(self):
-        for node in sorted(self.node_config):
-            self.send(node, {'msg': 'zpool_status'})
+        do_not_send_to = set()
+        for node in self.node_config:
+            do_send = True
+            for msg in self.sender.get_messages_for_node(node):
+                if msg['msg'] == 'zpool_status':
+                    do_send = False
+                    break
+            if do_send:
+                self.send(node, {'msg': 'zpool_status'})
 
 
     def get_snapshot_interval(self, ffs):

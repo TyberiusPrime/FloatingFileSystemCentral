@@ -32,6 +32,9 @@ class OutgoingMessages:
         self.ssh_cmd = ssh_cmd
         self._shutdown = False
 
+    def get_messages_for_node(self, node):
+        return self.outgoing[node]
+
     def kill_unsent_messages(self):
         self.logger.warn("Killing all unsent messages!")
         for node in self.outgoing:
@@ -86,7 +89,8 @@ class OutgoingMessages:
         found = None
         for msgs in self.outgoing.values():
             for m in msgs:
-                if hasattr(m, 'job_id') and m.job_id == job_id: # non sent messages don't have a job_id
+                # non sent messages don't have a job_id
+                if hasattr(m, 'job_id') and m.job_id == job_id:
                     found = m
                     break
             if found:

@@ -22,6 +22,10 @@ class FakeMessageSender():
     def kill_unsent_messages(self):
         pass
 
+    def get_messages_for_node(self, receiver):
+        return [x for x in self.outgoing if x['to'] == receiver]
+
+
 
 class EngineTests(unittest.TestCase):
 
@@ -2609,9 +2613,10 @@ config:
 	  sda7                                              ONLINE       0     0     0
 '''})
         self.assertEqual(len(errors), 1)
+        outgoing.clear()
 
         e.do_zpool_status_check()
-        self.assertEqual(len(outgoing), 2)
+        self.assertEqual(len(outgoing), 1)
         e.incoming_node({
             'from': 'alpha',
             'msg': 'zpool_status',
@@ -2675,9 +2680,10 @@ config:
 	  sda7                                              ONLINE       0     0     0
 '''})
         self.assertEqual(len(errors), 1)  # no repetition
+        outgoing.clear()
 
         e.do_zpool_status_check()
-        self.assertEqual(len(outgoing), 3)
+        self.assertEqual(len(outgoing), 1)
         e.incoming_node({
             'from': 'alpha',
             'msg': 'zpool_status',
@@ -2743,8 +2749,9 @@ config:
         self.assertEqual(
             len(errors), 2)  # DEGRADING something else is another error
 
+        outgoing.clear()
         e.do_zpool_status_check()
-        self.assertEqual(len(outgoing), 4)
+        self.assertEqual(len(outgoing), 1)
         e.incoming_node({
             'from': 'alpha',
             'msg': 'zpool_status',
@@ -2810,8 +2817,9 @@ config:
         self.assertEqual(
             len(errors), 3)  # failing is most certainly an error again
 
+        outgoing.clear()
         e.do_zpool_status_check()
-        self.assertEqual(len(outgoing), 5)
+        self.assertEqual(len(outgoing), 1)
         e.incoming_node({
             'from': 'alpha',
             'msg': 'zpool_status',
@@ -2878,7 +2886,17 @@ config:
             errors), 4)  # for now, the all clear also comes via the error reporting mechanism
 
     def test_no_repeated_requests_if_outstanding(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1', '2']},
+            'beta':  {'one': ['1', '2']},    
+        })
+        e.do_zpool_status_check()
+        x = len(outgoing_messages)
+        self.assertTrue(x > 0)
+        e.do_zpool_status_check()
+        self.assertTrue(len(outgoing_messages), x)
+
+
 
 class ChownTests(PostStartupTests):
 
