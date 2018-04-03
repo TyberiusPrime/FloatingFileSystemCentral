@@ -703,6 +703,7 @@ class Engine:
                                 ffs, node), exception=ManualInterventionNeeded)
                         else:
                             self.model[ffs][node]['removing'] = True
+                            self.logger.info("Handling remove_asap for %s on %s", ffs, node)
                             self.send(node, {
                                 'msg': 'remove',
                                 'ffs': ffs,
@@ -998,6 +999,7 @@ class Engine:
             if has_replicates:
                 sendable_snapshots = self.config.decide_snapshots_to_send(ffs, main_snapshots)
                 if not sendable_snapshots:
+                    self.logger.info("Replicated, but never snapshoted - capturing %s" % ffs)
                     self.do_capture(ffs, False)
             
           

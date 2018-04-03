@@ -7,6 +7,9 @@ import time
 import hashlib
 
 
+def check_call(cmd):
+    return subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+
 def zfs_output(cmd_line):
     p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
@@ -114,7 +117,7 @@ def msg_set_properties(msg):
         check_property_name_and_value(prop, value)
 
     for prop, value in msg['properties'].items():
-        subprocess.check_call(
+        check_call(
             ['sudo', 'zfs', 'set', "%s=%s" % (prop, value), full_ffs_path])
     return {
         'msg': 'set_properties_done',
@@ -132,15 +135,15 @@ def msg_new(msg):
     parent_zfs = full_ffs_path[:full_ffs_path.rfind('/')]
     parent_readonly = get_zfs_property(parent_zfs, 'readonly') == 'on'
     if parent_readonly:
-        subprocess.check_call(
+        check_call(
             ['sudo', 'zfs', 'set', 'readonly=off', parent_zfs])
-    subprocess.check_call(['sudo', 'zfs', 'create', full_ffs_path])
+    check_call(['sudo', 'zfs', 'create', full_ffs_path])
     if parent_readonly:
-        subprocess.check_call(
+        check_call(
             ['sudo', 'zfs', 'set', 'readonly=on', parent_zfs])
 
     for prop, value in msg['properties'].items():
-        subprocess.check_call(
+        check_call(
             ['sudo', 'zfs', 'set', "%s=%s" % (prop, value), full_ffs_path])
     return {
         'msg': 'new_done',
@@ -162,7 +165,7 @@ def msg_capture(msg):
         msg['sub_path'] = '/'
         msg_chown_and_chmod(msg)  # fields do match
 
-    subprocess.check_call(
+    check_call(
         ['sudo', 'zfs', 'snapshot', combined])
     return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name}
 
@@ -179,7 +182,7 @@ def msg_remove(msg):
         return {"msg": 'remove_done', 'ffs': ffs}
     else:
         if b'target is busy' in stderr:
-            subprocess.check_call(
+            check_call(
                 ['sudo', 'zfs', 'set', 'ffs:remove_asap=on', full_ffs_path])
             return {'msg': 'remove_failed', 'reason': 'target_is_busy', 'ffs': ffs}
         else:
@@ -195,12 +198,12 @@ def msg_remove_snapshot(msg):
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
     if combined not in list_snapshots():
         raise ValueError("invalid snapshot")
-    subprocess.check_call(['sudo', 'zfs', 'destroy', combined])
+    check_call(['sudo', 'zfs', 'destroy', combined])
     return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs, msg['storage_prefix']), 'snapshot': snapshot_name}
 
 
 def msg_zpool_status(msg):
-    status = subprocess.check_output(
+    status = check_output(
         ['sudo', 'zpool', 'status']).decode('utf-8')
     return {'msg': 'zpool_status', 'status': status}
 
@@ -229,9 +232,9 @@ def msg_chown_and_chmod(msg):
         raise ValueError("no rights set")
     if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", msg['rights']):
         raise ValueError("invalid rights - needs to look like 0777")
-    subprocess.check_call(
+    check_call(
         ['sudo', 'chown', user, '/' + full_ffs_path + sub_path, '-R'])
-    subprocess.check_call(
+    check_call(
         ['sudo', 'chmod', msg['rights'], '/' + full_ffs_path + sub_path, '-R'])
     return {'msg': 'chown_and_chmod_done', 'ffs': ffs}
 
@@ -366,8 +369,8 @@ def msg_send_snapshot(msg):
 def msg_deploy(msg):
     import base64
     import zipfile
-    subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/', '-R'])
-    subprocess.check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/.ssh', '-R'])
+    check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/', '-R'])
+    check_call(['sudo', 'chmod', 'u+rwX', '/home/ffs/.ssh', '-R'])
     org_dir = os.getcwd()
     try:
         os.chdir('/home/ffs')
@@ -394,9 +397,9 @@ def msg_rename(msg):
     full_new_path = find_ffs_prefix(msg) + new_name
     if full_new_path in lf:
         raise ValueError("new_name already exists")
-    subprocess.check_call(
+    check_call(
         ['sudo', 'zfs', 'rename', full_ffs_path, full_new_path])
-    subprocess.check_call(
+    check_call(
         ['sudo', 'zfs', 'set', "ffs:renamed_from=%s" % (ffs, ), full_new_path])
     return {'msg': 'rename_done',
             'ffs': ffs,
@@ -445,7 +448,7 @@ def shell_cmd_rprsync(cmd_line):
         try:
             org_rights = os.stat(target_path)[stat.ST_MODE]
         except PermissionError:  # target directory is without +X
-            subprocess.check_call(['sudo', 'chmod', 'oug+rwX', target_path])
+            check_call(['sudo', 'chmod', 'oug+rwX', target_path])
             reset_rights = True
     real_cmd = cmd_line.replace('rprsync', 'sudo rsync')
     p = subprocess.Popen(real_cmd, shell=True)
@@ -498,6 +501,10 @@ def dispatch(msg):
 
         else:
             result = {'error': 'message_not_understood'}
+    except subprocess.CalledProcessError as e:
+        result = {"error": 'exception', 'content': str(e), 'traceback': tb,
+        'output': e.output}
+
     except Exception as e:
         import traceback
         #import sys
