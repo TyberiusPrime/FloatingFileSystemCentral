@@ -33,7 +33,10 @@ class OutgoingMessages:
         self._shutdown = False
 
     def get_messages_for_node(self, node):
-        return self.outgoing[node]
+        try:
+            return self.outgoing[node]
+        except KeyError:
+            return []
 
     def kill_unsent_messages(self):
         self.logger.warn("Killing all unsent messages!")

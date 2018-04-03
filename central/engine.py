@@ -127,6 +127,7 @@ class Engine:
 
     def fault(self, message, trigger=None, exception=ManualInterventionNeeded):
         self.logger.error("Faulted engine with message: %s", message)
+        self.config.complain("Faulted engine with message: %s" % message)
         if trigger:
             self.logger.error("Fault triggeredb by incoming message", trigger)
         self.faulted = message
@@ -169,8 +170,6 @@ class Engine:
             self.fault("Invalid msg from node: %s" % msg)
 
     def incoming_client(self, msg):
-        if self.faulted:
-            raise EngineFaulted(self.faulted)
         command = msg['msg']
         if command == 'startup':
             return self.client_startup()
@@ -222,7 +221,7 @@ class Engine:
         return [x['hostname'] for x in self.config.get_nodes().values()]
 
     def client_service_is_started(self):
-        return {'started': self.startup_done}
+        return {'started': self.startup_done and not self.faulted}
 
     def client_service_que(self):
         res = {}
@@ -237,9 +236,12 @@ class Engine:
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
-        self.logger.info("Client startup: %s %s" % (id(self), os.getpid()))
+        self.faulted = False
+        self.logger.info("Client_startup(): id(self)=%s pid=%s" %
+                         (id(self), os.getpid()))
+        if not self.faulted:
+            self.config.inform("Engine startup")
         import traceback
-        self.logger.error(traceback.format_stack())
 
         if self.config.do_deploy():
             msg = {'msg': 'deploy'}
@@ -303,7 +305,8 @@ class Engine:
                 if ffs not in self.model:
                     self.model[ffs] = {'_main': main}
                 self.model[ffs][node] = {'_new': True}
-                self.model[ffs]['_snapshots_in_transit'] = collections.Counter()
+                self.model[ffs][
+                    '_snapshots_in_transit'] = collections.Counter()
         if any_found:
             return {'ok': True}
         else:
@@ -404,6 +407,11 @@ class Engine:
 
     def do_capture(self, ffs, chown_and_chmod, postfix=''):
         snapshot = self._name_snapshot(ffs, postfix)
+        main = self.model[ffs]['_main']
+        if not snapshot in self.config.decide_snapshots_to_send(ffs, self.model[ffs][main]['snapshots'] + [snapshot]):
+            self.fault("config.decide_on_snapshots_to_send did not include newly captured snapshot %s - check your configuration code" % snapshot,
+                       )
+
         out_msg = {
             'msg': 'capture',
             'ffs': ffs,
@@ -611,7 +619,7 @@ class Engine:
                 res += '-' + postfix
             no = chr(ord(no) + 1)
         return res
-    
+
     def parse_time_from_snapshot(self, snapshot):
         if not snapshot.startswith('ffs-'):
             raise ValueError("Not an ffs- snapshot")
@@ -624,7 +632,6 @@ class Engine:
         minute = int(parts[5])
         second = int(parts[6])
         return calendar.timegm((year, month, day, hour, minute, second, 0, 0, 0))
-
 
     def node_deploy_done(self, sender):
         msg = {'msg': 'list_ffs'}
@@ -645,7 +652,6 @@ class Engine:
             self.logger.info("Startup complete")
             self.config.inform("Startup completed, sending syncs.")
 
-
     def build_model(self):
         self.logger.info("All list_ffs returned")
         self.model = {}
@@ -653,7 +659,8 @@ class Engine:
             for ffs, ffs_info in ffs_list.items():
                 if ffs not in self.model:
                     self.model[ffs] = {}
-                    self.model[ffs]['_snapshots_in_transit'] = collections.Counter()
+                    self.model[ffs][
+                        '_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
                 self.model[ffs][node]['upcoming_snapshots'] = []
         self._check_invalid_properties()
@@ -664,6 +671,7 @@ class Engine:
         self._enforce_properties()
         self._prune_snapshots()
         self._send_missing_snapshots()
+        self._capture_replicated_without_any_snapshots()
 
     def _check_invalid_properties(self):
         for ffs in self.model:
@@ -678,8 +686,7 @@ class Engine:
                         try:
                             if int(snapshot_interval) < 0:
                                 self.fault("ffs:snapshot_interval was less than 0: %s on %s" % (ffs, node),
-                                       exception=ManualInterventionNeeded)
-
+                                           exception=ManualInterventionNeeded)
 
                         except ValueError:
                             self.fault("ffs:snapshot_interval was not numeric: %s on %s" % (ffs, node),
@@ -719,7 +726,7 @@ class Engine:
                         if ffs_rename_from in renames:
                             if renames[ffs_rename_from] != ffs:
                                 self.fault("Multiple renames to different targets: %s: %s %s" %
-                                        (ffs, renames[ffs_rename_from], ffs_rename_from), exception=InconsistencyError)
+                                           (ffs, renames[ffs_rename_from], ffs_rename_from), exception=InconsistencyError)
                         else:
                             renames[ffs_rename_from] = ffs
         if len(renames) != len(set(renames.values())):
@@ -767,8 +774,13 @@ class Engine:
                     elif ffs in renames.keys() or ffs in renames.values():
                         main = None
                     else:
-                        self.fault(
-                            "No main, muliple non-readonly for %s" % ffs)
+                        if non_ro_count > 1:
+                            self.fault(
+                                "No main, muliple non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
+                        else:
+                            self.fault(
+                                "No main, none non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
+
             self.model[ffs]['_main'] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
@@ -807,7 +819,7 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                            move_target in renames.keys() or move_target in renames.values())
+                        move_target in renames.keys() or move_target in renames.values())
                         ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
@@ -907,8 +919,10 @@ class Engine:
             ffs, main_snapshots)
         # always! keep the latest snapshot
         keep_snapshots.add(main_snapshots[-1])
-        #also if a snapshot is yet to be send / is currently sending, we keep it
-        keep_snapshots.update(node_fss_info.get('_snapshots_in_transit', {}).keys())
+        # also if a snapshot is yet to be send / is currently sending, we keep
+        # it
+        keep_snapshots.update(node_fss_info.get(
+            '_snapshots_in_transit', {}).keys())
         self.logger.info("keeping for %s %s" % (ffs, keep_snapshots))
         if restrict_to_node is None or restrict_to_node == main_node:
             remove_from_main = [
@@ -924,28 +938,38 @@ class Engine:
                     target_snapshots = node_fss_info[node]['snapshots']
                     too_many = [
                         x for x in target_snapshots if x not in keep_snapshots]
-                    #never delete the last snapshot from a target 
+                    # never delete the last snapshot from a target
                     if len(too_many) == len(target_snapshots):
                         too_many = too_many[:-1]
                     for snapshot in too_many:
                         self.send(node, {'msg': 'remove_snapshot',
-                                        'ffs': ffs, 'snapshot': snapshot})
+                                         'ffs': ffs, 'snapshot': snapshot})
                         # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
     def _send_missing_snapshots(self):
         """Once we have prased the ffs_lists into our model (see _parse_main_and_readonly),
-        we send out pull requests for the missing snapshots
-        and prunes for those that are too many"""
+        and pruned the snapshots that we could,
+        we send out replication requestes for the missing snapshots.
+
+        We only send prev snapshots if there's an unbroken line to the current one.
+        otherwise we'd have to discuss how and whether to roll back the state first
+        and rollback to the current snapshot later, and rolling back
+        eats later snapshots
+        """
         for ffs, node_fss_info in self.model.items():
             if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
+            if len([x for x in node_fss_info if x != main and not x.startswith('_')]) == 0:
+                self.logger.info("No replicates for %s on %s", ffs, main)
             snapshots_to_send = set(
                 self.config.decide_snapshots_to_send(ffs, main_snapshots))
             ordered_to_send = [
                 x for x in main_snapshots if x in snapshots_to_send]
+            self.logger.info(
+                "Snapshots to consider sending for  %s - %s (main=%s)", ffs,  ordered_to_send, main)
             if ordered_to_send:
                 for node, node_info in node_fss_info.items():
                     if node.startswith('_'):
@@ -958,10 +982,25 @@ class Engine:
                             missing.append(sn)
                         else:
                             break
-                    missing = reversed(missing)
+                    missing = list(reversed(missing))
+                    self.logger.info(
+                        "Missing on %s for %s - %s", ffs, node, missing)
                     for sn in missing:
                         self._send_snapshot(main, node, ffs, sn)
 
+    def _capture_replicated_without_any_snapshots(self):
+       for ffs, node_fss_info in self.model.items():
+            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
+                continue
+            main = node_fss_info['_main']
+            main_snapshots = node_fss_info[main]['snapshots']
+            has_replicates = [x for x in node_fss_info if x != main and not x.startswith('_')]
+            if has_replicates:
+                sendable_snapshots = self.config.decide_snapshots_to_send(ffs, main_snapshots)
+                if not sendable_snapshots:
+                    self.do_capture(ffs, False)
+            
+          
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
         self.send(sending_node, {
             'msg': 'send_snapshot',
@@ -1056,12 +1095,17 @@ class Engine:
             # case 1: adding a new ffs + replication targets
             # and we've returned before the main is done
             if self.model[ffs][main].get('_new', False):
-                pass  # no snapshots to send
+                pass  # new ffs -> no snapshots to send
             else:  # either were in add_new_target, or the main was done before the rep targets
                 # should only have snapshots to send in the add_new_target case
-                if self.model[ffs][main]['snapshots']:
+                to_send = self.config.decide_snapshots_to_send(
+                    ffs, self.model[ffs][main]['snapshots'])
+                if to_send:  # we have snapshots to send
                     for sn in self.model[ffs][main]['snapshots']:
-                        self._send_snapshot(main, node, ffs, sn)
+                        if sn in to_send:  # to send is a set!
+                            self._send_snapshot(main, node, ffs, sn)
+                else:  # this ffs was never captured, but we want to sync the status quo.
+                    self.do_capture(ffs, False)
 
     def node_capture_done(self, msg):
         node = msg['from']
@@ -1117,8 +1161,8 @@ class Engine:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
 
         if (self.is_ffs_moving(ffs) and
-            node == self.model[ffs]['_moving'] and
-            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                node == self.model[ffs]['_moving'] and
+                msg['snapshot'] == self.model[ffs]['_move_snapshot']
             ):
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
@@ -1201,41 +1245,41 @@ class Engine:
             if do_send:
                 self.send(node, {'msg': 'zpool_status'})
 
-
     def get_snapshot_interval(self, ffs):
         info = self.model[ffs]
         main = info['_main']
-        interval = info[main]['properties'].get('ffs:snapshot_interval','-')
+        interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
         if interval == '-':
             return False
         else:
             return int(interval)
 
     def one_minute_passed(self):
-        now = time.time() 
-        for ffs, ffs_info in self.model.items():
-            iv = self.get_snapshot_interval(ffs)
-            if iv and iv > 0:
-                main = ffs_info['_main']
-                do_snapshot = False
-                if ffs_info[main]['upcoming_snapshots']:
-                    # never auto snapshot while we're lagging behind.
-                    pass
-                else:
-                    if len(ffs_info[main]['snapshots']) == 0:
-                        do_snapshot = True
+        if not self.faulted:
+            now = time.time()
+            for ffs, ffs_info in self.model.items():
+                iv = self.get_snapshot_interval(ffs)
+                if iv and iv > 0:
+                    main = ffs_info['_main']
+                    do_snapshot = False
+                    if ffs_info[main]['upcoming_snapshots']:
+                        # never auto snapshot while we're lagging behind.
+                        pass
                     else:
-                        try:
-                            snapshot_time = self.parse_time_from_snapshot(
-                                ffs_info[main]['snapshots'][-1]
-                            )
-                            if snapshot_time + (iv * 60) < now:
-                                do_snapshot = True
-                        except ValueError:  # could not parse time, assume we need to redo it
+                        if len(ffs_info[main]['snapshots']) == 0:
                             do_snapshot = True
-                            pass
-                    if do_snapshot:
-                        self.do_capture(ffs, False, 'auto')
+                        else:
+                            try:
+                                snapshot_time = self.parse_time_from_snapshot(
+                                    ffs_info[main]['snapshots'][-1]
+                                )
+                                if snapshot_time + (iv * 60) < now:
+                                    do_snapshot = True
+                            except ValueError:  # could not parse time, assume we need to redo it
+                                do_snapshot = True
+                                pass
+                        if do_snapshot:
+                            self.do_capture(ffs, False, 'auto')
 
     def node_rename_done(self, msg):
         node = msg['from']

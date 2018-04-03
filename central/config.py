@@ -15,36 +15,37 @@ class Config(DefaultConfig):
 
     def get_nodes(self):
         return {
-    'pcmt391': {
-        'hostname': 'amy',
-        'storage_prefix': 'amy/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCqZJ8e3c5VQFysAKrkbZJ7RD1SPs1LOHfdYtCH5LubJBEp/SC9EIhfq4YWSLaq/QQiGB/YKtLfAfpth1bz4Iw3LHqoi2jrC1bNSaZnsoJ40qTehVxJCJoFlyHB+UoNoPXvnVR/o189Xiitz0iRDFVZ1QrvAfL0ddorskCkPV2adhV1TQDS9qkHa/uUhDjmIOzLXZYVcryjNzLBk0hp5nn7N6ghJifsAFjVvQYGwuQu3ldLlVTn7SY5Qy80D0sF6ch0kA9DfACzcP/1m3+cPlD3XvKOLoDCXzMEEc3AYFR/vlSzdMgVK4VWpdh9BOKgJRoFBCQbyPAbn7mho03Yo40H ffs@pcmt391'
+    'amy': {
+        'hostname': 'pcmt391',
+        'storage_prefix': '/amy/ffs',
+        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCqZJ8e3c5VQFysAKrkbZJ7RD1SPs1LOHfdYtCH5LubJBEp/SC9EIhfq4YWSLaq/QQiGB/YKtLfAfpth1bz4Iw3LHqoi2jrC1bNSaZnsoJ40qTehVxJCJoFlyHB+UoNoPXvnVR/o189Xiitz0iRDFVZ1QrvAfL0ddorskCkPV2adhV1TQDS9qkHa/uUhDjmIOzLXZYVcryjNzLBk0hp5nn7N6ghJifsAFjVvQYGwuQu3ldLlVTn7SY5Qy80D0sF6ch0kA9DfACzcP/1m3+cPlD3XvKOLoDCXzMEEc3AYFR/vlSzdMgVK4VWpdh9BOKgJRoFBCQbyPAbn7mho03Yo40H ffs@pcmt391',
+
     },
-    'pcmt321': {  # must be the name the machine identifies by
-        'hostname': 'rose',  # on what name to call the machine
-        'storage_prefix': 'rose/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDRjLKaU8k5/b4eFax2Xd+wm2HqkLuMDby4ZkeMX8D3N6yaCJasi1+lmWSdDtwUKXF7Ox6w0JOmkHxvSnM/e5W0EBnSzc0Hg7OtC+MqqNJ8CMO7BaGisk6wQ5ejPHeP/fUZ5M8JPdDzP2vpmG9KUvdecteHbqDN8+9V6uRb8FMFch4NxPvJkhAYvOfcRGtdQ67Bcu4LSboDA6scHbPqElaB/z7mlLUXKoxsYKO/Mynbl00zZXBz/bOYn+n6cS3EKVpO8OKE+uDfLC2lw7XuL77txS4N4jvqbi9wZifWDLvbI+TFTtsmegYr892mJ2UZiVNmYHkdNgL5KnTR+00KoWbp ffs@pcmt321'
+    'rose': {  # must be the name the machine identifies by
+        'hostname': 'pcmt321',  # on what name to call the machine
+        'storage_prefix': '/rose/ffs',
+        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDRjLKaU8k5/b4eFax2Xd+wm2HqkLuMDby4ZkeMX8D3N6yaCJasi1+lmWSdDtwUKXF7Ox6w0JOmkHxvSnM/e5W0EBnSzc0Hg7OtC+MqqNJ8CMO7BaGisk6wQ5ejPHeP/fUZ5M8JPdDzP2vpmG9KUvdecteHbqDN8+9V6uRb8FMFch4NxPvJkhAYvOfcRGtdQ67Bcu4LSboDA6scHbPqElaB/z7mlLUXKoxsYKO/Mynbl00zZXBz/bOYn+n6cS3EKVpO8OKE+uDfLC2lw7XuL77txS4N4jvqbi9wZifWDLvbI+TFTtsmegYr892mJ2UZiVNmYHkdNgL5KnTR+00KoWbp ffs@pcmt321',
     },
-    'pcmt335': {
-        'hostname': 'donna',
-        'storage_prefix': 'donna/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVBWJOP1VCBDLbgp6uChMD/PSKAg2VoqUAP/ztT5CuvuEXfnRJbrghVsZ6r08ttOYD3JrtVmclclUPqs3ValVORpmuCydxU9zSGcmtca4JtooDi2aBYBLy4KlOPM30EQqEvGFcl+lRLJW6rHBO8KC28nbpDHEgZauCbDKA0PvLDT71XvDZAaJd7VKz00nsI+7kc6Ez2wkXnENNCWLEtC0Sw7elOn17Td2JoHkpi8TSk7W8HiRPJSkJOA1jkkgrxYDfC0TPTe85WML2ah9I3nz/iLBxPSooGY+g4CacKnaS0i6p7IYMqTocchjjmlHhSIMrwgbfxhkXM5wIQKx4D77R ffs@pcmt335',
+    'donna': {
+        'hostname': 'pcmt335',
+        'storage_prefix': '/donna/ffs',
+        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVBWJOP1VCBDLbgp6uChMD/PSKAg2VoqUAP/ztT5CuvuEXfnRJbrghVsZ6r08ttOYD3JrtVmclclUPqs3ValVORpmuCydxU9zSGcmtca4JtooDi2aBYBLy4KlOPM30EQqEvGFcl+lRLJW6rHBO8KC28nbpDHEgZauCbDKA0PvLDT71XvDZAaJd7VKz00nsI+7kc6Ez2wkXnENNCWLEtC0Sw7elOn17Td2JoHkpi8TSk7W8HiRPJSkJOA1jkkgrxYDfC0TPTe85WML2ah9I3nz/iLBxPSooGY+g4CacKnaS0i6p7IYMqTocchjjmlHhSIMrwgbfxhkXM5wIQKx4D77R ffs@pcmt335',
     },
-    'pcmt380': {
-        'hostname': 'mf',
-        'storage_prefix': 'mf/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDUu0S+IjR10GvikbawoTVUiMpy8vHT93j2zMdRDTwq6/LgoYoqd74CvVcYGzUZ4SMivoV0dL2RYbo9tmKHvt6N65oEL5cqwval8cQZ8m3PZ4zQYdbqbhpVW432BKJOGYswV5tqH7sJV7BxrFIxmqIUvUI5BM/qHZEVg27zVdSN1VE5OtPVp/jckj3XnsBLdXr122kabuVNGRT9DS2ddIxLyK9DGgqdeDCPbWCEYR/zE3eWKTHvtm2Qxse48k8GrGq9+/Jpa9o4OKCAtY2mCwlGW+Zx6XpDmcTbS9KBNNw7NpssBuIte+dKDcaTlLvy5hZBPElvOiaa08wi9eW4wml9 ffs@pcmt380\n',
+    'mf': {
+        'hostname': 'pcmt380',
+        'storage_prefix': '/mf/ffs',
+        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDcN2Wr/+Ezo119pgjDDOahK8XH8qJTXqoRR1XOMhoPPsJTfnPvSDB8LNWcRkdIADSolwNU9I2PyODlVJonCgDVNDDgzr1oTSQUovkc37cl3aU1PKHkuVVyWveBGOsE1fIfWQHXUepZFyxqVG+nLKOOOxV3EH0t2mjOJYLgDw9uCOnnMcI9G2XkOm1jSg6kZCmHL63rAs617SX2D5rvKQEc/HxxLLqd0ofA1YzBc3O/dq92J1bRnUOJcWu8vCdWxhRIZtV0fYnGjfD6JPHX0hRyXyJB25sYrqGvEa4YQN9r2XETsdcjAylhAxS22SMZVeQ1AEc2JQKatvl3ximTf2b9 ffs@pcmt380',
         },
-    'pcmt322': {
-        'hostname': 'martha',
-        'storage_prefix': 'martha/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDyjtBBoSslSuXmgidRocloyFbEwJc36SmW+vnAIIzT5OBX+yKv529CMsIttsUScu/BARMVeEkDX+0pI5b8vMygpjtQM9783/+/3OheEw8MgOm4HS90rc7g8xOqWjydIagotI4YhlUK2bCvrjYxavovUA0wsOTIBoCBHwqF5SrarzqN4nvZgcY8McHLwfjjYElcpbPutLXHneY+nPevrlKqkbnPONpXJ+Zf/BhgEiVbtvbU7QKewhf4TDJQU8y7Eto9pMwTqz2hcR9t+p0HFFYcd9JzEvyBQIvO6VL529rxhI0s2Qz1heV2NRVx6ZrReoDBjuNfoHjW7VdRUYsBI633 ffs@pcmt322\n'
+    'martha': {
+        'hostname': 'pcmt322',
+        'storage_prefix': '/martha/ffs',
+        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDyjtBBoSslSuXmgidRocloyFbEwJc36SmW+vnAIIzT5OBX+yKv529CMsIttsUScu/BARMVeEkDX+0pI5b8vMygpjtQM9783/+/3OheEw8MgOm4HS90rc7g8xOqWjydIagotI4YhlUK2bCvrjYxavovUA0wsOTIBoCBHwqF5SrarzqN4nvZgcY8McHLwfjjYElcpbPutLXHneY+nPevrlKqkbnPONpXJ+Zf/BhgEiVbtvbU7QKewhf4TDJQU8y7Eto9pMwTqz2hcR9t+p0HFFYcd9JzEvyBQIvO6VL529rxhI0s2Qz1heV2NRVx6ZrReoDBjuNfoHjW7VdRUYsBI633 ffs@pcmt322',
     },
-    'pcmt383': {
-        'hostname': 'nostromo',
-        'storage_prefix': 'nostromo/ffs',
-        'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383\n',
-    },
+    #'pcmt383': {
+        #'hostname': 'nostromo',
+        #'storage_prefix': '/nostromo/ffs',
+        #'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383\n',
+    #},
 }
     def get_logging(self):
         if not os.path.exists('/var/log/ffs'):
@@ -60,7 +61,7 @@ class Config(DefaultConfig):
         logger.setLevel(logging.DEBUG)
 
         debug_logger = logging.handlers.RotatingFileHandler(
-            "/var/log/ffs/debug.log", mode='a', maxBytes=10 * 1024 * 1024, backupCount=1, encoding=None, delay=0)
+            "/var/log/ffs/debug.log", mode='a', maxBytes=20 * 1024 * 1024, backupCount=1, encoding=None, delay=0)
         debug_logger.setLevel(logging.DEBUG)
         error_logger = logging.handlers.RotatingFileHandler(
             "/var/log/ffs/error.log", mode='a', maxBytes=10 * 1024 * 1024, backupCount=1, encoding=None, delay=0)
@@ -74,6 +75,10 @@ class Config(DefaultConfig):
         logger.addHandler(debug_logger)
         logger.addHandler(console_logger)
         logger.addHandler(error_logger)
+        zmq_auth = logging.getLogger('zmq.auth')
+        zmq_auth.addHandler(debug_logger)
+
+
         return logger
 
     def complain(self, message):
@@ -83,6 +88,7 @@ class Config(DefaultConfig):
             print(message, file=op)
             print("-----------EndComplain----------", file=op)
             print('', file=op)
+        print('complain:', message)
         message = 'FFS Complaining about: ' + message
         p = subprocess.Popen(["/machine/opt/infrastructure/client/call_mattermost.py"], stdin=subprocess.PIPE)
         p.communicate(message.encode('utf-8'))
@@ -91,10 +97,11 @@ class Config(DefaultConfig):
         """Keep your users informed."""
         with open("/var/log/ffs/inform.log", 'a') as op:
             print('', file=op)
-            print("-----------INFORM----------")
+            print("-----------INFORM----------", file=op)
             print(message, file=op)
             print("-----------EndInform----------", file=op)
             print('', file=op)
+        print('inform:', message)
         message = 'FFS Informing about: ' + message
         p = subprocess.Popen(["/machine/opt/infrastructure/client/call_mattermost.py"], stdin=subprocess.PIPE)
         p.communicate(message.encode('utf-8'))

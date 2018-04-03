@@ -10,7 +10,7 @@ from txzmq import ZmqEndpoint, ZmqFactory, ZmqREPConnection
 import hashlib
 import logging
 from central import default_config
-if len(sys.argv) == 2:
+if len(sys.argv) == 2 and not sys.argv[1].startswith('--'):
     config_file = sys.argv[1]
     if not os.path.exists(config_file):
         raise ValueError("Could not import config, config file does not exist")
@@ -131,7 +131,7 @@ def main():
         if cfg.do_timebased_actions():
             l2 = task.LoopingCall(lambda: our_engine.one_minute_passed())
             l2.start(60)
-        if cfg.get_zpool_frequency_check()>  0 and configcfgdo_timebased_actions():
+        if cfg.get_zpool_frequency_check()>  0 and cfg.do_timebased_actions():
             l3 = task.LoopingCall(lambda: our_engine.do_zpool_status_check())
             l3.start(cfg.get_zpool_frequency_check())
         
