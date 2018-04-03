@@ -16,13 +16,13 @@ class Config(DefaultConfig):
     def get_nodes(self):
         return {
     'amy': {
-        'hostname': 'pcmt391',
+        'hostname': 'amy', # so we use the 10gb interface
         'storage_prefix': '/amy/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCqZJ8e3c5VQFysAKrkbZJ7RD1SPs1LOHfdYtCH5LubJBEp/SC9EIhfq4YWSLaq/QQiGB/YKtLfAfpth1bz4Iw3LHqoi2jrC1bNSaZnsoJ40qTehVxJCJoFlyHB+UoNoPXvnVR/o189Xiitz0iRDFVZ1QrvAfL0ddorskCkPV2adhV1TQDS9qkHa/uUhDjmIOzLXZYVcryjNzLBk0hp5nn7N6ghJifsAFjVvQYGwuQu3ldLlVTn7SY5Qy80D0sF6ch0kA9DfACzcP/1m3+cPlD3XvKOLoDCXzMEEc3AYFR/vlSzdMgVK4VWpdh9BOKgJRoFBCQbyPAbn7mho03Yo40H ffs@pcmt391',
 
     },
-    'rose': {  # must be the name the machine identifies by
-        'hostname': 'pcmt321',  # on what name to call the machine
+    'rose': {  # what to call the machine
+        'hostname': 'rose',  # 
         'storage_prefix': '/rose/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDRjLKaU8k5/b4eFax2Xd+wm2HqkLuMDby4ZkeMX8D3N6yaCJasi1+lmWSdDtwUKXF7Ox6w0JOmkHxvSnM/e5W0EBnSzc0Hg7OtC+MqqNJ8CMO7BaGisk6wQ5ejPHeP/fUZ5M8JPdDzP2vpmG9KUvdecteHbqDN8+9V6uRb8FMFch4NxPvJkhAYvOfcRGtdQ67Bcu4LSboDA6scHbPqElaB/z7mlLUXKoxsYKO/Mynbl00zZXBz/bOYn+n6cS3EKVpO8OKE+uDfLC2lw7XuL77txS4N4jvqbi9wZifWDLvbI+TFTtsmegYr892mJ2UZiVNmYHkdNgL5KnTR+00KoWbp ffs@pcmt321',
     },
@@ -37,7 +37,7 @@ class Config(DefaultConfig):
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDcN2Wr/+Ezo119pgjDDOahK8XH8qJTXqoRR1XOMhoPPsJTfnPvSDB8LNWcRkdIADSolwNU9I2PyODlVJonCgDVNDDgzr1oTSQUovkc37cl3aU1PKHkuVVyWveBGOsE1fIfWQHXUepZFyxqVG+nLKOOOxV3EH0t2mjOJYLgDw9uCOnnMcI9G2XkOm1jSg6kZCmHL63rAs617SX2D5rvKQEc/HxxLLqd0ofA1YzBc3O/dq92J1bRnUOJcWu8vCdWxhRIZtV0fYnGjfD6JPHX0hRyXyJB25sYrqGvEa4YQN9r2XETsdcjAylhAxS22SMZVeQ1AEc2JQKatvl3ximTf2b9 ffs@pcmt380',
         },
     'martha': {
-        'hostname': 'pcmt322',
+        'hostname': 'martha',
         'storage_prefix': '/martha/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDyjtBBoSslSuXmgidRocloyFbEwJc36SmW+vnAIIzT5OBX+yKv529CMsIttsUScu/BARMVeEkDX+0pI5b8vMygpjtQM9783/+/3OheEw8MgOm4HS90rc7g8xOqWjydIagotI4YhlUK2bCvrjYxavovUA0wsOTIBoCBHwqF5SrarzqN4nvZgcY8McHLwfjjYElcpbPutLXHneY+nPevrlKqkbnPONpXJ+Zf/BhgEiVbtvbU7QKewhf4TDJQU8y7Eto9pMwTqz2hcR9t+p0HFFYcd9JzEvyBQIvO6VL529rxhI0s2Qz1heV2NRVx6ZrReoDBjuNfoHjW7VdRUYsBI633 ffs@pcmt322',
     },
@@ -168,6 +168,8 @@ class Config(DefaultConfig):
         # in seconds
         return 15 * 60  # 0 = disabled, seconds otherwise
 
+    def get_ssh_rate_limit(self):
+        return 0.5
 
 config = Config()
 all = [config]

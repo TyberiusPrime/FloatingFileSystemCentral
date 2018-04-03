@@ -8,56 +8,8 @@ import re
 from collections import OrderedDict
 from . import ssh_message_que
 from . import default_config
-
-
-class StartupNotDone(Exception):
-    """To client, when the engine is still booting up"""
-    pass
-
-
-class EngineFaulted(Exception):
-    """to client, when the engine is in ManualInterventionNeeded state"""
-    pass
-
-
-class ManualInterventionNeeded(ValueError):
-    pass
-
-
-class CodingError(ManualInterventionNeeded):
-    pass
-
-
-class InconsistencyError(ManualInterventionNeeded):
-    pass
-
-
-class InProgress(ValueError):
-    pass
-
-
-class MoveInProgress(InProgress):
-    pass
-
-
-class NewInProgress(InProgress):
-    pass
-
-
-class RemoveInProgress(InProgress):
-    pass
-
-
-class RenameInProgress(InProgress):
-    pass
-
-
-class InvalidTarget(KeyError):
-    pass
-
-
-class RestartError(Exception):
-    pass
+from .exceptions import (StartupNotDone, EngineFaulted, SSHConnectFailed, ManualInterventionNeeded, CodingError, InconsistencyError,
+                         InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError,)
 
 
 def needs_startup(func):
@@ -101,6 +53,7 @@ class Engine:
         self.write_authorized_keys()
         self.deployment_zip_filename = os.path.join('node', 'node.zip')
         self.build_deployment_zip()
+        self.deployment_count = 0
 
     def write_authorized_keys(self):
         if not os.path.exists(os.path.join('node', 'home', '.ssh')):
@@ -129,7 +82,7 @@ class Engine:
         self.logger.error("Faulted engine with message: %s", message)
         self.config.complain("Faulted engine with message: %s" % message)
         if trigger:
-            self.logger.error("Fault triggeredb by incoming message", trigger)
+            self.logger.error("Fault triggered by incoming message", trigger)
         self.faulted = message
         self.trigger_message = trigger
         self.sender.kill_unsent_messages()
@@ -137,6 +90,9 @@ class Engine:
 
     def incoming_node(self, msg):
         if 'msg' not in msg:
+            if 'content' in msg and 'error' in msg:
+                if 'Connection refused' in msg['content']:
+                    raise SSHConnectFailed()
             self.fault("No message in msg", msg)
         if 'from' not in msg:
             self.fault("No from in message - should not happen", msg)
@@ -156,6 +112,8 @@ class Engine:
             self.node_send_snapshot_done(msg)
         elif msg['msg'] == 'remove_snapshot_done':
             self.node_remove_snapshot_done(msg)
+        elif msg['msg'] == 'remove_snapshot_failed':
+            self.node_remove_snapshot_failed(msg)
         elif msg['msg'] == 'remove_done':
             self.node_remove_done(msg)
         elif msg['msg'] == 'remove_failed':
@@ -224,6 +182,8 @@ class Engine:
         return {'started': self.startup_done and not self.faulted}
 
     def client_service_que(self):
+        if self.faulted:
+            return {"error": "Engine is in faulted state.", 'Fault message': self.faulted}
         res = {}
         for node in self.sender.outgoing:
             res[node] = [(x.status, x.msg) for x in self.sender.outgoing[node]]
@@ -501,6 +461,7 @@ class Engine:
             raise NewInProgress()
         self.model[ffs]['_moving'] = target
         # self.model[ffs][current_main]['properties']['readonly'] = 'on'
+        self.config.inform("Starting move for: %s" % ffs)
         self.send(current_main, {
             'msg': 'set_properties',
             'ffs': ffs,
@@ -636,6 +597,7 @@ class Engine:
     def node_deploy_done(self, sender):
         msg = {'msg': 'list_ffs'}
         self.send(sender, msg)
+        self.deployment_count += 1
 
     def node_ffs_list(self, ffs_list, sender):
         # remove those starting with .ffs_testing - only '.' filesystem that
@@ -650,9 +612,11 @@ class Engine:
             self.build_model()
             self.startup_done = True
             self.logger.info("Startup complete")
-            self.config.inform("Startup completed, sending syncs.")
+            os = self.count_outgoing_snapshots()
+            self.config.inform("Startup completed, outstanding snapshot transfers: %i" % os)
 
     def build_model(self):
+        self.config.inform("All nodes reported back, building model")
         self.logger.info("All list_ffs returned")
         self.model = {}
         for node, ffs_list in self.node_ffs_infos.items():
@@ -703,7 +667,8 @@ class Engine:
                                 ffs, node), exception=ManualInterventionNeeded)
                         else:
                             self.model[ffs][node]['removing'] = True
-                            self.logger.info("Handling remove_asap for %s on %s", ffs, node)
+                            self.logger.info(
+                                "Handling remove_asap for %s on %s", ffs, node)
                             self.send(node, {
                                 'msg': 'remove',
                                 'ffs': ffs,
@@ -820,7 +785,7 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                        move_target in renames.keys() or move_target in renames.values())
+                            move_target in renames.keys() or move_target in renames.values())
                         ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
@@ -990,19 +955,21 @@ class Engine:
                         self._send_snapshot(main, node, ffs, sn)
 
     def _capture_replicated_without_any_snapshots(self):
-       for ffs, node_fss_info in self.model.items():
+        for ffs, node_fss_info in self.model.items():
             if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
-            has_replicates = [x for x in node_fss_info if x != main and not x.startswith('_')]
+            has_replicates = [x for x in node_fss_info if x !=
+                              main and not x.startswith('_')]
             if has_replicates:
-                sendable_snapshots = self.config.decide_snapshots_to_send(ffs, main_snapshots)
+                sendable_snapshots = self.config.decide_snapshots_to_send(
+                    ffs, main_snapshots)
                 if not sendable_snapshots:
-                    self.logger.info("Replicated, but never snapshoted - capturing %s" % ffs)
+                    self.logger.info(
+                        "Replicated, but never snapshoted - capturing %s" % ffs)
                     self.do_capture(ffs, False)
-            
-          
+
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
         self.send(sending_node, {
             'msg': 'send_snapshot',
@@ -1041,6 +1008,7 @@ class Engine:
                     node == self.model[ffs]['_main']):
                 # move step 4 done, happens after successful capture & replication & main=off on old main.
                 # set main=on on new main.
+                self.config.inform("Move step 4 done: %s" % ffs)
                 self.send(self.model[ffs]['_moving'], {
                     'msg': 'set_properties',
                     'ffs': ffs,
@@ -1049,12 +1017,15 @@ class Engine:
             else:
                 moving_to = props['ffs:moving_to']
                 if moving_to != '-':  # move step 1 done, proceed with step 2
+                    self.config.inform("Move step 1 done %s" % ffs)
                     if '_move_snapshot' in self.model[ffs]:
                         self.fault(
                             'Repeated capture during move. A test case that does not correctly send ffs:moving_to?', msg, CodingError)
                     self.model[ffs][
                         '_move_snapshot'] = self.do_capture(ffs, False)
                 else:  # move step 7 done, remove our _moving flag
+                    self.config.inform(
+                        "Move step 7 (final step) done: %s" % ffs)
                     del self.model[ffs]['_moving']
                     del self.model[ffs]['_move_snapshot']
                     if self.is_ffs_moving(ffs):
@@ -1137,6 +1108,8 @@ class Engine:
                     self._send_snapshot(main, node, ffs, snapshot)
         if not self.is_ffs_moving(ffs):
             self._prune_snapshots_for_ffs(ffs, main)
+        else:
+            self.config.inform("Move step 2 done: %s" % ffs)
 
     def node_send_snapshot_done(self, msg):
         main = msg['from']
@@ -1161,11 +1134,13 @@ class Engine:
         self.model[ffs]['_snapshots_in_transit'][snapshot] -= 1
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
-
+        os = self.count_outgoing_snapshots()
+        self.config.inform("Send of %s@%s to %sdone, outstanding snapshot transfers: %i" % (ffs, snapshot, node, os))
         if (self.is_ffs_moving(ffs) and
-                node == self.model[ffs]['_moving'] and
-                msg['snapshot'] == self.model[ffs]['_move_snapshot']
+            node == self.model[ffs]['_moving'] and
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
             ):
+            self.config.inform(("Move step 3 done: %s" % ffs))
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
                 'ffs': ffs,
@@ -1221,7 +1196,16 @@ class Engine:
         if msg['snapshot'] in self.model[ffs][node]['snapshots']:
             self.model[ffs][node]['snapshots'].remove(msg['snapshot'])
 
+    def node_remove_snapshot_failed(self, msg):
+        self.config.complain("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
+                             (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
+        self.logger.error("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
+                          (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
+
     def node_zpool_status(self, msg):
+        # don't start checking before the newest code is downstream
+        if self.deployment_count < len(self.node_config):
+            return
         node = msg['from']
         status = {}
         for k in ['ONLINE', 'DEGRADED', 'UNAVAIL']:
@@ -1246,6 +1230,14 @@ class Engine:
                     break
             if do_send:
                 self.send(node, {'msg': 'zpool_status'})
+
+    def count_outgoing_snapshots(self):
+        count = 0
+        for node in self.node_config:
+            for msg in self.sender.get_messages_for_node(node):
+                if msg['msg'] == 'send_snapshot':
+                    count += 1
+        return count
 
     def get_snapshot_interval(self, ffs):
         info = self.model[ffs]

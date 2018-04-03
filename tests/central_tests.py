@@ -2805,6 +2805,9 @@ class SnapshotPruningTests(EngineTests):
         })
 
 
+    def test_snapshot_removal_fails_due_to_clones(self):
+        raise NotImplementedError()
+
 class ZpoolStatusChecks(EngineTests):
 
     def ge(self):
@@ -3236,7 +3239,11 @@ config:
         x = len(outgoing_messages)
         self.assertTrue(x > 0)
         e.do_zpool_status_check()
-        self.assertTrue(len(outgoing_messages), x)
+        self.assertEqual(len(outgoing_messages), x)
+        outgoing_messages.clear()
+        self.assertEqual(len(outgoing_messages), 0)
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing_messages), x)
 
 
 class ChownTests(PostStartupTests):
@@ -4575,6 +4582,9 @@ class FailureTests(unittest.TestCase):
     def test_deploy_failed(self):
         raise NotImplementedError("Make sure complaint is spot on")
 
+
+    def test_ssh_connect_failed(self):
+        raise NotImplementedError()
 
 if __name__ == '__main__':
     unittest.main()

@@ -8,7 +8,11 @@ import hashlib
 
 
 def check_call(cmd):
-    return subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = p.communicate()
+    if p.returncode != 0:
+        raise subprocess.CalledProcessError(p.returncode, cmd, "stdout:\n%s\n\nstderr:\n%s\n" % (stdout, stderr))
+    return True
 
 def check_output(cmd):
     return subprocess.check_output(cmd)
@@ -202,7 +206,12 @@ def msg_remove_snapshot(msg):
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
     if combined not in list_snapshots():
         raise ValueError("invalid snapshot")
-    check_call(['sudo', 'zfs', 'destroy', combined])
+    try:
+        check_call(['sudo', 'zfs', 'destroy', combined])
+    except subprocess.CalledProcessError as e:
+        if 'snapshot has dependent clones' in e.output:
+            return {'msg': 'remove_snapshot_failed', 'ffs': ffs, 'snapshot': snapshot_name, 'error_msg': 'Snapshot had dependent clones.'}
+
     return {"msg": 'remove_snapshot_done', 'ffs': ffs, 'snapshots': get_snapshots(ffs, msg['storage_prefix']), 'snapshot': snapshot_name}
 
 
@@ -309,6 +318,21 @@ def msg_send_snapshot(msg):
                 'error': 'set_properties_read_only_off',
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
             }
+        try:
+            r = json.loads(stdout)
+            if not 'msg' in r or r['msg'] != 'set_properties_done:
+                return {
+                'error': 'set_properties_read_only_off_no_json',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+            }
+
+
+        except ValueError:
+            return {
+                'error': 'set_properties_read_only_off_no_json',
+                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+            }
+
         # step2: rsync
         rsync_cmd = {
             'source_path': '/' + clone_dir + '/' + clone_name,
@@ -316,7 +340,7 @@ def msg_send_snapshot(msg):
             'target_host': target_host,
             'target_user': target_user,
             'target_ssh_cmd': target_ssh_cmd,
-            'cores': -1,
+            'cores': 4, # limit to a 'sane' value - you will run into ssh-concurrent connection limits otherwise
         }
         p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
@@ -367,7 +391,8 @@ def msg_send_snapshot(msg):
         }
 
     finally:
-        clean_up_clones(msg['storage_prefix'])
+        #clean_up_clones(msg['storage_prefix'])
+        pass
 
 
 def msg_deploy(msg):
@@ -506,13 +531,13 @@ def dispatch(msg):
         else:
             result = {'error': 'message_not_understood'}
     except subprocess.CalledProcessError as e:
+        import traceback
+        tb = traceback.format_exc()
         result = {"error": 'exception', 'content': str(e), 'traceback': tb,
         'output': e.output}
 
     except Exception as e:
         import traceback
-        #import sys
-        #exc_info = sys.exc_info()
         tb = traceback.format_exc()
         result = {"error": 'exception', 'content': str(e), 'traceback': tb}
     if not isinstance(result, dict):

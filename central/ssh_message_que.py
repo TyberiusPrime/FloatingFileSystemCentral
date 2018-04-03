@@ -2,6 +2,7 @@ import json
 import pprint
 from twisted.internet import reactor, protocol, error
 import time
+from .exceptions import SSHConnectFailed, ManualInterventionNeeded
 
 
 class MessageInProgress:
@@ -24,6 +25,8 @@ class OutgoingMessages:
 
     def __init__(self, logger, engine, ssh_cmd):
         self.max_per_host = engine.config.get_ssh_concurrent_connection_limit()
+        self.wait_time_between_requests = engine.config.get_ssh_rate_limit()
+        self.last_message_times = {}
         self.logger = logger
         self.job_id = 0
         self.outgoing = {}
@@ -34,7 +37,7 @@ class OutgoingMessages:
 
     def get_messages_for_node(self, node):
         try:
-            return self.outgoing[node]
+            return [x.msg for x in self.outgoing[node]]
         except KeyError:
             return []
 
@@ -66,11 +69,17 @@ class OutgoingMessages:
                             (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
                             (x.msg['msg'] != 'send_snapshot')
                         ):
+                            while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
+                                self.logger.info(
+                                    "Delaying sending to %s", x.node_name)
+                                time.sleep(self.wait_time_between_requests)
+                            self.last_message_times[x.node_name] = time.time()
                             x.job_id = self.job_id
                             self.job_id += 1
                             self.do_send(x)
                             in_progress.append(x)
                             x.status = 'in_progress'
+                            x.send_time = time.time()
                             if x.msg['msg'] == 'send_snapshot':
                                 transfers_in_progress.append(x)
                     else:
@@ -109,6 +118,8 @@ class OutgoingMessages:
         try:
             result['from'] = m.node_name
             self.engine.incoming_node(result)
+        except SSHConnectFailed:
+            self.engine.fault("SSH connect to %s failed." % m.receiver, exception=ManualInterventionNeeded)
         except Exception as e:
             import traceback
             self.logger.error(

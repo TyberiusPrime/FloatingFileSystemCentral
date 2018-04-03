@@ -36,6 +36,10 @@ class DefaultConfig:
     def get_ssh_concurrent_connection_limit(self):
         return 5 
 
+    def get_ssh_rate_limit(self):
+        """Time (in decimal seconds) to wait between ssh requests"""
+        return 0.
+
     def get_zpool_frequency_check(self):
         #in seconds
         return  0 # 0 = disabled, seconds otherwise
@@ -223,3 +227,7 @@ class CheckedConfig:
     @must_return_type(bool)
     def do_timebased_actions(self):
         return self.config.do_timebased_actions()
+
+    @must_return_type(float)
+    def get_ssh_rate_limit(self):
+        return self.config.get_ssh_rate_limit()
