@@ -10,6 +10,10 @@ import hashlib
 def check_call(cmd):
     return subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
+def check_output(cmd):
+    return subprocess.check_output(cmd)
+
+
 def zfs_output(cmd_line):
     p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
