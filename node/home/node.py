@@ -319,8 +319,8 @@ def msg_send_snapshot(msg):
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
             }
         try:
-            r = json.loads(stdout)
-            if not 'msg' in r or r['msg'] != 'set_properties_done:
+            r = json.loads(stdout.decode('utf-8'))
+            if not 'msg' in r or r['msg'] != 'set_properties_done':
                 return {
                 'error': 'set_properties_read_only_off_no_json',
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
@@ -391,8 +391,8 @@ def msg_send_snapshot(msg):
         }
 
     finally:
-        #clean_up_clones(msg['storage_prefix'])
-        pass
+        clean_up_clones(msg['storage_prefix'])
+        #pass
 
 
 def msg_deploy(msg):
