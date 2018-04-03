@@ -4512,6 +4512,32 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertEqual(len(e.model['six']['beta']['upcoming_snapshots']), 1)
 
     def test_no_interval_if_faulted(self):
+        def name_snapshot(offset_for_testing):
+            t = time.gmtime(time.time() + offset_for_testing)
+            t = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
+                 "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
+            return 'ffs-' + '-'.join(t)
+
+
+        e, outgoing_messages = self.get_engine({
+            'beta':  {
+                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
+            }
+        })
+        e.one_minute_passed()
+        # time has passed
+        self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
+        e.model['five']['beta']['upcoming_snapshots'].clear()
+        e.one_minute_passed()
+        self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
+        e.model['five']['beta']['upcoming_snapshots'].clear()
+        def inner():
+            e.fault("test")
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+        self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
+
+
+
         raise NotImplementedError()
 
 

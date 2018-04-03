@@ -1280,6 +1280,8 @@ class Engine:
                                 pass
                         if do_snapshot:
                             self.do_capture(ffs, False, 'auto')
+            return True
+        return False
 
     def node_rename_done(self, msg):
         node = msg['from']
