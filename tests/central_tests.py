@@ -643,9 +643,6 @@ class StartupTests(EngineTests):
         })
         self.assertEqual(len(outgoing_messages), 4)
 
-    def test_remove_force_unset_properties(self):
-        raise NotImplementedError("Do we really need this?")
-
     def test_prune_on_startup_leaves_at_least_one_snapshot(self):
         cfg = self._get_test_config()
 
@@ -4537,8 +4534,6 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
 
 
-
-        raise NotImplementedError()
 
 
 class ClientFacingTests(PostStartupTests):
