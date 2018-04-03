@@ -226,7 +226,7 @@ class ClientTests(unittest.TestCase):
             '/' + self.get_test_prefix() + 'one_two'))
         self.assertTrue(os.path.exists(
             '/' + self.get_test_prefix2() + 'one_two'))
-        self.assertTrue('one' in self.list_ffs())
+        self.assertTrue('one_two' in self.list_ffs())
 
     def test_list_ffs(self):
         r = self.run_expect_ok(['list_ffs'])

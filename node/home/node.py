@@ -172,7 +172,7 @@ def msg_remove(msg):
     full_ffs_path = find_ffs_prefix(msg) + ffs
     if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         return {'msg': 'remove_failed', 'reason': 'target_does_not_exists', 'ffs': ffs}
-    p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path],
+    p = subprocess.Popen(['sudo', 'zfs', 'destroy', full_ffs_path, '-r'],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
     if p.returncode == 0:
