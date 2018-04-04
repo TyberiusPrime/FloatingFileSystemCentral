@@ -312,6 +312,8 @@ def msg_send_snapshot(msg):
             'ffs': target_ffs,
             'properties': {'readonly': 'off'},
             'storage_prefix': target_storage_prefix,
+
+            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -360,6 +362,7 @@ def msg_send_snapshot(msg):
             'ffs': target_ffs,
             'properties': {'readonly': 'on'},
             'storage_prefix': target_storage_prefix,
+            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -376,6 +379,7 @@ def msg_send_snapshot(msg):
             'snapshot': snapshot,
 
             'storage_prefix': target_storage_prefix,
+            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -471,17 +475,48 @@ def shell_cmd_rprsync(cmd_line):
         raise ValueError("Path rejected: '%s" % target_path)
 
     target_path = cmd_line[cmd_line.find('/'):]
+    chmod_after = False
+    todo = []
+    if '@' in cmd_line:
+        parts = target_path.split("@")
+        target_path = parts[0]
+        for p in parts[1:]:
+            if p.startswith('chmod='):
+                rights = p[p.find('=') + 1:]
+                #todo sanity check rights
+                todo.append(['sudo', 'chmod', rights, target_path, '-R'])
+            elif p.startswith('chown='):
+                user_group = p[p.find('=') + 1:]
+                #todo: very user and group exists ar at least is valid...
+                todo.append(['sudo', 'chown', user_group, target_path, '-R'])
+            #elif p.startswith('chmod_before'):
+                #chmod_before = True
+            elif p.startswith('chmod_after'):
+                chmod_after = True
+            else:
+                raise ValueError("Invalid @ command")
+
     path_ok(target_path)
     reset_rights = False
     if target_path.endswith('/.'):
         try:
-            org_rights = os.stat(target_path)[stat.ST_MODE]
+            try:
+                org_rights = os.stat(target_path)[stat.ST_MODE]
+            except FileNotFoundError:
+                # asume it's not mounted...
+                check_call(['sudo', 'zfs', 'mount', target_path[1:-2]])
+                org_rights = os.stat(target_path)[stat.ST_MODE]
         except PermissionError:  # target directory is without +X
             check_call(['sudo', 'chmod', 'oug+rwX', target_path])
             reset_rights = True
     real_cmd = cmd_line.replace('rprsync', 'sudo rsync')
     p = subprocess.Popen(real_cmd, shell=True)
     p.communicate()
+    if todo and chmod_after:
+        for cmd in todo:
+            subprocess.check_call(cmd)
+
+
     # if reset_rights:
     #subprocess.check_call(['sudo','chmod', '%.3o'  % (org_rights & 0o777), target_path])
 
