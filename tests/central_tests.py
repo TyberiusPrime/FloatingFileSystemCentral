@@ -3577,6 +3577,8 @@ class TestStartupTriggeringActions(EngineTests):
             'to': 'alpha'
         })
 
+    def test_prio_ordinging_during_send_missing(self):
+        raise NotImplementedError()
 
 
 
@@ -4477,6 +4479,13 @@ class TimeBasedSnapshotTests(PostStartupTests):
             })
         self.assertRaises(engine.ManualInterventionNeeded, inner)
 
+    def test_negative_interval_during_startup(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'beta':  {'_one': ['1', ('ffs:snapshot_interval', '-1')]},
+            })
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+
     def test_auto_snapshot(self):
         def name_snapshot(offset_for_testing):
             t = time.gmtime(time.time() + offset_for_testing)
@@ -4541,6 +4550,12 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
 
 
+    def test_main_has_no_interval_other_do(self):
+        raise NotImplementedError()
+
+    def test_conflicting_intervals_between_main_and_target(self):
+        raise NotImplementedError()
+
 
 
 class ClientFacingTests(PostStartupTests):
@@ -4585,6 +4600,86 @@ class FailureTests(unittest.TestCase):
 
     def test_ssh_connect_failed(self):
         raise NotImplementedError()
+
+    def test_rsync_went_away_because_receiving_host_died(self)
+        raise NotImplementedError("""   ssh_message_que:154 Node processing error in job_id return 137 {'error': 'rsync_failure', 'ssh_process               _return_code': 1, 'content': "stdout:\nb''\n\nstderr:\nb'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --om               it-dir-times -ltx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /               martha/ffs/.ffs_sync_clones/1522834093.737729_aecc9d2d8fd5a0a0f2881ca8511a1fa7/results/ ffs@rose:/rose/ffs/e/20161012_AG_Mermoud_               SMARCAD_H3K9Me3_ChIP_mouse_ES/results/\\n rsync returncode: 255packet_write_wait: Connection to 192.168.153.1 port 223: Broken pi               pe\\r\\nrsync: [sender] write error: Broken pipe (32)\\nrsync error: unexplained error (code 255) at io.c(820) [sender=3.1.1]\\n'               ", 'from': 'martha'} No message in msg, outgoing was: {'ffs': 'e/20161012_AG_Mermoud_SMARCAD_H3K9Me3_ChIP_mouse_ES',
+        """
+
+
+
+class PriorityTests(PostStartupTests):
+    def test_non_int_prio_raises_on_starutp(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'beta':  {'_one': ['1', ('ffs:priority', 'shu')]},
+            })
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+
+    def test_prio_different_between_main_and_other(self):
+        raise NotImplementedError()
+
+    def test_prio_only_set_on_non_maina(self):
+        raise NotImplementedError()
+     
+    def test_client_set_prio_not_specified(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                "msg": 'set_priority',
+                'ffs': 'one',
+                'interval': 34
+            })
+        self.assertRaises(engine.CodingError, inner)
+
+
+    def test_client_set_prio(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        e.incoming_client({
+            "msg": 'set_priority',
+            'ffs': 'one',
+            'priority': 34
+        })
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'to': 'alpha',
+            'ffs': 'one',
+            'properties': {'ffs:priority': '34'}
+        })
+        self.assertMsgEqual(outgoing_messages[1], {
+            'msg': 'set_properties',
+            'to': 'beta',
+            'ffs': 'one',
+            'properties': {'ffs:priority': '34'}
+        })
+
+    def test_prio_reorder(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+
+        o = ssh_message_que.OutgoingMessages(None, e, None)
+        msgs = [
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'remove_snapshot', 'priority': 1000, 'snapshot': 'b'}),
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'remove_snapshot', 'priority': 900, 'snapshot': 'a'}),
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'capture', 'ffs': 'b'}),
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'new', 'ffs': 'a'}),
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'send_snapshot', 'ffs': 'b', 'snapshot': 'a'}),
+        ]
+        ordered = list(o.prioritize(msgs))
+        self.assertEqual(ordered[0], msgs[3])
+        self.assertEqual(ordered[1], msgs[2])
+        self.assertEqual(ordered[2], msgs[4])
+        self.assertEqual(ordered[3], msgs[1])
+        self.assertEqual(ordered[4], msgs[0])
+
+
 
 if __name__ == '__main__':
     unittest.main()

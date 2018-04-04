@@ -125,9 +125,12 @@ def main():
         e = ZmqEndpoint('bind', 'tcp://*:%s' % cfg.get_zmq_port())
         s = EncryptedZmqREPConnection(zf, e)
         our_engine = engine.Engine(cfg, sender=None, dry_run=dry_run)
-        check_if_changed()  # capture hashes
-        l = task.LoopingCall(check_if_changed)
-        l.start(1.0)  # call every second
+        if not '--no-code-check' in sys.argv:
+            check_if_changed()  # capture hashes
+            l = task.LoopingCall(check_if_changed)
+            l.start(1.0)  # call every second
+        else:
+            print("no automatic restart on code changes")
         if cfg.do_timebased_actions():
             l2 = task.LoopingCall(lambda: our_engine.one_minute_passed())
             l2.start(60)

@@ -12,6 +12,17 @@ class MessageInProgress:
         self.node_info = node_info
         self.msg = msg.copy()
         self.status = 'unsent'
+        self.send_time = 0
+
+    def get_runtime(self):
+        if self.status == 'in_progress':
+            return time.time() - self.send_time
+        else:
+            return -1
+        
+
+    def __repr__(self):
+        return "Message to %s: %s" % (self.node_name, self.msg)
 
 
 def format_msg(msg):
@@ -56,6 +67,23 @@ class OutgoingMessages:
             MessageInProgress(node_name, node_info, msg))
         self.send_if_possible()
 
+
+    def prioritize(self, messages):
+        "new,  capture, send, remove_snapshot. Within, order by priority."
+        def key(msg):
+            order = 100
+            if msg.msg['msg'] == 'new':
+                order = 5
+            elif msg.msg['msg'] == 'capture':
+                order = 6
+            elif msg.msg['msg'] == 'send_snapshot':
+                order = 7
+            elif msg.msg['msg'] == 'remove_snapshot':
+                order = 8
+            prio = msg.msg.get('priority', 1000)
+            return (order, prio)
+        return sorted(messages, key=key)
+
     def send_if_possible(self):
         for dummy_node_name, outbox in self.outgoing.items():
             unsent = [x for x in outbox if x.status == 'unsent']
@@ -63,7 +91,7 @@ class OutgoingMessages:
             transfers_in_progress = [
                 x for x in in_progress if x.msg['msg'] == 'send_snapshot']
             if unsent:
-                for x in unsent:
+                for x in self.prioritize(unsent):
                     if len(in_progress) < self.max_per_host:
                         if (
                             (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or

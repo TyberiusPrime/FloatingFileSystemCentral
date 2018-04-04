@@ -159,6 +159,8 @@ class Engine:
             return self.client_list_targets()
         elif command == 'set_snapshot_interval':
             return self.client_set_snapshot_interval(msg)
+        elif command == 'set_priority':
+            return self.client_set_priority(msg)
 
         else:
             raise ValueError("invalid message from client, ignoring")
@@ -176,7 +178,7 @@ class Engine:
         return result
 
     def client_list_targets(self):
-        return [x['hostname'] for x in self.config.get_nodes().values()]
+        return list(self.config.get_nodes().keys())
 
     def client_service_is_started(self):
         return {'started': self.startup_done and not self.faulted}
@@ -186,7 +188,8 @@ class Engine:
             return {"error": "Engine is in faulted state.", 'Fault message': self.faulted}
         res = {}
         for node in self.sender.outgoing:
-            res[node] = [(x.status, x.msg) for x in self.sender.outgoing[node]]
+            res[node] = [{'status': x.status, 'msg': x.msg, 'runtime': x.get_runtime()} for x in
+                         self.sender.prioritize(self.sender.outgoing[node])]
         return res
 
     def client_deploy(self):
@@ -539,6 +542,31 @@ class Engine:
                 })
         return {'ok': True}
 
+    @needs_startup
+    def client_set_priority(self, msg):
+        if 'ffs' not in msg:
+            raise CodingError("no ffs specified'")
+        ffs = msg['ffs']
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if 'priority' not in msg:
+            raise CodingError("no priority specified'")
+        priority = msg['priority']
+        if not isinstance(priority, int):
+            raise ValueError("priority parameter must be an integer")
+        priority = str(priority)
+        # store on evyr node in order to remain stored on move
+        for node in sorted(self.model[ffs]):
+            if not node.startswith('_'):
+                self.send(node, {
+                    'msg': 'set_properties',
+                    'ffs': ffs,
+                    'properties': {'ffs:priority': priority}
+                })
+        return {'ok': True}
+
     def is_ffs_moving(self, ffs):
         if '_moving' in self.model[ffs]:
             return True
@@ -613,12 +641,14 @@ class Engine:
             self.startup_done = True
             self.logger.info("Startup complete")
             os = self.count_outgoing_snapshots()
-            self.config.inform("Startup completed, outstanding snapshot transfers: %i" % os)
+            self.config.inform(
+                "Startup completed, outstanding snapshot transfers: %i" % os)
 
     def build_model(self):
         self.config.inform("All nodes reported back, building model")
         self.logger.info("All list_ffs returned")
         self.model = {}
+        print("stage 1")
         for node, ffs_list in self.node_ffs_infos.items():
             for ffs, ffs_info in ffs_list.items():
                 if ffs not in self.model:
@@ -627,15 +657,23 @@ class Engine:
                         '_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
                 self.model[ffs][node]['upcoming_snapshots'] = []
+        print("stage 2")
         self._check_invalid_properties()
+        print("stage 3")
         self._parse_main_and_readonly()
         # do removal after assigning a main, so we can trigger on ffs:main=on
         # and ffs:remove_asap=on!
+        print("stage 4")
         self._handle_remove_asap()
+        print("stage 5")
         self._enforce_properties()
+        print("stage 6")
         self._prune_snapshots()
+        print("stage 7")
         self._send_missing_snapshots()
+        print("stage 8")
         self._capture_replicated_without_any_snapshots()
+        print("stage 9")
 
     def _check_invalid_properties(self):
         for ffs in self.model:
@@ -644,17 +682,20 @@ class Engine:
                     if node_info['properties'].get('ffs:root', '-') != '-':
                         self.fault("ffs:root set on sub ffs - nesting is not suported: %s" % ffs,
                                    exception=ManualInterventionNeeded)
-                    snapshot_interval = node_info['properties'].get(
-                        'ffs:snapshot_interval', '-')
-                    if snapshot_interval != '-':
-                        try:
-                            if int(snapshot_interval) < 0:
-                                self.fault("ffs:snapshot_interval was less than 0: %s on %s" % (ffs, node),
+                    for must_be_numeric, must_be_positive in [
+                        ('snapshot_interval', True),
+                            ('priority', False)]:
+                        value = node_info['properties'].get(
+                            'ffs:' + must_be_numeric, '-')
+                        if value != '-':
+                            try:
+                                if must_be_positive and int(value) < 0:
+                                    self.fault("ffs:%s was less than 0: %s on %s" % (must_be_numeric, ffs, node),
+                                               exception=ManualInterventionNeeded)
+                                int(value)
+                            except ValueError:
+                                self.fault("ffs:%s was not numeric: %s on %s" % (must_be_numeric, ffs, node),
                                            exception=ManualInterventionNeeded)
-
-                        except ValueError:
-                            self.fault("ffs:snapshot_interval was not numeric: %s on %s" % (ffs, node),
-                                       exception=ManualInterventionNeeded)
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -785,8 +826,8 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                            move_target in renames.keys() or move_target in renames.values())
-                        ):
+                    move_target in renames.keys() or move_target in renames.values())
+                    ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
                     self.fault("Rename and move mixed. Unsupported: %s %s %s" % (
@@ -923,7 +964,13 @@ class Engine:
         and rollback to the current snapshot later, and rolling back
         eats later snapshots
         """
-        for ffs, node_fss_info in self.model.items():
+        def get_prio(ffs_node_info_tup):
+            ffs, node_fss_info = ffs_node_info_tup 
+            main = node_fss_info['_main']
+            prio = int(node_fss_info[main]['properties'].get('ffs:priority', 1000))
+            return prio
+
+        for ffs, node_fss_info in sorted(self.model.items(), key=get_prio):
             if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
                 continue
             main = node_fss_info['_main']
@@ -971,7 +1018,7 @@ class Engine:
                     self.do_capture(ffs, False)
 
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
-        self.send(sending_node, {
+        msg = {
             'msg': 'send_snapshot',
             'ffs': ffs,
             'snapshot': snapshot_name,
@@ -983,7 +1030,12 @@ class Engine:
             'target_ffs': ffs,
             'target_storage_prefix': self.node_config[receiving_node]['storage_prefix'],
         }
-        )
+        prio = self.model[ffs][sending_node][
+            'properties'].get('ffs:priority', None)
+        if prio is not None:
+            msg['priority'] = int(self.model[ffs][sending_node][
+                                  'properties']['ffs:priority'])
+        self.send(sending_node, msg)
         self.model[ffs]['_snapshots_in_transit'][snapshot_name] += 1
 
     def node_set_properties_done(self, msg):
@@ -1135,11 +1187,12 @@ class Engine:
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
         os = self.count_outgoing_snapshots()
-        self.config.inform("Send of %s@%s to %sdone, outstanding snapshot transfers: %i" % (ffs, snapshot, node, os))
+        self.config.inform("Send of %s@%s to %s done, outstanding snapshot transfers: %i" % (
+            ffs, snapshot, node, os))
         if (self.is_ffs_moving(ffs) and
-            node == self.model[ffs]['_moving'] and
-            msg['snapshot'] == self.model[ffs]['_move_snapshot']
-            ):
+                node == self.model[ffs]['_moving'] and
+                msg['snapshot'] == self.model[ffs]['_move_snapshot']
+                ):
             self.config.inform(("Move step 3 done: %s" % ffs))
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',

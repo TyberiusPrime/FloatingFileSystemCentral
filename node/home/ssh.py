@@ -66,6 +66,9 @@ signal.signal(signal.SIGHUP, on_sighup)
 
 if True:
     if cmd_line.startswith('rprsync'):  # robust parallel rsync
+        with open("/home/ffs/node.log",'a') as op:
+            op.write(cmd_line)
+            op.write("\n")
         node.shell_cmd_rprsync(cmd_line)
     else:
         json_input = ''
@@ -75,6 +78,11 @@ if True:
             j = sys.stdin.read()
         try:
             j = json.loads(json_input)
+            with open("/home/ffs/node.log",'a') as op:
+                import pprint
+                op.write(pprint.pformat(j))
+                op.write("\n")
+
             result = node.dispatch(j)
             sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
             if 'error' in result:

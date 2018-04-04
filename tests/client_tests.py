@@ -151,7 +151,7 @@ class ClientTests(unittest.TestCase):
 
         for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test',
                   'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main',
-                  'time_based_snapshot_tests']:
+                  'time_based_snapshot_tests', 'set_prio_test']:
             subprocess.check_call(
                 ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(['sudo', 'chmod', '0777',
@@ -418,6 +418,17 @@ class ClientTests(unittest.TestCase):
         self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', 'off'])
         self.client_wait_for_empty_que()
         self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '-')
+
+    def test_set_priority(self):
+        # tests only the setting of the snapshot property
+        props = _get_zfs_properties(self.get_test_prefix() + 'set_prio_test')
+        self.assertEqual(props.get('ffs:priority', '-'), '-')
+        self.run_expect_ok(['set_priority', 'set_prio_test', '15'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '15')
+        self.run_expect_ok(['set_priority', 'set_prio_test', 'off'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:snapshot_interval'), '-')
 
 
 

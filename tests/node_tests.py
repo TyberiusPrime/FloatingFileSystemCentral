@@ -951,6 +951,9 @@ class NodeTests(unittest.TestCase):
 
         self.assertFalse(os.path.exists(
             '/' + NodeTests.get_test_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
+            
+    def test_send_snapshot_into_unmounted_ffs(self):
+        raise NotImplementedError()
 
     def test_send_snapshot_invalid_ffs(self):
         # so that the actual dir differes from the snapshot and we can test
