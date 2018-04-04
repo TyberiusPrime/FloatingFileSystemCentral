@@ -312,8 +312,6 @@ def msg_send_snapshot(msg):
             'ffs': target_ffs,
             'properties': {'readonly': 'off'},
             'storage_prefix': target_storage_prefix,
-
-            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -362,7 +360,6 @@ def msg_send_snapshot(msg):
             'ffs': target_ffs,
             'properties': {'readonly': 'on'},
             'storage_prefix': target_storage_prefix,
-            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -379,7 +376,6 @@ def msg_send_snapshot(msg):
             'snapshot': snapshot,
 
             'storage_prefix': target_storage_prefix,
-            'from_sender': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -470,6 +466,9 @@ def shell_cmd_rprsync(cmd_line):
             return True
         if target_path.startswith('/mf/scb'):
             return True
+        if target_path.startswith('/mf/secrets'):
+            return True
+
         if is_inside_ffs_root(target_path):
             return True
         raise ValueError("Path rejected: '%s" % target_path)
@@ -478,8 +477,8 @@ def shell_cmd_rprsync(cmd_line):
     chmod_after = False
     todo = []
     if '@' in cmd_line:
-        parts = target_path.split("@")
-        target_path = parts[0]
+        parts = cmd_line.split("@")
+        target_path = parts[0][parts[0].find('/'):] 
         for p in parts[1:]:
             if p.startswith('chmod='):
                 rights = p[p.find('=') + 1:]
@@ -510,6 +509,8 @@ def shell_cmd_rprsync(cmd_line):
             check_call(['sudo', 'chmod', 'oug+rwX', target_path])
             reset_rights = True
     real_cmd = cmd_line.replace('rprsync', 'sudo rsync')
+    if '@' in real_cmd:
+        real_cmd = real_cmd[:real_cmd.find("@")]
     p = subprocess.Popen(real_cmd, shell=True)
     p.communicate()
     if todo and chmod_after:
