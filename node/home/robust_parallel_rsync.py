@@ -97,7 +97,7 @@ def parallel_chown_chmod_and_rsync(cmd):
             yield '.', False, cmd
             for d in dirs:
                 fd=os.path.join(cmd['source_path'], d)
-                if os.path.isdir(fd):
+                if os.path.isdir(fd) and not os.path.ismount(fd):
                     yield d + '/', True, cmd
         except PermissionError:  # source dir unreadable - fall back to non-parallel processing and let rsync handle the permission implications
             yield '.', True, cmd
