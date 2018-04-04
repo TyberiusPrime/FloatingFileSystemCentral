@@ -554,7 +554,7 @@ class Engine:
         if 'priority' not in msg:
             raise CodingError("no priority specified'")
         priority = msg['priority']
-        if not isinstance(priority, int):
+        if not isinstance(priority, int) and priority != '-':
             raise ValueError("priority parameter must be an integer")
         priority = str(priority)
         # store on evyr node in order to remain stored on move
@@ -648,7 +648,6 @@ class Engine:
         self.config.inform("All nodes reported back, building model")
         self.logger.info("All list_ffs returned")
         self.model = {}
-        print("stage 1")
         for node, ffs_list in self.node_ffs_infos.items():
             for ffs, ffs_info in ffs_list.items():
                 if ffs not in self.model:
@@ -657,23 +656,24 @@ class Engine:
                         '_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
                 self.model[ffs][node]['upcoming_snapshots'] = []
-        print("stage 2")
+        #print("stage 2")
         self._check_invalid_properties()
-        print("stage 3")
+        #print("stage 3")
         self._parse_main_and_readonly()
+        self._check_main_and_target_consistency()
         # do removal after assigning a main, so we can trigger on ffs:main=on
         # and ffs:remove_asap=on!
-        print("stage 4")
+        #print("stage 4")
         self._handle_remove_asap()
-        print("stage 5")
+        #print("stage 5")
         self._enforce_properties()
-        print("stage 6")
+        #print("stage 6")
         self._prune_snapshots()
-        print("stage 7")
+        #print("stage 7")
         self._send_missing_snapshots()
-        print("stage 8")
+        #print("stage 8")
         self._capture_replicated_without_any_snapshots()
-        print("stage 9")
+        #print("stage 9")
 
     def _check_invalid_properties(self):
         for ffs in self.model:
@@ -684,7 +684,7 @@ class Engine:
                                    exception=ManualInterventionNeeded)
                     for must_be_numeric, must_be_positive in [
                         ('snapshot_interval', True),
-                            ('priority', False)]:
+                        ('priority', False)]:
                         value = node_info['properties'].get(
                             'ffs:' + must_be_numeric, '-')
                         if value != '-':
@@ -696,6 +696,25 @@ class Engine:
                             except ValueError:
                                 self.fault("ffs:%s was not numeric: %s on %s" % (must_be_numeric, ffs, node),
                                            exception=ManualInterventionNeeded)
+
+    def _check_main_and_target_consistency(self):
+            for ffs in self.model:
+                if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs):
+                    main = self.model[ffs]['_main']
+                    main_info = self.model[ffs][main]
+                    for node, node_info in self.model[ffs].items():
+                        if node != main and not node.startswith('_'):
+                            for prop in [
+                                    'ffs:snapshot_interval',
+                                    'ffs:priority']:
+                                node_prop = node_info['properties'].get(prop, '-') 
+                                if node_prop != '-': 
+                                    main_prop = main_info['properties'].get(prop, '-') 
+                                    if main_prop == '-':
+                                        self.fault("%s set on %s on %s, but not on main (%s)."% (prop, ffs, node, main))
+                                    elif main_prop != node_prop:
+                                        self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                            'properties': {prop: main_prop}})
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -970,9 +989,9 @@ class Engine:
             prio = int(node_fss_info[main]['properties'].get('ffs:priority', 1000))
             return prio
 
-        for ffs, node_fss_info in sorted(self.model.items(), key=get_prio):
-            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
-                continue
+        ffs_to_consider = [(ffs, node_ffs_info) for (ffs, node_ffs_info) in self.model.items() if
+                not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs)]
+        for ffs, node_fss_info in sorted(ffs_to_consider, key=get_prio):
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
             if len([x for x in node_fss_info if x != main and not x.startswith('_')]) == 0:

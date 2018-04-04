@@ -953,7 +953,53 @@ class NodeTests(unittest.TestCase):
             '/' + NodeTests.get_test_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
             
     def test_send_snapshot_into_unmounted_ffs(self):
-        raise NotImplementedError()
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'unmount_test'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix2() + 'unmount_test'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'unmount_test'])
+        write_file('/' + NodeTests.get_test_prefix() + 'unmount_test/one', 'hello')
+        subprocess.check_call(
+            ['sudo', 'zfs', 'umount', NodeTests.get_test_prefix2() + 'unmount_test'])
+        #subprocess.check_call(['sudo', 'rmdir', '/' + NodeTests.get_test_prefix2() + 'unmount_test']) # since it's not a mounted fs
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'unmount_test@a'])
+
+        self.assertSnapshot('unmount_test', 'a')
+        self.assertFalse(os.path.ismount(
+            '/' + NodeTests.get_test_prefix2() + 'unmount_test'))  # not mounted!
+
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests.get_test_prefix2() + 'unmount_test/one'))
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'unmount_test/one'))
+        # so that the actual dir differes from the snapshot and we can test
+        # that that we're reading from the snapshot!
+        write_file('/' + NodeTests.get_test_prefix() + 'unmount_test/one', 'hello2')
+        in_msg = {'msg': 'send_snapshot',
+                  'ffs': 'unmount_test',
+                  'snapshot': 'a',
+                  'target_host': '127.0.0.1',
+                  'target_node': 'localhost',
+                  'target_user': 'ffs',
+                  'target_ssh_cmd': target_ssh_cmd,
+                  'target_ffs': 'unmount_test',
+                  'target_storage_prefix': '/' + NodeTests.get_test_prefix2()[:-1]
+        }
+        self.assertNotSnapshot('unmount_test', 'a', True)
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix2() + 'unmount_test/one'))
+        self.assertSnapshot('unmount_test', 'a', True)
+        self.assertEqual(
+            read_file('/' + NodeTests.get_test_prefix() + 'unmount_test/one'), 'hello2')
+        self.assertEqual(
+            read_file('/' + NodeTests.get_test_prefix2() + 'unmount_test/one'), 'hello')
+
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + '.ffs_sync_clones/' + out_msg['clone_name']))
 
     def test_send_snapshot_invalid_ffs(self):
         # so that the actual dir differes from the snapshot and we can test

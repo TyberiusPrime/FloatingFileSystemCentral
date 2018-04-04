@@ -3578,7 +3578,39 @@ class TestStartupTriggeringActions(EngineTests):
         })
 
     def test_prio_ordinging_during_send_missing(self):
-        raise NotImplementedError()
+        beta_def = {
+            '_A0':['1', '2', ('ffs:priority', '1001')],
+            '_A101':['1', '2', ('ffs:priority', '1')],
+        }
+        alpha_def = {
+            'A0':['1', ('ffs:priority', '1001')],
+            'A101':['1', ('ffs:priority', '1')],
+        }
+        for i in range(1, 100):
+            beta_def['_A%i'%i] = ['1', '2']
+            alpha_def['A%i'%i] = ['1', '2']
+        e, outgoing_messages = self.get_engine({
+            'beta':  beta_def,
+            'alpha':  alpha_def,
+        })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
+            'msg': 'send_snapshot',
+            'to': 'beta',
+            'ffs': 'A101',
+            'snapshot': '2',
+            'target_host': 'alpha',
+            'priority': 1,
+        })
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[-1], {
+            'msg': 'send_snapshot',
+            'to': 'beta',
+            'ffs': 'A0',
+            'snapshot': '2',
+            'target_host': 'alpha',
+            'priority': 1001,
+        })
+
+
 
 
 
@@ -4550,11 +4582,28 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
 
 
-    def test_main_has_no_interval_other_do(self):
-        raise NotImplementedError()
+    def test_main_has_no_interval_others_do(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'beta':  {'_one': ['1']},
+                'alpha':  {'one': ['1', ('ffs:snapshot_interval', '50')]},
+            })
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
 
     def test_conflicting_intervals_between_main_and_target(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:snapshot_interval', '100')]},
+            'alpha':  {'one': ['1', ('ffs:snapshot_interval', '50')]},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:snapshot_interval': '100'},
+            'to': 'alpha'
+        })
+        
+ 
 
 
 
@@ -4601,9 +4650,9 @@ class FailureTests(unittest.TestCase):
     def test_ssh_connect_failed(self):
         raise NotImplementedError()
 
-    def test_rsync_went_away_because_receiving_host_died(self)
+    def test_rsync_went_away_because_receiving_host_died(self):
         raise NotImplementedError("""   ssh_message_que:154 Node processing error in job_id return 137 {'error': 'rsync_failure', 'ssh_process               _return_code': 1, 'content': "stdout:\nb''\n\nstderr:\nb'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --om               it-dir-times -ltx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /               martha/ffs/.ffs_sync_clones/1522834093.737729_aecc9d2d8fd5a0a0f2881ca8511a1fa7/results/ ffs@rose:/rose/ffs/e/20161012_AG_Mermoud_               SMARCAD_H3K9Me3_ChIP_mouse_ES/results/\\n rsync returncode: 255packet_write_wait: Connection to 192.168.153.1 port 223: Broken pi               pe\\r\\nrsync: [sender] write error: Broken pipe (32)\\nrsync error: unexplained error (code 255) at io.c(820) [sender=3.1.1]\\n'               ", 'from': 'martha'} No message in msg, outgoing was: {'ffs': 'e/20161012_AG_Mermoud_SMARCAD_H3K9Me3_ChIP_mouse_ES',
-        """
+        """)
 
 
 
@@ -4616,10 +4665,28 @@ class PriorityTests(PostStartupTests):
         self.assertRaises(engine.ManualInterventionNeeded, inner)
 
     def test_prio_different_between_main_and_other(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:priority', '100')]},
+            'alpha':  {'one': ['1', ('ffs:priority', '50')]},
+        })
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'set_properties',
+            'ffs': 'one',
+            'properties': {'ffs:priority': '100'},
+            'to': 'alpha'
+        })
+        
+ 
 
-    def test_prio_only_set_on_non_maina(self):
-        raise NotImplementedError()
+    def test_prio_only_set_on_non_main(self):
+        def inner():
+            e, outgoing_messages = self.get_engine({
+                'beta':  {'_one': ['1']},
+                'alpha':  {'one': ['1', ('ffs:priority', '50')]},
+            })
+        self.assertRaises(engine.ManualInterventionNeeded, inner)
+
      
     def test_client_set_prio_not_specified(self):
         e, outgoing_messages = self.get_engine({

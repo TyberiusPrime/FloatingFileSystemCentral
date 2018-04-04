@@ -41,6 +41,9 @@ def get_zfs_property(zfs_name, property_name):
 
 global_engine_process = None
 
+import zmq.auth
+server_key =  zmq.auth.load_certificate('../certificates/server.key')[0].decode('ascii')
+
 
 class ClientTests(unittest.TestCase):
 
@@ -86,6 +89,7 @@ class ClientTests(unittest.TestCase):
                                                            '../../FloatingFileSystemClient/ffs.py')),
                               '--host=localhost',
                               '--port=47776',
+                              '--server_key=' + server_key,
                               ] + cmd_args,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
         stdout, stderr = p.communicate()
@@ -205,7 +209,7 @@ class ClientTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
 
     def list_ffs(self):
-        l = self.run_expect_ok(['list_ffs'])
+        l = self.run_expect_ok(['list_ffs', '--json'])
         return json.loads(l.decode('utf-8'))
 
     def test_new(self):
@@ -229,7 +233,7 @@ class ClientTests(unittest.TestCase):
         self.assertTrue('one_two' in self.list_ffs())
 
     def test_list_ffs(self):
-        r = self.run_expect_ok(['list_ffs'])
+        r = self.run_expect_ok(['list_ffs', '--json'])
         j = json.loads(r.decode('utf-8'))
         self.assertTrue(isinstance(j, dict))
         self.assertTrue('orphan' in j)
@@ -426,9 +430,9 @@ class ClientTests(unittest.TestCase):
         self.run_expect_ok(['set_priority', 'set_prio_test', '15'])
         self.client_wait_for_empty_que()
         self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '15')
-        self.run_expect_ok(['set_priority', 'set_prio_test', 'off'])
+        self.run_expect_ok(['set_priority', 'set_prio_test', '-'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:snapshot_interval'), '-')
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '-')
 
 
 
