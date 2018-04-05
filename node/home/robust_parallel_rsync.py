@@ -59,7 +59,7 @@ def do_rsync(args):
         '--delete',
         '--delay-updates',
         '--omit-dir-times',
-        '-ltx',  # copy symlinks, times, don't cross file-systems
+        '-ltxx',  # copy symlinks, times, don't cross file-systems
         '-perms',
         '--super',
         '--owner',

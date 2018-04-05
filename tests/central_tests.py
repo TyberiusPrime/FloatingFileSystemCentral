@@ -1081,6 +1081,9 @@ class NewTests(PostStartupTests):
             'ffs:test': '23'
         })
 
+    def test_new_if_parent_is_not_on_target_fails(self):
+        raise NotImplementedError()
+
 
 def remove_snapshot_from_message(msg):
     msg = msg.copy()
@@ -2418,6 +2421,8 @@ class AddTargetTests(PostStartupTests):
             'ffs:test': '24'
         })
 
+    def test_add_target_if_parent_is_not_on_target_fails(self):
+        raise NotImplementedError()
 
 class MoveTest(PostStartupTests):
 

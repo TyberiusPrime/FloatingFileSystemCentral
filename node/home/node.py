@@ -116,6 +116,18 @@ def check_property_name_and_value(name, value):
         raise ValueError("invalid property value")
 
 
+def ensure_zfs_mounted(zfs_name):
+    if not os.path.ismount('/' + zfs_name):
+        zfs_parent = os.path.split(zfs_name)[0]
+        restore_ro = False
+        if get_zfs_property(zfs_parent, 'readonly') == 'on':
+            restore_ro = True
+            check_call(['sudo','zfs','set', 'readonly=off', zfs_parent])
+        check_call(['sudo', 'zfs', 'mount', zfs_name])
+        if restore_ro:
+            check_call(['sudo','zfs','set', 'readonly=on', zfs_parent])
+
+
 def msg_set_properties(msg):
     ffs = msg['ffs']
     full_ffs_path = find_ffs_prefix(msg) + ffs
@@ -127,6 +139,8 @@ def msg_set_properties(msg):
     for prop, value in msg['properties'].items():
         check_call(
             ['sudo', 'zfs', 'set', "%s=%s" % (prop, value), full_ffs_path])
+    if msg.get('do_mount', False):
+        ensure_zfs_mounted(full_ffs_path)
     return {
         'msg': 'set_properties_done',
         'ffs': ffs,
@@ -312,6 +326,7 @@ def msg_send_snapshot(msg):
             'ffs': target_ffs,
             'properties': {'readonly': 'off'},
             'storage_prefix': target_storage_prefix,
+            'do_mount': True,
         }).encode('utf-8'))
         if p.returncode != 0:
             return {
@@ -499,12 +514,7 @@ def shell_cmd_rprsync(cmd_line):
     reset_rights = False
     if target_path.endswith('/.'):
         try:
-            try:
-                org_rights = os.stat(target_path)[stat.ST_MODE]
-            except FileNotFoundError:
-                # asume it's not mounted...
-                check_call(['sudo', 'zfs', 'mount', target_path[1:-2]])
-                org_rights = os.stat(target_path)[stat.ST_MODE]
+            org_rights = os.stat(target_path)[stat.ST_MODE]
         except PermissionError:  # target directory is without +X
             check_call(['sudo', 'chmod', 'oug+rwX', target_path])
             reset_rights = True
