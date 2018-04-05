@@ -1083,6 +1083,36 @@ class NewTests(PostStartupTests):
 
     def test_new_if_parent_is_not_on_target_fails(self):
         raise NotImplementedError()
+        e, outgoing_messages = self.ge()
+        e.incoming_client(
+            {"msg": 'new', 'ffs': 'two', 'targets': ['alpha']})
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(outgoing_messages[0], {
+            'to': 'alpha',
+            'msg': 'new',
+            'ffs': 'two',
+            'properties': {
+                'ffs:main': 'on',
+                'readonly': 'off',
+            }})
+        self.assertTrue('two' in e.model)
+        self.assertEqual(e.model['two']['_main'], 'alpha')
+        self.assertEqual(e.model['two']['alpha'], {'_new': True})
+        e.incoming_node(
+            {'msg': 'new_done',
+             'ffs': 'two',
+             'from': 'alpha',
+             'properties': {
+                 'ffs:main': 'on',
+                 'readonly': 'off'
+             }
+             }
+        )
+        self.assertFalse('_new' in e.model['two']['alpha'])
+        self.assertEqual(e.model['two']['alpha'][
+                         'properties']['ffs:main'], 'on')
+        self.assertEqual(e.model['two']['alpha'][
+                         'properties']['readonly'], 'off')
 
 
 def remove_snapshot_from_message(msg):
@@ -4646,6 +4676,19 @@ class ClientFacingTests(PostStartupTests):
         self.assertEqual(l, {'one': ['beta', 'alpha']})
 
 
+    def test_client_list_ffs_if_engine_faulted(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        try:
+            e.fault("Something")
+        except:
+            pass
+        l = e.client_list_ffs()
+        self.assertEqual(l, {'one': ['beta', 'alpha']})
+
+
 class FailureTests(unittest.TestCase):
 
     def test_deploy_failed(self):
@@ -4743,13 +4786,15 @@ class PriorityTests(PostStartupTests):
             ssh_message_que.MessageInProgress('node1', {}, {'msg': 'capture', 'ffs': 'b'}),
             ssh_message_que.MessageInProgress('node1', {}, {'msg': 'new', 'ffs': 'a'}),
             ssh_message_que.MessageInProgress('node1', {}, {'msg': 'send_snapshot', 'ffs': 'b', 'snapshot': 'a'}),
+            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'set_properties', 'ffs': 'b', 'properties': {'a': 'true'}}),
         ]
         ordered = list(o.prioritize(msgs))
-        self.assertEqual(ordered[0], msgs[3])
-        self.assertEqual(ordered[1], msgs[2])
-        self.assertEqual(ordered[2], msgs[4])
-        self.assertEqual(ordered[3], msgs[1])
-        self.assertEqual(ordered[4], msgs[0])
+        self.assertEqual(ordered[0], msgs[5])
+        self.assertEqual(ordered[1], msgs[3])
+        self.assertEqual(ordered[2], msgs[2])
+        self.assertEqual(ordered[3], msgs[4])
+        self.assertEqual(ordered[4], msgs[1])
+        self.assertEqual(ordered[5], msgs[0])
 
 
 

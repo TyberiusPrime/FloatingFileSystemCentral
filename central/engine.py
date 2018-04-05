@@ -12,16 +12,22 @@ from .exceptions import (StartupNotDone, EngineFaulted, SSHConnectFailed, Manual
                          InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError,)
 
 
-def needs_startup(func):
-    def wrapper(self, *args, **kwargs):
-        if self.startup_done:
-            if self.faulted:
-                return EngineFaulted(self.faulted)
+class needs_startup:
+    def __init__(self, fault_ok=False):
+        if not isinstance(fault_ok, bool):
+            raise ValueError('@needs_startup should read @needs_startup() ')
+        self.fault_ok = fault_ok
+    
+    def __call__(self, func):
+        def wrapper(inner_self, *args, **kwargs):
+            if inner_self.startup_done:
+                if inner_self.faulted and not self.fault_ok:
+                    return EngineFaulted(inner_self.faulted)
+                else:
+                    return func(inner_self, *args, **kwargs)
             else:
-                return func(self, *args, **kwargs)
-        else:
-            raise StartupNotDone()
-    return wrapper
+                raise StartupNotDone()
+        return wrapper
 
 
 class Engine:
@@ -169,7 +175,7 @@ class Engine:
         self.logger.info("Client requested restart")
         raise RestartError()
 
-    @needs_startup
+    @needs_startup(True)
     def client_list_ffs(self):
         result = {}
         for ffs, ffs_info in self.model.items():
@@ -222,7 +228,7 @@ class Engine:
         if not re.match("^[a-zA-Z0-9][A-Za-z0-9/_-]*$", path):
             raise ValueError("Invalid path: %s" % repr(path))
 
-    @needs_startup
+    @needs_startup()
     def client_new(self, msg):
         if 'ffs' not in msg:
             raise CodingError("No ffs specified")
@@ -275,7 +281,7 @@ class Engine:
         else:
             return {'error': 'no_targets'}
 
-    @needs_startup
+    @needs_startup()
     def client_remove_target(self, msg):
         if 'ffs' not in msg:
             raise CodingError("No ffs specified")
@@ -306,7 +312,7 @@ class Engine:
         self.model[ffs][target] = {'removing': True}
         return {'ok': True}
 
-    @needs_startup
+    @needs_startup()
     def client_add_targets(self, msg):
         if 'ffs' not in msg:
             raise CodingError("No ffs specified")
@@ -348,7 +354,7 @@ class Engine:
                 return True
         return False
 
-    @needs_startup
+    @needs_startup()
     def client_capture(self, msg):
         if 'ffs' not in msg:
             raise ValueError("No ffs specified")
@@ -396,7 +402,7 @@ class Engine:
         node_info['upcoming_snapshots'].append(snapshot)
         return snapshot
 
-    @needs_startup
+    @needs_startup()
     def client_chown_and_chmod(self, msg):
         if 'ffs' not in msg:
             raise CodingError("No ffs specified")
@@ -428,7 +434,7 @@ class Engine:
         )
         return {"ok": True}
 
-    @needs_startup
+    @needs_startup()
     def client_move_main(self, msg):
         # flow is as follows
         # 1 - set ffs:moving=target on old main, set read only.
@@ -475,7 +481,7 @@ class Engine:
         })
         return {"ok": True}
 
-    @needs_startup
+    @needs_startup()
     def client_rename(self, msg):
         if 'ffs' not in msg:
             raise CodingError("no ffs specified'")
@@ -512,7 +518,7 @@ class Engine:
                 })
         return {'ok': True}
 
-    @needs_startup
+    @needs_startup()
     def client_set_snapshot_interval(self, msg):
         if 'ffs' not in msg:
             raise CodingError("no ffs specified'")
@@ -542,7 +548,7 @@ class Engine:
                 })
         return {'ok': True}
 
-    @needs_startup
+    @needs_startup()
     def client_set_priority(self, msg):
         if 'ffs' not in msg:
             raise CodingError("no ffs specified'")

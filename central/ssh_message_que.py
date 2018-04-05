@@ -72,7 +72,9 @@ class OutgoingMessages:
         "new,  capture, send, remove_snapshot. Within, order by priority."
         def key(msg):
             order = 100
-            if msg.msg['msg'] == 'new':
+            if msg.msg['msg'] == 'set_properties': # do these first, they might be user set_interval/set_priority requests
+                order = 4
+            elif msg.msg['msg'] == 'new':
                 order = 5
             elif msg.msg['msg'] == 'capture':
                 order = 6
