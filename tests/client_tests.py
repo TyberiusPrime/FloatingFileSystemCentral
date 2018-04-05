@@ -416,7 +416,7 @@ class ClientTests(unittest.TestCase):
         # tests only the setting of the snapshot property
         props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
         self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15'])
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15s'])
         self.client_wait_for_empty_que()
         self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '15')
         self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', 'off'])
@@ -434,10 +434,32 @@ class ClientTests(unittest.TestCase):
         self.client_wait_for_empty_que()
         self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '-')
 
+    def test_set_snapshot_interval_parsing_minutes(self):
+        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15m'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60))
 
+    def test_set_snapshot_interval_parsing_hours(self):
+        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15h'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60))
 
+    def test_set_snapshot_interval_parsing_days(self):
+        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
+        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15d'])
+        self.client_wait_for_empty_que()
+        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60 * 60))
 
+    def test_set_snapshot_interval_parsing_number_only_fails(self):
+        self.run_expect_error(['set_snapshot_interval', 'time_based_snapshot_tests', '15'])
 
+    def test_set_snapshot_interval_parsing_number_less_than_60_fails(self):
+        self.run_expect_error(['set_snapshot_interval', 'time_based_snapshot_tests', '59s'])
 
 class CleanChildProcesses:
 
