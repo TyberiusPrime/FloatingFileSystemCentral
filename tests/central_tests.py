@@ -1082,39 +1082,15 @@ class NewTests(PostStartupTests):
         })
 
     def test_new_if_parent_is_not_on_target_fails(self):
-        raise NotImplementedError()
-        e, outgoing_messages = self.ge()
-        e.incoming_client(
-            {"msg": 'new', 'ffs': 'two', 'targets': ['alpha']})
-        self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqual(outgoing_messages[0], {
-            'to': 'alpha',
-            'msg': 'new',
-            'ffs': 'two',
-            'properties': {
-                'ffs:main': 'on',
-                'readonly': 'off',
-            }})
-        self.assertTrue('two' in e.model)
-        self.assertEqual(e.model['two']['_main'], 'alpha')
-        self.assertEqual(e.model['two']['alpha'], {'_new': True})
-        e.incoming_node(
-            {'msg': 'new_done',
-             'ffs': 'two',
-             'from': 'alpha',
-             'properties': {
-                 'ffs:main': 'on',
-                 'readonly': 'off'
-             }
-             }
-        )
-        self.assertFalse('_new' in e.model['two']['alpha'])
-        self.assertEqual(e.model['two']['alpha'][
-                         'properties']['ffs:main'], 'on')
-        self.assertEqual(e.model['two']['alpha'][
-                         'properties']['readonly'], 'off')
-
-
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1'], '_one/two': ['1']},
+            'beta': {},
+        })
+        def inner():
+            e.incoming_client(
+                {"msg": 'add_targets', 'ffs': 'one/two', 'targets': ['beta']})
+        self.assertRaises(ValueError, inner)
+        
 def remove_snapshot_from_message(msg):
     msg = msg.copy()
     if 'snapshot' in msg:
@@ -2467,7 +2443,38 @@ class AddTargetTests(PostStartupTests):
         })
 
     def test_add_target_if_parent_is_not_on_target_fails(self):
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1']},
+            'beta': {},
+        })
+        def inner():
+            e.client_new({
+            'msg': 'new',
+            'ffs': 'one/two',
+            'targets': ['alpha', 'beta']
+        })
+        self.assertRaises(ValueError, inner)
+        def inner():
+            e.client_new({
+            'msg': 'new',
+            'ffs': 'one/two',
+            'targets': ['beta']
+        })
+        self.assertRaises(ValueError, inner)
+        e.client_new({
+            'msg': 'new',
+            'ffs': 'three',
+            'targets': ['beta']
+        })
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'new',
+            'ffs': 'three',
+            'to': 'beta',
+            'properties': {'ffs:main': 'on', 'readonly': 'off'}
+        })
+
+
+
 
 class MoveTest(PostStartupTests):
 

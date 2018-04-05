@@ -227,6 +227,16 @@ class Engine:
     def check_ffs_name(self, path):
         if not re.match("^[a-zA-Z0-9][A-Za-z0-9/_-]*$", path):
             raise ValueError("Invalid path: %s" % repr(path))
+        
+    def check_targets_have_parent(self, ffs, targets):
+        if '/' in ffs:
+            parent = os.path.split(ffs)[0]
+            if parent not in self.model:
+                raise ValueError("Parent ffs does not exist")
+            targets_without_parent = set(targets).difference([x for x in self.model[parent] if not x.startswith('_')])
+            if targets_without_parent:
+                raise ValueError("Parent ffs not present on %s" % (targets_without_parent, ))
+
 
     @needs_startup()
     def client_new(self, msg):
@@ -250,6 +260,7 @@ class Engine:
                 raise ValueError("Not a valid target: %s" % x)
         if ffs in self.model:
             raise ValueError("Already present, can't create as new")
+        self.check_targets_have_parent(ffs, targets)
         main = targets[0]
         any_found = False
         for node in sorted(self.node_config):
@@ -325,6 +336,7 @@ class Engine:
             raise CodingError("targets must be alist")
 
         targets = [self.config.find_node(x) for x in msg['targets']]
+        self.check_targets_have_parent(ffs, targets)
         targets = sorted(set(targets))
         if not targets:
             raise ValueError("Empty target list")
