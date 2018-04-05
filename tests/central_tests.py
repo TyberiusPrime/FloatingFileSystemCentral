@@ -30,7 +30,7 @@ class EngineTests(unittest.TestCase):
 
     def assertMsgEqualMinusSnapshot(self, actual, supposed):
         msg = actual.copy()
-        for k in ['target_ssh_cmd', 'target_user', 'target_ffs', 'target_node', 'target_storage_prefix']:
+        for k in ['target_ssh_cmd', 'target_user', 'target_ffs', 'target_node', 'target_storage_prefix', 'excluded_subdirs']:
             if k in msg and not k in supposed:
                 del msg[k]
         self.assertMsgEqual(msg, supposed)
@@ -1123,6 +1123,21 @@ def remove_snapshot_from_message(msg):
 
 
 class CaptureTest(PostStartupTests):
+
+    def test_send_snapshot_excludes_sub_ffs(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['b', 'a', ], '_one/a': ['c']},
+            'beta':  {'one': ['b', ], 'one/a': ['c']},
+        },)
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],{
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': 'a',
+            'target_host': 'beta',
+            'excluded_subdirs': ['a']
+        })
 
     def test_pruning_after_capture(self):
         cfg = self._get_test_config()

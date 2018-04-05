@@ -42,7 +42,8 @@ def get_zfs_property(zfs_name, property_name):
 global_engine_process = None
 
 import zmq.auth
-server_key =  zmq.auth.load_certificate('../certificates/server.key')[0].decode('ascii')
+server_key = zmq.auth.load_certificate(
+    '../certificates/server.key')[0].decode('ascii')
 
 
 class ClientTests(unittest.TestCase):
@@ -75,10 +76,10 @@ class ClientTests(unittest.TestCase):
     def start_engine(cls):
         global global_engine_process
         if global_engine_process is None:
-                global_engine_process = subprocess.Popen(['../ffs_central.sh',
-                                                    os.path.abspath('_config_engine_a.py')])
+            global_engine_process = subprocess.Popen(['../ffs_central.sh',
+                                                      os.path.abspath('_config_engine_a.py')])
         if not hasattr(cls, 'engine_process'):
-            cls.engine_process = global_engine_process 
+            cls.engine_process = global_engine_process
 
     @classmethod
     def run_client(cls, cmd_args, cwd=None):
@@ -140,9 +141,9 @@ class ClientTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with open("client_test_debug.log",'w'):
+        with open("client_test_debug.log", 'w'):
             pass
-        with open("client_test_error.log",'w'):
+        with open("client_test_error.log", 'w'):
             pass
 
         for root in [cls.get_test_prefix()[:-1], cls.get_test_prefix2()[:-1]]:
@@ -166,16 +167,20 @@ class ClientTests(unittest.TestCase):
                 ['sudo', 'zfs', 'set', 'atime=off', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'com.sun:auto-snapshot=false', cls.get_test_prefix()[:-1] + '/' + n])
-             
-        for n in ['remove_target_test', 'move_test']:
+
+        on_both = ['remove_target_test', 'move_test',
+                   'nested_test1', 'nested_test1/sub']
+        for n in on_both:
             subprocess.check_call(
                 ['sudo', 'zfs', 'create', cls.get_test_prefix()[:-1] + '/' + n])
+            subprocess.check_call(
+                ['sudo', 'zfs', 'create', cls.get_test_prefix2()[:-1] + '/' + n])
+
+        for n in on_both:
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'ffs:main=on', cls.get_test_prefix()[:-1] + '/' + n])
             subprocess.check_call(['sudo', 'chmod', '0777',
                                    '/' + cls.get_test_prefix()[:-1] + '/' + n])
-            subprocess.check_call(
-                ['sudo', 'zfs', 'create', cls.get_test_prefix2()[:-1] + '/' + n])
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'ffs:main=off', cls.get_test_prefix2()[:-1] + '/' + n])
             subprocess.check_call(
@@ -189,10 +194,6 @@ class ClientTests(unittest.TestCase):
                 ['sudo', 'zfs', 'set', 'atime=off', cls.get_test_prefix2()[:-1] + '/' + n])
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'com.sun:auto-snapshot=false', cls.get_test_prefix2()[:-1] + '/' + n])
-
-
-
-
 
         time.sleep(1)  # give the ffs time to catch up ;)
         cls.start_engine()
@@ -394,7 +395,7 @@ class ClientTests(unittest.TestCase):
             '/' + self.get_test_prefix2()[:-1] + '/move_test/one'))
         self.run_expect_ok(['move', 'move_test', 'B'])
         self.client_wait_for_empty_que()
-        #time.sleep(
+        # time.sleep(
         # which does make a captured snapshot necessary, right?
         self.assertTrue(os.path.exists(
             '/' + self.get_test_prefix2()[:-1] + '/move_test/one'))
@@ -405,23 +406,28 @@ class ClientTests(unittest.TestCase):
 
     def test_move_no_replicate(self):
         self.run_expect_error(['move', 'move_test_no_replicate', 'B'],
-            b'target does not have this ffs.'
-        )
+                              b'target does not have this ffs.'
+                              )
 
     def test_move_to_main(self):
         self.run_expect_error(['move', 'move_test_move_to_main', 'A'],
                               b'target is already main')
-                            
+
     def test_set_snapshot_interval(self):
         # tests only the setting of the snapshot property
-        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        props = _get_zfs_properties(
+            self.get_test_prefix() + 'time_based_snapshot_tests')
         self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15s'])
+        self.run_expect_ok(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '150s'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '15')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', 'off'])
+        self.assertEqual(get_zfs_property(self.get_test_prefix(
+        ) + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '150')
+        self.run_expect_ok(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', 'off'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '-')
+        self.assertEqual(get_zfs_property(self.get_test_prefix(
+        ) + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), '-')
 
     def test_set_priority(self):
         # tests only the setting of the snapshot property
@@ -429,37 +435,65 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(props.get('ffs:priority', '-'), '-')
         self.run_expect_ok(['set_priority', 'set_prio_test', '15'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '15')
+        self.assertEqual(get_zfs_property(
+            self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '15')
         self.run_expect_ok(['set_priority', 'set_prio_test', '-'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '-')
+        self.assertEqual(get_zfs_property(
+            self.get_test_prefix() + 'set_prio_test', 'ffs:priority'), '-')
 
     def test_set_snapshot_interval_parsing_minutes(self):
-        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
-        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15m'])
+        props = _get_zfs_properties(
+            self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.run_expect_ok(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '15m'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60))
+        self.assertEqual(get_zfs_property(self.get_test_prefix(
+        ) + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60))
 
     def test_set_snapshot_interval_parsing_hours(self):
-        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
-        self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15h'])
+        props = _get_zfs_properties(
+            self.get_test_prefix() + 'time_based_snapshot_tests')
+        self.run_expect_ok(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '15h'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60))
+        self.assertEqual(get_zfs_property(self.get_test_prefix(
+        ) + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60))
 
     def test_set_snapshot_interval_parsing_days(self):
-        props = _get_zfs_properties(self.get_test_prefix() + 'time_based_snapshot_tests')
+        props = _get_zfs_properties(
+            self.get_test_prefix() + 'time_based_snapshot_tests')
         self.assertEqual(props.get('ffs:snapshot_interval', '-'), '-')
-        self.run_expect_ok(['set_snapshot_interval', 'time_based_snapshot_tests', '15d'])
+        self.run_expect_ok(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '15d'])
         self.client_wait_for_empty_que()
-        self.assertEqual(get_zfs_property(self.get_test_prefix() + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60 * 60))
+        self.assertEqual(get_zfs_property(self.get_test_prefix(
+        ) + 'time_based_snapshot_tests', 'ffs:snapshot_interval'), str(15 * 60 * 60 * 24))
 
     def test_set_snapshot_interval_parsing_number_only_fails(self):
-        self.run_expect_error(['set_snapshot_interval', 'time_based_snapshot_tests', '15'])
+        self.run_expect_error(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '15'])
 
     def test_set_snapshot_interval_parsing_number_less_than_60_fails(self):
-        self.run_expect_error(['set_snapshot_interval', 'time_based_snapshot_tests', '59s'])
+        self.run_expect_error(
+            ['set_snapshot_interval', 'time_based_snapshot_tests', '59s'])
+
+    def test_nested_ffs_inner_readonly_permissions_differ(self):
+        self.assertEqual(get_file_rights(
+            '/' + self.get_test_prefix()[:-1] + '/nested_test1/sub') & 0o777, 0o777)
+        self.assertEqual(get_file_rights(
+            '/' + self.get_test_prefix2()[:-1] + '/nested_test1/sub') & 0o755, 0o755)
+        subprocess.check_call(
+            ['sudo', 'chmod', '0555', '/' + self.get_test_prefix()[:-1] + '/nested_test1/sub'])
+        with open('/' + self.get_test_prefix()[:-1] + '/nested_test1/fileA', 'w') as op:
+            op.write("hello")
+        self.run_expect_ok(['capture', 'nested_test1'])
+        self.client_wait_for_empty_que()
+        fn = '/' + self.get_test_prefix2()[:-1] + '/nested_test1/fileA'
+        self.assertTrue(os.path.exists(fn))
+        with open(fn) as op:
+            self.assertEqual(op.read(), 'hello')
+
 
 class CleanChildProcesses:
 

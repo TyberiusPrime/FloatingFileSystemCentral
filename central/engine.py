@@ -1043,6 +1043,12 @@ class Engine:
                     self.do_capture(ffs, False)
 
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
+        excluded_sub_ffs = []
+        for another_ffs in self.model:
+            if another_ffs.startswith(ffs + '/'):
+                remainder = another_ffs[len(ffs) + 1:]
+                if not '/' in remainder: # don't nest
+                    excluded_sub_ffs.append(remainder)
         msg = {
             'msg': 'send_snapshot',
             'ffs': ffs,
@@ -1054,6 +1060,7 @@ class Engine:
             'target_ssh_cmd': self.config.get_ssh_cmd(),
             'target_ffs': ffs,
             'target_storage_prefix': self.node_config[receiving_node]['storage_prefix'],
+            'excluded_subdirs': excluded_sub_ffs,
         }
         prio = self.model[ffs][sending_node][
             'properties'].get('ffs:priority', None)

@@ -20,7 +20,8 @@ def print_usage(error):
             'chown_user': 'finkernagel',
             'chown_group': 'zti',
             'chmod_rights': 'u+rwX,g+rwX,o-rwx',
-            'cores': 2
+            'cores': 2,
+            'excluded_subdirs': ['a', 'b',...], #optional
         }
     """)
     print('error: %s' % error)
@@ -32,7 +33,7 @@ def grouper(n, iterable, padvalue=None):
 
 def do_rsync(args):
     """the actual work horse"""
-    sub_dir, recursive, cmd = args
+    sub_dir, recursive, cmd, excluded_subdirs = args
     source_dir_path = os.path.abspath(os.path.join(cmd['source_path'], sub_dir))
     if False:
         for c_cmd, c_opt in [
@@ -71,6 +72,8 @@ def do_rsync(args):
         rsync_cmd.append('--recursive')
     else:
         rsync_cmd.append('--dirs')
+    for d in excluded_subdirs:
+        rsync_cmd.append('--exclude=%s' % d)
     if 'target_ssh_cmd' in cmd:
         rsync_cmd.extend([
             '-e',
@@ -93,14 +96,18 @@ def do_rsync(args):
 def parallel_chown_chmod_and_rsync(cmd):
     def iter_subdirs():
         try:
+            excluded_dirs = set(cmd.get('excluded_subdirs', []))
             dirs = os.listdir(cmd['source_path'])
-            yield '.', False, cmd
+            yield '.', False, cmd, excluded_dirs
             for d in dirs:
                 fd=os.path.join(cmd['source_path'], d)
-                if os.path.isdir(fd) and not os.path.ismount(fd):
-                    yield d + '/', True, cmd
+                if (
+                    os.path.isdir(fd) and 
+                    not os.path.ismount(fd) and # which is only true if we're sending from a non-clone
+                    not d in excluded_dirs): # but since we're sending from a clone, we need to rely on the engine to tell us what to exclude
+                        yield d + '/', True, cmd, []
         except PermissionError:  # source dir unreadable - fall back to non-parallel processing and let rsync handle the permission implications
-            yield '.', True, cmd
+            yield '.', True, cmd,  excluded_dirs
 
     cores = cmd.get('cores', 2)
     if cores == -1:

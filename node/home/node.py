@@ -270,7 +270,7 @@ def clean_up_clones(storage_prefix):
     clone_dir = get_clone_dir(storage_prefix)
     try:
         for fn in os.listdir('/' + clone_dir):
-            cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn]
+            cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn, '-r'] # don't care if some auuto snapshot tried to snapshot these clones...
             p = subprocess.Popen(cmd).communicate()
     except OSError:
         pass
@@ -292,6 +292,10 @@ def msg_send_snapshot(msg):
     if not target_storage_prefix.startswith('/') or target_storage_prefix.endswith('/'):
         raise ValueError("Malformated target_storage_prefix")
     target_path = target_storage_prefix + '/' + target_ffs
+    excluded_subdirs = msg.get('excluded_subdirs', [])
+    for x in excluded_subdirs:
+        if '/' in x:
+            raise ValueError("excluded_subdirs can only exclude *direct* subdirs")
     snapshot = msg['snapshot']
     my_hash = hashlib.md5()
     my_hash.update(ffs_from.encode('utf-8'))
@@ -356,6 +360,7 @@ def msg_send_snapshot(msg):
             'target_user': target_user,
             'target_ssh_cmd': target_ssh_cmd,
             'cores': 4, # limit to a 'sane' value - you will run into ssh-concurrent connection limits otherwise
+            'excluded_subdirs': excluded_subdirs,
         }
         p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)

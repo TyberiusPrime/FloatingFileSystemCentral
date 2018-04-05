@@ -513,6 +513,7 @@ class NodeTests(unittest.TestCase):
             ['sudo', 'zfs', 'ffs:root=on', cls.get_test_prefix2()[:-1]])
         shutil.copy('../node/home/node.py', '/home/ffs/node.py')
         shutil.copy('../node/home/ssh.py', '/home/ffs/ssh.py')
+        shutil.copy('../node/home/robust_parallel_rsync.py', '/home/ffs/robust_parallel_rsync.py')
 
     @classmethod
     def tearDownClass(cls):
@@ -985,7 +986,8 @@ class NodeTests(unittest.TestCase):
                   'target_user': 'ffs',
                   'target_ssh_cmd': target_ssh_cmd,
                   'target_ffs': 'nested1',
-                  'target_storage_prefix': '/' + NodeTests.get_test_prefix2()[:-1]
+                  'target_storage_prefix': '/' + NodeTests.get_test_prefix2()[:-1],
+                  'excluded_subdirs': ['sub'],
                   }
         self.assertNotSnapshot('nested1', 'a', True)
         out_msg = self.dispatch(in_msg)
