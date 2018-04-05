@@ -4688,6 +4688,21 @@ class ClientFacingTests(PostStartupTests):
         l = e.client_list_ffs()
         self.assertEqual(l, {'one': ['beta', 'alpha']})
 
+    def test_client_list_ffs_if_engine_no_startup(self):
+        nodes = collections.OrderedDict()
+        config = self._get_test_config()
+        config._nodes = nodes
+        config = default_config.CheckedConfig(config)
+
+        fm = FakeMessageSender()
+        e = engine.Engine(
+            config,
+            fm,
+        )
+        def inner():
+            e.client_list_ffs()
+        self.assertRaises(engine.StartupNotDone, inner)
+
 
 class FailureTests(unittest.TestCase):
 
