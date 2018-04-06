@@ -19,6 +19,12 @@ import traceback
 import signal
 import time
 import atexit
+import pprint
+import logging
+import logging.handlers
+logger = logging.getLogger("Node")
+handler = logging.handlers.RotatingFileHandler("/home/ffs/node.log", maxBytes=10000000, backupCount=1)
+logger.addHandler(handler)
 
 cmd_line = os.environ.get('SSH_ORIGINAL_COMMAND', '')
 if cmd_line.startswith('scp'):
@@ -66,9 +72,7 @@ signal.signal(signal.SIGHUP, on_sighup)
 
 if True:
     if cmd_line.startswith('rprsync'):  # robust parallel rsync
-        with open("/home/ffs/node.log",'a') as op:
-            op.write(cmd_line)
-            op.write("\n")
+        logger.info(cmd_line)
         node.shell_cmd_rprsync(cmd_line)
     else:
         json_input = ''
@@ -78,10 +82,7 @@ if True:
             j = sys.stdin.read()
         try:
             j = json.loads(json_input)
-            with open("/home/ffs/node.log",'a') as op:
-                import pprint
-                op.write(pprint.pformat(j))
-                op.write("\n")
+            logger.info(pprint.pformat(j))
 
             result = node.dispatch(j)
             sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))

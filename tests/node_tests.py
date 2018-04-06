@@ -93,7 +93,7 @@ class RPsTests(unittest.TestCase):
     def tearDown(self):
         for p in self.paths:
             try:
-                # shutil.rmtree(p)
+                shutil.rmtree(p)
                 pass
             except:
                 pass
