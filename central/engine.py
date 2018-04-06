@@ -616,7 +616,7 @@ class Engine:
         return '_renaming' in self.model[ffs]
 
     def _name_snapshot(self, ffs, postfix=''):
-        t = time.localtime()
+        t = time.time()
         t = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
              "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
         res = 'ffs-' + '-'.join(t)
