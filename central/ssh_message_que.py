@@ -5,6 +5,7 @@ import time
 from .exceptions import SSHConnectFailed, ManualInterventionNeeded
 
 
+
 class MessageInProgress:
 
     def __init__(self, node_name, node_info, msg):
@@ -93,27 +94,28 @@ class OutgoingMessages:
             transfers_in_progress = [
                 x for x in in_progress if x.msg['msg'] == 'send_snapshot']
             if unsent:
-                for x in self.prioritize(unsent):
-                    if len(in_progress) < self.max_per_host:
-                        if (
-                            (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
-                            (x.msg['msg'] != 'send_snapshot')
-                        ):
-                            while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
-                                self.logger.info(
-                                    "Delaying sending to %s", x.node_name)
-                                time.sleep(self.wait_time_between_requests)
-                            self.last_message_times[x.node_name] = time.time()
-                            x.job_id = self.job_id
-                            self.job_id += 1
-                            self.do_send(x)
-                            in_progress.append(x)
-                            x.status = 'in_progress'
-                            x.send_time = time.time()
-                            if x.msg['msg'] == 'send_snapshot':
-                                transfers_in_progress.append(x)
-                    else:
-                        break
+                if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
+                    for x in self.prioritize(unsent):
+                        if len(in_progress) < self.max_per_host:
+                            if (
+                                (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
+                                (x.msg['msg'] != 'send_snapshot')
+                            ):
+                                while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
+                                    self.logger.info(
+                                        "Delaying sending to %s", x.node_name)
+                                    time.sleep(self.wait_time_between_requests)
+                                self.last_message_times[x.node_name] = time.time()
+                                x.job_id = self.job_id
+                                self.job_id += 1
+                                self.do_send(x)
+                                in_progress.append(x)
+                                x.status = 'in_progress'
+                                x.send_time = time.time()
+                                if x.msg['msg'] == 'send_snapshot':
+                                    transfers_in_progress.append(x)
+                        else:
+                            break
 
     def do_send(self, msg):
         self.logger.info("Sending to %s: %s",
