@@ -1375,6 +1375,7 @@ class Engine:
                                 snapshot_time = self.parse_time_from_snapshot(
                                     ffs_info[main]['snapshots'][-1]
                                 )
+                                self.logger.info("Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
                                 if snapshot_time + (iv) < now:
                                     self.logger.info("Auto-snapshot: %s" % ffs)
                                     do_snapshot = True
