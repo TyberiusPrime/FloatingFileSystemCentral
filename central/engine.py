@@ -1359,16 +1359,16 @@ class Engine:
             for ffs, ffs_info in self.model.items():
                 iv = self.get_snapshot_interval(ffs)
                 if iv and iv > 0:
-                    logger.info("Checking snapshot interval for %s, interval=%ss", ffs, iv)
+                    self.logger.info("Checking snapshot interval for %s, interval=%ss", ffs, iv)
                     main = ffs_info['_main']
                     do_snapshot = False
                     if ffs_info[main]['upcoming_snapshots']:
                         # never auto snapshot while we're lagging behind.
-                        logger.info("No auto snapshot, lagging behind: %s", ffs)
+                        self.logger.info("No auto snapshot, lagging behind: %s", ffs)
                         pass
                     else:
                         if len(ffs_info[main]['snapshots']) == 0:
-                            logger.info("No snapshot so far, %s", ffs)
+                            self.logger.info("No snapshot so far, %s", ffs)
                             do_snapshot = True
                         else:
                             try:
@@ -1376,7 +1376,7 @@ class Engine:
                                     ffs_info[main]['snapshots'][-1]
                                 )
                                 if snapshot_time + (iv) < now:
-                                    logger.info("Auto-snapshot: %s" % ffs)
+                                    self.logger.info("Auto-snapshot: %s" % ffs)
                                     do_snapshot = True
                             except ValueError:  # could not parse time, assume we need to redo it
                                 do_snapshot = True

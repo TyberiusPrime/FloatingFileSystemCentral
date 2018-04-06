@@ -4584,12 +4584,12 @@ class TimeBasedSnapshotTests(PostStartupTests):
 
         e, outgoing_messages = self.get_engine({
             'beta':  {
-                '_one': ['1', ('ffs:snapshot_interval', 15)],
-                '_two': [('ffs:snapshot_interval', 30)],
-                '_three': ['ffs-shubidudh', ('ffs:snapshot_interval', 15)],
-                '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15)],
-                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
-                '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
+                '_one': ['1', ('ffs:snapshot_interval', 15*60)],
+                '_two': [('ffs:snapshot_interval', 30*60)],
+                '_three': ['ffs-shubidudh', ('ffs:snapshot_interval', 15*60)],
+                '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15*60)],
+                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1*60)],
+                '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1*60)],
             },
         })
         self.assertFalse(e.model['one']['beta']['upcoming_snapshots'])
