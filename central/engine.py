@@ -160,7 +160,7 @@ class Engine:
         elif command == 'service_restart':
             return self.client_service_restart()
         elif command == 'list_ffs':
-            return self.client_list_ffs()
+            return self.client_list_ffs(msg)
         elif command == 'list_targets':
             return self.client_list_targets()
         elif command == 'set_snapshot_interval':
@@ -176,11 +176,19 @@ class Engine:
         raise RestartError()
 
     @needs_startup(True)
-    def client_list_ffs(self):
+    def client_list_ffs(self, msg):
+        full = bool(msg.get('full', False))
         result = {}
-        for ffs, ffs_info in self.model.items():
-            result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x !=
-                                                 ffs_info['_main'] and not x.startswith('_')]
+        if not full:
+            for ffs, ffs_info in self.model.items():
+                result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x !=
+                                                    ffs_info['_main'] and not x.startswith('_')]
+        else:
+            for ffs, ffs_info in self.model.items():
+                result[ffs] = {'targets': [ffs_info['_main']] + [x for x in ffs_info if x !=
+                                                    ffs_info['_main'] and not x.startswith('_')],
+                }
+                result[ffs]['properties'] = {node: self.model[ffs][node]['properties'] for node in result[ffs]['targets']}
         return result
 
     def client_list_targets(self):

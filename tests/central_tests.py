@@ -4671,18 +4671,37 @@ class ClientFacingTests(PostStartupTests):
             'beta':  {'_one': ['1']},
             'alpha':  {'one': ['1']},
         })
-        l = e.client_list_ffs()
+        l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha']})
+
+    def test_list_ffs_full(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:shu', '123')]},
+            'alpha':  {'one': ['1']},
+        })
+        l = e.incoming_client({'msg': 'list_ffs',
+        'full': True})
+        self.assertEqual(l, 
+            {'one': 
+                {
+                    'targets': ['beta', 'alpha'],
+                    'properties': {
+                        'beta': {'ffs:shu': '123', 'ffs:main': 'on', 'readonly': 'off'},
+                        'alpha': {'ffs:main': 'off', 'readonly': 'on'}
+                    }
+                }
+            })
+
 
     def test_client_list_ffs_in_case_of_new(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
             'alpha':  {'one': ['1']},
         })
-        l = e.client_list_ffs()
+        l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha']})
         e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['beta']})
-        l = e.client_list_ffs()
+        l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha'], 'two': ['beta']})
 
     def test_client_list_ffs_in_case_of_add_target(self):
@@ -4690,11 +4709,11 @@ class ClientFacingTests(PostStartupTests):
             'beta':  {'_one': ['1']},
             'alpha': {},
         })
-        l = e.client_list_ffs()
+        l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta']})
         e.incoming_client(
             {'msg': 'add_targets', 'ffs': 'one', 'targets': ['alpha']})
-        l = e.client_list_ffs()
+        l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha']})
 
 
@@ -4707,7 +4726,7 @@ class ClientFacingTests(PostStartupTests):
             e.fault("Something")
         except:
             pass
-        l = e.client_list_ffs()
+        l = e.incoming_client({"msg": 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha']})
 
     def test_client_list_ffs_if_engine_no_startup(self):
@@ -4722,7 +4741,7 @@ class ClientFacingTests(PostStartupTests):
             fm,
         )
         def inner():
-            e.client_list_ffs()
+            l = e.incoming_client({"msg": 'list_ffs'})
         self.assertRaises(engine.StartupNotDone, inner)
 
 
