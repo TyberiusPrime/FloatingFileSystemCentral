@@ -6,6 +6,7 @@ import os
 import multiprocessing
 import itertools
 import json
+import shlex
 
 
 def print_usage(error):
@@ -83,8 +84,8 @@ def do_rsync(args):
     rsync_cmd.append("%s@%s:%s" % (
          cmd['target_user'],
          cmd['target_host'],
-         os.path.join(cmd['target_path'], sub_dir)
-        ))
+         shlex.quote(os.path.join(cmd['target_path'], sub_dir)
+        )))
     p=subprocess.Popen(rsync_cmd, stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE)
     stdout, stderr=p.communicate()
@@ -100,6 +101,8 @@ def parallel_chown_chmod_and_rsync(cmd):
             dirs = os.listdir(cmd['source_path'])
             yield '.', False, cmd, excluded_dirs
             for d in dirs:
+                #if '(' in d: # let the recursive sort this one out.
+                    #continue
                 fd=os.path.join(cmd['source_path'], d)
                 if (
                     os.path.isdir(fd) and 

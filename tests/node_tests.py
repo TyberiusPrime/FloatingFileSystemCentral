@@ -409,7 +409,7 @@ class RPsTests(unittest.TestCase):
         target_path = '/tmp/RPsTests/test_over_9000_to'
         self.ensure_path(source_path)
         self.ensure_path(target_path)
-        for i in range(0, 9000):
+        for i in range(0, 9005):
             write_file(os.path.join(source_path, str(i)), str(i))
         rc, stdout, stderr = run_rsync({
             'source_path': source_path,
@@ -419,7 +419,7 @@ class RPsTests(unittest.TestCase):
             'target_user': 'ffs',
         })
         self.assertEqual(rc, 0)
-        self.assertEqual(len(os.listdir(target_path)), 9000)
+        self.assertEqual(len(os.listdir(target_path)), 9005)
 
     def test_at_in_target_raises(self):
         source_path = '/tmp/RPsTests/test_source@in_target'
@@ -460,7 +460,128 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(get_file_user(fn_target), 'nobody')
         self.assertEqual(get_file_group(fn_target), 'nogroup')
         
+    def test_over_9000_directories(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_over_9000_dirs_from'
+        target_path = '/tmp/RPsTests/test_over_9000_dirs_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        for i in range(0, 105):
+            os.makedirs(os.path.join(source_path, str(i)))
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(os.listdir(target_path)), 105)
 
+    def test_files_and_folders_with_brackets(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_brackets_from'
+        target_path = '/tmp/RPsTests/test_brackets_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join(source_path, "dir (with)"))
+        write_file(os.path.join(source_path, "dir (with)", 'file_wo'), 'hello')
+        write_file(os.path.join(source_path, "dir (with)", 'file (with)'), 'hello')
+        write_file(os.path.join(source_path, "file (with)"), 'hello')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir (with)")))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir (with)", 'file_wo')))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir (with)", 'file (with)'),))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "file (with)")))
+        self.assertEqual(read_file(os.path.join(source_path, "dir (with)", 'file_wo')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "dir (with)", 'file (with)')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "file (with)")), 'hello')
+         
+    def test_files_and_folders_with_square_brackets(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_square_brackets_from'
+        target_path = '/tmp/RPsTests/test_square_brackets_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join(source_path, "dir [with]"))
+        write_file(os.path.join(source_path, "dir [with]", 'file_wo'), 'hello')
+        write_file(os.path.join(source_path, "dir [with]", 'file (with)'), 'hello')
+        write_file(os.path.join(source_path, "file [with]"), 'hello')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir [with]")))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir [with]", 'file_wo')))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir [with]", 'file (with)'),))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "file [with]")))
+        self.assertEqual(read_file(os.path.join(source_path, "dir [with]", 'file_wo')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "dir [with]", 'file (with)')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "file [with]")), 'hello')
+         
+    def test_files_and_folders_with_curly_brackets(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_curly_brackets_from'
+        target_path = '/tmp/RPsTests/test_curly_brackets_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join(source_path, "dir {with}"))
+        write_file(os.path.join(source_path, "dir {with}", 'file_wo'), 'hello')
+        write_file(os.path.join(source_path, "dir {with}", 'file (with)'), 'hello')
+        write_file(os.path.join(source_path, "file {with}"), 'hello')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir {with}")))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir {with}", 'file_wo')))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir {with}", 'file (with)'),))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "file {with}")))
+        self.assertEqual(read_file(os.path.join(source_path, "dir {with}", 'file_wo')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "dir {with}", 'file (with)')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "file {with}")), 'hello') 
+
+    def test_files_and_folders_with_dollac(self):
+        # mostly a test of the chown expansion...
+        source_path = '/tmp/RPsTests/test_dollar_from'
+        target_path = '/tmp/RPsTests/test_dollar_to'
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        os.makedirs(os.path.join(source_path, "dir $with"))
+        write_file(os.path.join(source_path, "dir $with", 'file_wo'), 'hello')
+        write_file(os.path.join(source_path, "dir $with", 'file (with)'), 'hello')
+        write_file(os.path.join(source_path, "file $with"), 'hello')
+        rc, stdout, stderr = run_rsync({
+            'source_path': source_path,
+            'target_path': target_path,
+            'target_host': '127.0.0.1',
+            'target_ssh_cmd': target_ssh_cmd,
+            'target_user': 'ffs',
+        })
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir $with")))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir $with", 'file_wo')))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "dir $with", 'file (with)'),))
+        self.assertTrue(os.path.exists(os.path.join(source_path, "file $with")))
+        self.assertEqual(read_file(os.path.join(source_path, "dir $with", 'file_wo')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "dir $with", 'file (with)')), 'hello')
+        self.assertEqual(read_file(os.path.join(source_path, "file $with")), 'hello')
+ 
 
 
 def touch(filename):
