@@ -1133,11 +1133,13 @@ class CaptureTest(PostStartupTests):
             'to': 'alpha',
         })
         sn = outgoing_messages[0]['snapshot']
+        self.assertTrue(sn in e.model['one']['alpha']['upcoming_snapshots'])
         e.incoming_node({'msg': 'capture_done',
                          'from': 'alpha',
                          'ffs': 'one',
                          'snapshot': sn
                          })
+        self.assertFalse(sn in e.model['one']['alpha']['upcoming_snapshots'])
         self.assertMsgEqualMinusSnapshot(outgoing_messages[1], {
             'msg': 'send_snapshot',
             'to': 'alpha',

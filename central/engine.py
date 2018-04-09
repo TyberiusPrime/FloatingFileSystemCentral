@@ -681,7 +681,7 @@ class Engine:
                     self.model[ffs][
                         '_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
-                self.model[ffs][node]['upcoming_snapshots'] = []
+                self.model[ffs][node]['upcoming_snapshots'] = [] # these are snapshots that are being captured, - not in_transit!
         #print("stage 2")
         self._check_invalid_properties()
         #print("stage 3")
@@ -1203,6 +1203,9 @@ class Engine:
             self.fault("Snapshot was already in model", msg, CodingError)
         self.model[ffs][node]['snapshots'].append(snapshot)
 
+        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
+            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+
         main = self.model[ffs]['_main']
         for node in sorted(self.node_config):
             if node != main and node in self.model[ffs] and not self.model[ffs][node].get('removing', False):
@@ -1232,8 +1235,7 @@ class Engine:
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
             self.fault("Snapshot was already in model", msg, CodingError)
-        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
-            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+        
         self.model[ffs][node]['snapshots'].append(snapshot)
         self.model[ffs]['_snapshots_in_transit'][snapshot] -= 1
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
@@ -1364,7 +1366,7 @@ class Engine:
                     do_snapshot = False
                     if ffs_info[main]['upcoming_snapshots']:
                         # never auto snapshot while we're lagging behind.
-                        self.logger.info("No auto snapshot, lagging behind: %s", ffs)
+                        self.logger.info("No auto snapshot, lagging behind: %s: %s", ffs, ffs_info[main]['upcoming_snapshots'])
                         pass
                     else:
                         if len(ffs_info[main]['snapshots']) == 0:
