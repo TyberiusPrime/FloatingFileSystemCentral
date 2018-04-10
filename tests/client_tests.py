@@ -495,6 +495,9 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(op.read(), 'hello')
 
 
+    def test_capture_auto_detect_from_current_path(self):
+        raise NotImplementedError()
+
 class CleanChildProcesses:
 
     def __enter__(self):
