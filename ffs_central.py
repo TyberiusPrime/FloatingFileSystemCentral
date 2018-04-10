@@ -54,7 +54,7 @@ def check_if_changed():
     if file_changed_hash is not None and file_changed_hash != h.hexdigest():
         logger.info('FloatingFileSystem code changed - restarting')
         cfg.inform('FloatingFileSystem code changed - restarting')
-        restart = True
+        # restart = True  # as a service, just die and let systemd pick you up
         reactor.stop()
     file_changed_hash = h.hexdigest()
 

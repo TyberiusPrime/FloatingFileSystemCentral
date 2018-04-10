@@ -215,6 +215,7 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
     def connectionMade(self):
         # self.logger.debug(
             #"Process started: %s, job_id=%s", format_msg(self.cmd), self.job_id)
+        self.start_time = time.time()
         self.transport.write(json.dumps(self.cmd).encode('utf-8'))
         self.transport.closeStdin()  # tell them we're done
 
@@ -248,5 +249,5 @@ class LoggingProcessProtocol(protocol.ProcessProtocol):
                       'stdout': self.stdout, 'stderr': self.stderr}
         result['ssh_process_return_code'] = exit_code
         self.logger.debug(
-            "Process ended, return code 0, %s, job_id=%s, result: %s", format_msg(self.cmd), self.job_id, format_msg(result))
+            "Process ended, return code 0, time=%.2fs, %s, job_id=%s, result: %s", time.time() - self.start_time, format_msg(self.cmd), self.job_id, format_msg(result))
         self.job_done_calleback(self.job_id, result)
