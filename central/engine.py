@@ -1315,7 +1315,7 @@ class Engine:
             return
         node = msg['from']
         status = {}
-        for k in ['ONLINE', 'DEGRADED', 'UNAVAIL']:
+        for k in ['ONLINE', 'DEGRADED', 'UNAVAIL', 'FAULTED']:
             status[k] = msg['status'].count(k)
         if node in self.zpool_stati:
             old_status = self.zpool_stati[node]

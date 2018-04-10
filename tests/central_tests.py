@@ -3250,6 +3250,70 @@ config:
 	    sdx                                             ONLINE       0     0     0
 	    sdh                                             ONLINE       0     0     0
 	    sdaa                                            ONLINE       0     0     0
+	    sdr                                             FAULTED      0     0     0  
+	    sdl                                             ONLINE       0     0     0
+	    sdad                                            ONLINE       0     0     0  (resilvering)
+	  raidz2-2                                          ONLINE       0     0     0
+	    sdq                                             ONLINE       0     0     0
+	    sdw                                             ONLINE       0     0     5  (resilvering)
+	    sdd                                             ONLINE       0     0     0
+	    sdaf                                            ONLINE       0     0     0
+	    sdc                                             ONLINE       0     0     0
+	    sdo                                             ONLINE       0     0     0
+	  raidz2-3                                          ONLINE       0     0     0
+	    sdai                                            ONLINE       0     0     0
+	    sdp                                             ONLINE       0     0     0
+	    sdu                                             ONLINE       0     0     0
+	    sds                                             ONLINE       0     0     0
+	    sdac                                            ONLINE       0     0     0
+	    sdj                                             ONLINE       0     0     0
+	  raidz2-4                                          ONLINE       0     0     0
+	    sdz                                             ONLINE       0     0     0
+	    sdt                                             ONLINE       0     0     0
+	    sdm                                             ONLINE       0     0     0
+	    sdak                                            ONLINE       0     0     0
+	    sdv                                             ONLINE       0     0     0
+	    sdab                                            ONLINE       0     0     0
+	  raidz2-5                                          ONLINE       0     0     0
+	    sdb                                             ONLINE       0     0     0
+	    sdi1                                            ONLINE       0     0     0
+	    sdf                                             ONLINE       0     0     0
+	    sdn                                             ONLINE       0     0     0
+	    sdk                                             ONLINE       0     0     0
+	    sdah                                            ONLINE       0     0     0
+	logs
+	  ata-INTEL_SSDSC2CW120A3_CVCV321604Z5120BGN-part6  ONLINE       0     0     0
+	cache
+	  sda7                                              ONLINE       0     0     0
+'''})
+        e.do_zpool_status_check()
+        self.assertEqual(len(outgoing), 1)
+        e.incoming_node({
+            'from': 'alpha',
+            'msg': 'zpool_status',
+            'status': '''  pool: alpha
+ state: ONLINE
+status: One or more devices is currently being resilvered.  The pool will
+	continue to function, possibly in a degraded state.
+action: Wait for the resilver to complete.
+  scan: resilver in progress since Fri Jan 26 17:44:49 2018
+	5.13G scanned out of 65.0T at 9.25M/s, (scan is slow, no estimated time)
+	448M resilvered, 0.01% done
+config:
+
+	NAME                                                STATE     READ WRITE CKSUM
+	rose                                                ONLINE       0     0     0
+	  raidz2-0                                          ONLINE       0     0     0
+	    sdy                                             ONLINE       0     0     0
+	    sde                                             ONLINE       0     0     0
+	    sdg1                                            ONLINE       0     0     0
+	    sdag                                            ONLINE       0     0     0
+	    sdaj                                            ONLINE       0     0     0
+	    sdae1                                           ONLINE       0     0     0
+	  raidz2-1                                          ONLINE       0     0     0
+	    sdx                                             ONLINE       0     0     0
+	    sdh                                             ONLINE       0     0     0
+	    sdaa                                            ONLINE       0     0     0
 	    sdr                                             ONLINE       0     0     0  (resilvering)
 	    sdl                                             ONLINE       0     0     0
 	    sdad                                            ONLINE       0     0     0  (resilvering)
@@ -3287,7 +3351,7 @@ config:
 	  sda7                                              ONLINE       0     0     0
 '''})
         self.assertEqual(len(
-            errors), 4)  # for now, the all clear also comes via the error reporting mechanism
+            errors), 5)  # for now, the all clear also comes via the error reporting mechanism
 
     def test_no_repeated_requests_if_outstanding(self):
         e, outgoing_messages = self.get_engine({
