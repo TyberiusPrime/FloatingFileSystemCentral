@@ -106,7 +106,7 @@ class Config(DefaultConfig):
         p = subprocess.Popen(["/machine/opt/infrastructure/client/call_mattermost.py"], stdin=subprocess.PIPE)
         p.communicate(message.encode('utf-8'))
 
-    def decide_targets(self, dummy_ffs):
+    def decide_targets(self, ffs):
         if ffs.startswith('20'):
             raise ValueError("Your ffs must not be '2018...', you probably meant e/2018...")
         choices = [
@@ -116,6 +116,7 @@ class Config(DefaultConfig):
             ['amy', 'rose'],
             ['martha', 'amy'],
             ['rose', 'amy']
+        ]
         import random
         return random.choice(choices)
 

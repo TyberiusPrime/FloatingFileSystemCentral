@@ -296,7 +296,7 @@ class Engine:
                 self.model[ffs][
                     '_snapshots_in_transit'] = collections.Counter()
         if any_found:
-            return {'ok': True}
+            return {'ok': True, 'targets': targets}
         else:
             return {'error': 'no_targets'}
 
