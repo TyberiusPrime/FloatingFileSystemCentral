@@ -90,7 +90,7 @@ def do_rsync(args):
                        stderr=subprocess.PIPE)
     stdout, stderr=p.communicate()
     stdout += ("\n" + " ".join(rsync_cmd)).encode('utf8')
-    stdout += (b"\n rsync returncode: %i" % p.returncode)
+    stdout += (b"\n rsync returncode: " + str(p.returncode).encode('utf-8'))
     return 'rsync', p.returncode, stdout, stderr
 
 
