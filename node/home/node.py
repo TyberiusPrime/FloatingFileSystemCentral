@@ -153,6 +153,10 @@ def msg_new(msg):
     full_ffs_path = find_ffs_prefix(msg) + ffs
     for prop, value in msg['properties'].items():
         check_property_name_and_value(prop, value)
+    if not re.match("^0[0-7]{3}$", msg['rights']) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", msg['rights']):
+        raise ValueError("invalid rights - needs to look like 0777")
+    rights = msg['rights']
+    owner = msg['owner']
 
     parent_zfs = full_ffs_path[:full_ffs_path.rfind('/')]
     parent_readonly = get_zfs_property(parent_zfs, 'readonly') == 'on'
@@ -160,13 +164,16 @@ def msg_new(msg):
         check_call(
             ['sudo', 'zfs', 'set', 'readonly=off', parent_zfs])
     check_call(['sudo', 'zfs', 'create', full_ffs_path])
-    if parent_readonly:
-        check_call(
-            ['sudo', 'zfs', 'set', 'readonly=on', parent_zfs])
-
+    check_call(['sudo', 'chown', owner, '/' + full_ffs_path])   
+    check_call(['sudo', 'chmod', rights, '/' + full_ffs_path])
+    #less we set readonly before actually changing the rights ^^
     for prop, value in msg['properties'].items():
         check_call(
             ['sudo', 'zfs', 'set', "%s=%s" % (prop, value), full_ffs_path])
+ 
+    if parent_readonly:
+        check_call(
+            ['sudo', 'zfs', 'set', 'readonly=on', parent_zfs])
     return {
         'msg': 'new_done',
         'ffs': ffs,

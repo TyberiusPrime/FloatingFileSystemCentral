@@ -3,6 +3,7 @@ import signal
 import stat
 import time
 import pwd
+import shutil
 import subprocess
 import os
 import json
@@ -145,6 +146,10 @@ class ClientTests(unittest.TestCase):
             pass
         with open("client_test_error.log", 'w'):
             pass
+        shutil.copy('../node/home/node.py', '/home/ffs/node.py')
+        shutil.copy('../node/home/ssh.py', '/home/ffs/ssh.py')
+        shutil.copy('../node/home/robust_parallel_rsync.py', '/home/ffs/robust_parallel_rsync.py')
+
 
         for root in [cls.get_test_prefix()[:-1], cls.get_test_prefix2()[:-1]]:
             p = subprocess.Popen(['sudo', 'zfs', 'destroy', root, '-R'],
@@ -221,7 +226,7 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'one'))
         self.assertTrue('one' in self.list_ffs())
         self.assertEqual(
-                get_file_rights('/' + self.get_test_prefix() + 'one') & 0o777, 0o761)
+                get_file_rights('/' + self.get_test_prefix() + 'one') & 0o777, 0o751)
 
     def test_new_replicated(self):
         self.assertFalse(os.path.exists(

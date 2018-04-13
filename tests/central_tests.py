@@ -824,7 +824,10 @@ class NewTests(PostStartupTests):
             'properties': {
                 'ffs:main': 'on',
                 'readonly': 'off',
-            }})
+            },
+            'owner': e.config.get_chown_user('two'),
+            'rights': e.config.get_chmod_rights('two'),
+            })
         self.assertTrue('two' in e.model)
         self.assertEqual(e.model['two']['_main'], 'alpha')
         self.assertEqual(e.model['two']['alpha'], {'_new': True})
@@ -856,7 +859,11 @@ class NewTests(PostStartupTests):
             'properties': {
                 'ffs:main': 'on',
                 'readonly': 'off',
-            }})
+            },
+            'owner': e.config.get_chown_user('two'),
+            'rights': e.config.get_chmod_rights('two'),
+
+            })
         self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'new',
@@ -864,7 +871,11 @@ class NewTests(PostStartupTests):
             'properties': {
                 'ffs:main': 'off',
                 'readonly': 'on',
-            }})
+            },
+            'owner': e.config.get_chown_user('two'),
+            'rights': e.config.get_chmod_rights('two'),
+
+            })
         self.assertTrue('two' in e.model)
         self.assertEqual(e.model['two']['_main'], 'beta')
         e.incoming_node(
@@ -1964,7 +1975,11 @@ class AddTargetTests(PostStartupTests):
                             {'msg': 'new',
                              'to': 'gamma',
                              'ffs': 'one',
-                             'properties': {'ffs:main': 'off', 'readonly': 'on'}}
+                             'properties': {'ffs:main': 'off', 'readonly': 'on'},
+                            'owner': e.config.get_chown_user('one'),
+                            'rights': e.config.get_chmod_rights('one'),
+ 
+                             }
                             )
         self.assertEqual(1, len(outgoing_messages))
         outgoing_messages.clear()
@@ -2016,7 +2031,10 @@ class AddTargetTests(PostStartupTests):
             'to': 'alpha',
             'msg': 'new',
             'ffs': 'two',
-            'properties': {'ffs:main': 'off', 'readonly': 'on'}
+            'properties': {'ffs:main': 'off', 'readonly': 'on'},
+            'owner': e.config.get_chown_user('two'),
+            'rights': e.config.get_chmod_rights('two'),
+
         }
         )
         self.assertMsgEqual(outgoing_messages[1],
@@ -2024,7 +2042,10 @@ class AddTargetTests(PostStartupTests):
             'to': 'gamma',
             'msg': 'new',
             'ffs': 'two',
-            'properties': {'ffs:main': 'off', 'readonly': 'on'}
+            'properties': {'ffs:main': 'off', 'readonly': 'on'},
+            'owner': e.config.get_chown_user('two'),
+            'rights': e.config.get_chmod_rights('two'),
+
         }
         )
 
@@ -2124,6 +2145,9 @@ class AddTargetTests(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'off', 'readonly': 'on'},
             'to': 'gamma',
+            'owner': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
+
         })
         fm.outgoing.clear()
         e.incoming_node(
@@ -2201,6 +2225,9 @@ class AddTargetTests(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'off', 'readonly': 'on'},
             'to': 'gamma',
+            'owner': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
+
         })
         fm.outgoing.clear()
         def inner():
@@ -2261,6 +2288,9 @@ class AddTargetTests(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'off', 'readonly': 'on'},
             'to': 'gamma',
+            'owner': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
+
         })
         fm.outgoing.clear()
         e.incoming_node(
@@ -2340,12 +2370,18 @@ class AddTargetTests(PostStartupTests):
             'ffs': 'one',
             'properties': {'ffs:main': 'on', 'readonly': 'off'},
             'to': 'beta',
+            'owner': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
+
         })
         self.assertMsgEqual(fm.outgoing[1], {
             'msg': 'new',
             'ffs': 'one',
             'properties': {'ffs:main': 'off', 'readonly': 'on'},
-            'to': 'gamma'
+            'to': 'gamma',
+            'owner': e.config.get_chown_user('one'),
+            'rights': e.config.get_chmod_rights('one'),
+
         })
         self.assertEqual(len(fm.outgoing), 2)
         fm.outgoing.clear()
@@ -2453,26 +2489,38 @@ class AddTargetTests(PostStartupTests):
             e.client_new({
             'msg': 'new',
             'ffs': 'one/two',
-            'targets': ['alpha', 'beta']
+            'targets': ['alpha', 'beta'],
+            'owner': e.config.get_chown_user('one/two'),
+            'rights': e.config.get_chmod_rights('one/two'),
+
         })
         self.assertRaises(ValueError, inner)
         def inner():
             e.client_new({
             'msg': 'new',
             'ffs': 'one/two',
-            'targets': ['beta']
+            'targets': ['beta'],
+            'owner': e.config.get_chown_user('one/two'),
+            'rights': e.config.get_chmod_rights('one/two'),
+
         })
         self.assertRaises(ValueError, inner)
         e.client_new({
             'msg': 'new',
             'ffs': 'three',
-            'targets': ['beta']
+            'targets': ['beta'],
+            'owner': e.config.get_chown_user('three'),
+            'rights': e.config.get_chmod_rights('three'),
+
         })
         self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'new',
             'ffs': 'three',
             'to': 'beta',
-            'properties': {'ffs:main': 'on', 'readonly': 'off'}
+            'properties': {'ffs:main': 'on', 'readonly': 'off'},
+            'owner': e.config.get_chown_user('three'),
+            'rights': e.config.get_chmod_rights('three'),
+
         })
 
 
@@ -2879,24 +2927,6 @@ class SnapshotPruningTests(EngineTests):
         #can't have this
         #ffs.py add_targets papers/adhikary amy
         #ffs.py add_targets papers/adhikary/201720_Wortmann_and_Adhikary_Rel_in_TAMs rose
-ffs.py add_targets papers/adhikary rose
-ffs.py add_targets papers/bauer rose
-ffs.py add_targets papers/brehm rose
-ffs.py add_targets papers/mueller rose
-ffs.py add_targets papers/suske rose
-
-ffs.py add_targets papers/adhikary/201720_Wortmann_and_Adhikary_Rel_in_TAMs rose
-ffs.py add_targets papers/brehm/201603_Judith_Kreher_Ecdyson rose
-ffs.py add_targets papers/brehm/201603_Judith_Kreher_Ecdyson/20150820_AG_Brehm_Mi2_EcR_Motif_enrichment rose
-ffs.py add_targets papers/mueller/20141031_AG_Mueller_MDM_Paper_Preparation rose
-ffs.py add_targets papers/mueller/20141202_AG_Mueller_TAM_Paper rose
-ffs.py add_targets papers/mueller/20150616_AG_Mueller_TUM_TAM_Paper rose
-ffs.py add_targets papers/mueller/20150722_AG_Mueller_Verena_Skov rose
-ffs.py add_targets papers/mueller/201603_MHP_vs_TAM rose
-ffs.py add_targets papers/mueller/201603_MHP_vs_TAM/Project_Clone rose
-ffs.py add_targets papers/mueller/201708_TAT rose
-ffs.py add_targets papers/suske/201707_Nibpl rose
-
         raise NotImplementedError()
          
 

@@ -286,7 +286,9 @@ class Engine:
                 self.send(node,
                           {'msg': 'new',
                            'ffs': msg['ffs'],
-                           'properties': props
+                           'properties': props,
+                           'rights': self.config.get_chmod_rights(ffs),
+                           'owner': self.config.get_chown_user(ffs),
                            }
                           )
                 any_found = True
@@ -363,6 +365,9 @@ class Engine:
                       {'msg': 'new',
                        'ffs': ffs,
                        'properties': props,
+                        'rights': self.config.get_chmod_rights(ffs),
+                        'owner': self.config.get_chown_user(ffs),
+
                        }
                       )
             self.model[ffs][target] = {'_new': True}

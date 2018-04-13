@@ -774,7 +774,7 @@ class NodeTests(unittest.TestCase):
 
     def test_new(self):
         in_msg = {'msg': 'new', 'ffs': 'four',
-                  'properties': {'ffs:test1': 'one', 'ffs:test2': 'two'}}
+                  'properties': {'ffs:test1': 'one', 'ffs:test2': 'two'}, 'rights': '0777', 'owner': 'ffs'}
         self.assertFalse('four' in self.list_ffs(True, True))
         out_msg = self.dispatch(in_msg)
         self.assertTrue('four' in self.list_ffs(True, True))
@@ -1446,6 +1446,8 @@ class NodeTests(unittest.TestCase):
         in_msg = {'msg': 'new',
                   'ffs': 'to_6/a',
                   'properties': {},
+                  'rights': '0777',
+                  'owner': 'ffs',
                   }
         out_msg = self.dispatch(in_msg)
         self.assertNotError(out_msg)

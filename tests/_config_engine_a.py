@@ -73,8 +73,12 @@ class Config(DefaultConfig):
     def do_deploy(self):
         return False
 
-    def get_chmod_rights(self, dummy_ffs):
-        return '0751'
+    def get_chmod_rights(self, ffs):
+        if ffs == 'one':
+            return '0751'
+        else:
+            return 'uog+rwX'
+
     
 config = Config()
           

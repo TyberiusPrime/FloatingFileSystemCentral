@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import re
 import logging
 import time
 
@@ -177,7 +178,11 @@ class CheckedConfig:
 
     @must_return_type(str)
     def get_chmod_rights(self, ffs):
-        return self.config.get_chmod_rights(ffs)
+        rights = self.config.get_chmod_rights(ffs)
+        if not re.match("^0[0-7]{3}$", rights) and not re.match("^([ugoa]+[+=-][rwxXst]*,?)+$", rights):
+            raise ValueError("Rights were not a valid right string")
+        return rights
+
 
     @must_return_type(list)
     def get_ssh_cmd(self):
