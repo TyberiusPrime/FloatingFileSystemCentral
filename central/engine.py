@@ -1240,7 +1240,7 @@ class Engine:
         self.model[ffs]['_snapshots_in_transit'][snapshot] -= 1
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
-        os = self.count_outgoing_snapshots()
+        os = self.count_outgoing_snapshots() - 1 # minus one because this message is still in the list!
         self.config.inform("Send of %s@%s to %s done, outstanding snapshot transfers: %i" % (
             ffs, snapshot, node, os))
         if (self.is_ffs_moving(ffs) and

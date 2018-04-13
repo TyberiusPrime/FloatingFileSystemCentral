@@ -220,6 +220,8 @@ class ClientTests(unittest.TestCase):
         self.client_wait_for_empty_que()
         self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'one'))
         self.assertTrue('one' in self.list_ffs())
+        self.assertEqual(
+                get_file_rights('/' + self.get_test_prefix() + 'one') & 0o777, 0o761)
 
     def test_new_replicated(self):
         self.assertFalse(os.path.exists(
@@ -497,6 +499,22 @@ class ClientTests(unittest.TestCase):
 
     def test_capture_auto_detect_from_current_path(self):
         raise NotImplementedError()
+
+    
+    def test_install_checks_ownership_of_home_ffs_to_be_ffs(self):
+        raise NotImplementedError()
+
+
+    def test_capture_only_if_changed(self):
+        # briefly: run zfs snapshot. 
+        # compare using zfs diff to previous snapshot.
+        # if no files changed
+        # -> throw away new snapshot
+        # if this is time based, how do we prevent trying to take a snapshot the very next minute?
+        # we could store the last-snapshot-tried-time in ffs:last_snapshot_time or such
+        # and then try again after 'ffs:interval'? Of course that means we'll take a snapshot much later in the worst case?
+        raise NotImplementedError()
+
 
 class CleanChildProcesses:
 

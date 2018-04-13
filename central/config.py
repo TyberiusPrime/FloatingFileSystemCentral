@@ -41,11 +41,12 @@ class Config(DefaultConfig):
         'storage_prefix': '/martha/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDyjtBBoSslSuXmgidRocloyFbEwJc36SmW+vnAIIzT5OBX+yKv529CMsIttsUScu/BARMVeEkDX+0pI5b8vMygpjtQM9783/+/3OheEw8MgOm4HS90rc7g8xOqWjydIagotI4YhlUK2bCvrjYxavovUA0wsOTIBoCBHwqF5SrarzqN4nvZgcY8McHLwfjjYElcpbPutLXHneY+nPevrlKqkbnPONpXJ+Zf/BhgEiVbtvbU7QKewhf4TDJQU8y7Eto9pMwTqz2hcR9t+p0HFFYcd9JzEvyBQIvO6VL529rxhI0s2Qz1heV2NRVx6ZrReoDBjuNfoHjW7VdRUYsBI633 ffs@pcmt322',
     },
-    #'pcmt383': {
-        #'hostname': 'nostromo',
-        #'storage_prefix': '/nostromo/ffs',
-        #'public_key': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383\n',
-    #},
+    'nostromo': {
+                'hostname': 'nostromo',
+                'storage_prefix': '/nostromo/ffs',
+                'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383',
+    },
+   
 }
     def get_logging(self):
         if not os.path.exists('/var/log/ffs'):

@@ -2867,6 +2867,39 @@ class SnapshotPruningTests(EngineTests):
     def test_snapshot_removal_fails_due_to_clones(self):
         raise NotImplementedError()
 
+    def test_nested_creation_delayed_until_parent_has_been_created(self):
+        # basically, make shu, then shu/sha in rapid succession
+        # can't have the second new send to the node before the first new returned
+        # otherwise we run into mount problems / race condidtions with the readonly
+        # on non-main targets
+        # easy solution: only process one new at a time?
+        raise NotImplementedError()
+
+    def test_orphan_fix_with_nested_ensure_parents_are_present(self):
+        #can't have this
+        #ffs.py add_targets papers/adhikary amy
+        #ffs.py add_targets papers/adhikary/201720_Wortmann_and_Adhikary_Rel_in_TAMs rose
+ffs.py add_targets papers/adhikary rose
+ffs.py add_targets papers/bauer rose
+ffs.py add_targets papers/brehm rose
+ffs.py add_targets papers/mueller rose
+ffs.py add_targets papers/suske rose
+
+ffs.py add_targets papers/adhikary/201720_Wortmann_and_Adhikary_Rel_in_TAMs rose
+ffs.py add_targets papers/brehm/201603_Judith_Kreher_Ecdyson rose
+ffs.py add_targets papers/brehm/201603_Judith_Kreher_Ecdyson/20150820_AG_Brehm_Mi2_EcR_Motif_enrichment rose
+ffs.py add_targets papers/mueller/20141031_AG_Mueller_MDM_Paper_Preparation rose
+ffs.py add_targets papers/mueller/20141202_AG_Mueller_TAM_Paper rose
+ffs.py add_targets papers/mueller/20150616_AG_Mueller_TUM_TAM_Paper rose
+ffs.py add_targets papers/mueller/20150722_AG_Mueller_Verena_Skov rose
+ffs.py add_targets papers/mueller/201603_MHP_vs_TAM rose
+ffs.py add_targets papers/mueller/201603_MHP_vs_TAM/Project_Clone rose
+ffs.py add_targets papers/mueller/201708_TAT rose
+ffs.py add_targets papers/suske/201707_Nibpl rose
+
+        raise NotImplementedError()
+         
+
 class ZpoolStatusChecks(EngineTests):
 
     def ge(self):
