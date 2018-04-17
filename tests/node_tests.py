@@ -1531,5 +1531,11 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(get_file_rights(
             '/' + NodeTests.get_test_prefix() + 'from_9/a') & 0o777, 0)
 
+    def test_rename_relocates_into_other_parent(self):
+        raise NotImplementedError("Test parent is read only...")
+
+    def test_rename_relocates_into_other_parent_but_parent_not_present(self):
+        raise NotImplementedError()
+
 if __name__ == '__main__':
     unittest.main()
