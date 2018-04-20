@@ -4887,7 +4887,15 @@ class FailureTests(unittest.TestCase):
         raise NotImplementedError("""   ssh_message_que:154 Node processing error in job_id return 137 {'error': 'rsync_failure', 'ssh_process               _return_code': 1, 'content': "stdout:\nb''\n\nstderr:\nb'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --om               it-dir-times -ltx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /               martha/ffs/.ffs_sync_clones/1522834093.737729_aecc9d2d8fd5a0a0f2881ca8511a1fa7/results/ ffs@rose:/rose/ffs/e/20161012_AG_Mermoud_               SMARCAD_H3K9Me3_ChIP_mouse_ES/results/\\n rsync returncode: 255packet_write_wait: Connection to 192.168.153.1 port 223: Broken pi               pe\\r\\nrsync: [sender] write error: Broken pipe (32)\\nrsync error: unexplained error (code 255) at io.c(820) [sender=3.1.1]\\n'               ", 'from': 'martha'} No message in msg, outgoing was: {'ffs': 'e/20161012_AG_Mermoud_SMARCAD_H3K9Me3_ChIP_mouse_ES',
         """)
 
+    def test_remove_target_failed_dataset_is_busy(self):
+        # just set remove asap...
+        raise NotImplementedError()
 
+    def test_permission_denied(self):
+        raise NotImplementedError("Complain with 'ssh no worky")
+
+    def test_remove_asap_no_main_remaining(self):
+        raise NotImplemtedError()
 
 class PriorityTests(PostStartupTests):
     def test_non_int_prio_raises_on_starutp(self):
