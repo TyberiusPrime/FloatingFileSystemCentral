@@ -83,7 +83,7 @@ class OutgoingMessages:
                 order = 7
             elif msg.msg['msg'] == 'remove_snapshot':
                 order = 8
-            prio = msg.msg.get('priority', 1000)
+            prio = int(msg.msg.get('priority', 1000))
             return (order, prio)
         return sorted(messages, key=key)
 
@@ -93,13 +93,16 @@ class OutgoingMessages:
             in_progress = [x for x in outbox if x.status == 'in_progress']
             transfers_in_progress = [
                 x for x in in_progress if x.msg['msg'] == 'send_snapshot']
+            new_in_progress = [
+                x for x in in_progress if x.msg['msg'] == 'new']
             if unsent:
                 if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
                     for x in self.prioritize(unsent):
                         if len(in_progress) < self.max_per_host:
                             if (
                                 (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
-                                (x.msg['msg'] != 'send_snapshot')
+                                (x.msg['msg'] == 'new' and not new_in_progress) or 
+                                (x.msg['msg'] not in ('send_snapshot', 'new'))
                             ):
                                 while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
                                     self.logger.info(

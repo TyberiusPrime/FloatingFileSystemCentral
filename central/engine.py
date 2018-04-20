@@ -800,7 +800,7 @@ class Engine:
             self.fault("Multiple renames to the same target",
                        exception=InconsistencyError)
 
-        for ffs, node_ffs_info in self.model.items():
+        for ffs, node_ffs_info in list(self.model.items()):
             main = None
             non_ro_count = 0
             ro_count = 0
@@ -845,7 +845,13 @@ class Engine:
                             self.fault(
                                 "No main, muliple non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
                         else:
-                            self.fault(
+                            #if they're all to be removed any how.
+                            #TODO: test case this!
+                            if set([x['properties'].get('ffs:remove-asap', '-') for x in node_ffs_info.values()]) == 'on':
+                                del self.model[ffs]
+                                pass
+                            else:
+                                self.fault(
                                 "No main, none non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
 
             self.model[ffs]['_main'] = main
@@ -1261,8 +1267,8 @@ class Engine:
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
         os = self.count_outgoing_snapshots() - 1 # minus one because this message is still in the list!
-        self.config.inform("Send of %s@%s to %s done, outstanding snapshot transfers: %i" % (
-            ffs, snapshot, node, os))
+        self.config.inform("Send of %s@%s from %sto %s done, outstanding snapshot transfers: %i" % (
+            ffs, snapshot, main, node, os))
         if (self.is_ffs_moving(ffs) and
                 node == self.model[ffs]['_moving'] and
                 msg['snapshot'] == self.model[ffs]['_move_snapshot']
