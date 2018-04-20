@@ -520,6 +520,9 @@ class ClientTests(unittest.TestCase):
         # and then try again after 'ffs:interval'? Of course that means we'll take a snapshot much later in the worst case?
         raise NotImplementedError()
 
+    def test_slash_at_end_of_ffs(self):
+        raise NotImplementedError()
+
 
 class CleanChildProcesses:
 

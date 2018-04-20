@@ -35,7 +35,8 @@ def _get_zfs_properties(zfs_name):
     result = {x[1]: x[2] for x in lines}
     result = {x[1]: x[2] for x in lines if not(
         x[1].startswith('ffs:') and x[3].startswith('inherited')
-    )}
+    )
+    }
     return result
 
 

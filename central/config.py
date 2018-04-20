@@ -11,6 +11,11 @@ from . default_config import DefaultConfig
 """nodes = """
 
 
+def martha_ignore(ffs, properties):
+    if ffs == 'e/20180413_AG_Mueller_Association_Between_Biomarkers_and_TCell_Response_simulations':
+        return True
+    return False
+
 class Config(DefaultConfig):
 
     def get_nodes(self):
@@ -40,6 +45,8 @@ class Config(DefaultConfig):
         'hostname': 'martha',
         'storage_prefix': '/martha/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDyjtBBoSslSuXmgidRocloyFbEwJc36SmW+vnAIIzT5OBX+yKv529CMsIttsUScu/BARMVeEkDX+0pI5b8vMygpjtQM9783/+/3OheEw8MgOm4HS90rc7g8xOqWjydIagotI4YhlUK2bCvrjYxavovUA0wsOTIBoCBHwqF5SrarzqN4nvZgcY8McHLwfjjYElcpbPutLXHneY+nPevrlKqkbnPONpXJ+Zf/BhgEiVbtvbU7QKewhf4TDJQU8y7Eto9pMwTqz2hcR9t+p0HFFYcd9JzEvyBQIvO6VL529rxhI0s2Qz1heV2NRVx6ZrReoDBjuNfoHjW7VdRUYsBI633 ffs@pcmt322',
+        'ignore_callback': martha_ignore,
+        'readonly_node': True,
     },
     'nostromo': {
                 'hostname': 'nostromo',
@@ -177,6 +184,10 @@ class Config(DefaultConfig):
                 snapshot_times.remove((parse_snapshot(found), found))
                 keep.add(found)
         return keep
+
+    def decide_snapshots_to_send(self, dummy_ffs_name, snapshots):
+        """What snapshots for this ffs should be transmitted?"""
+        return set([snapshots[-1]])
 
     def get_zpool_frequency_check(self):
         # in seconds

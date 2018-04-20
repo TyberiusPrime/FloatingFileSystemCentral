@@ -133,7 +133,15 @@ class CheckedConfig:
                 raise ValueError("Node can not start with _: %s" % node)
             if isinstance(node_info['public_key'], str):
                 node_info['public_key'] = node_info['public_key'].encode('ascii')
- 
+            if node_info.get('readonly_node', False):
+                ignore_callback = self.config.get_nodes()[node].get('ignore_callback', lambda dummy_ffs, dummy_ffs_props: False)
+                def ic(ffs, properties):
+                    if ignore_callback(ffs, properties):
+                        return True
+                    elif properties.get('ffs:main', 'off') == 'off':
+                        return True
+                    return False
+                node_info['ignore_callback'] = ic
 
         # stuff that ascertains that the config is as expected - no need to edit
         for n in nodes:

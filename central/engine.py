@@ -263,6 +263,8 @@ class Engine:
             if not isinstance(msg['targets'], list):
                 self.fault("config.decide_targets returned non-list")
         targets = [self.config.find_node(x) for x in msg['targets']]
+        if any([self.is_readonly_node(node) for node in targets]):
+            raise ValueError("Read only node: %s" % node)
         for x in targets:
             if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
@@ -598,6 +600,9 @@ class Engine:
                 })
         return {'ok': True}
 
+    def is_readonly_node(self, node):
+        return self.config.get_nodes()[node].get('readonly_node', False)
+
     def is_ffs_moving(self, ffs):
         if '_moving' in self.model[ffs]:
             return True
@@ -680,7 +685,11 @@ class Engine:
         self.logger.info("All list_ffs returned")
         self.model = {}
         for node, ffs_list in self.node_ffs_infos.items():
+            ignore_callback = self.config.get_nodes()[node].get('ignore_callback', lambda dummy_ffs, dummy_ffs_props: False)
             for ffs, ffs_info in ffs_list.items():
+                if ignore_callback(ffs, ffs_info['properties']):
+                    self.logger.info("Ignored %s from %s (ignore_callback)" % (ffs, node))
+                    continue
                 if ffs not in self.model:
                     self.model[ffs] = {}
                     self.model[ffs][
@@ -744,14 +753,15 @@ class Engine:
                                     if main_prop == '-':
                                         self.fault("%s set on %s on %s, but not on main (%s)."% (prop, ffs, node, main))
                                     elif main_prop != node_prop:
-                                        self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                        if not self.is_readonly_node(node):
+                                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
                                             'properties': {prop: main_prop}})
 
     def _handle_remove_asap(self):
         for ffs in self.model:
             main = self.model[ffs]['_main']
             for node in self.model[ffs]:
-                if not node.startswith('_'):
+                if not node.startswith('_') and not self.is_readonly_node(node):
                     if self.model[ffs][node]['properties'].get('ffs:remove_asap', '-') == 'on':
                         if node == main:
                             self.fault("ffs:main and ffs:remove_asap set at the same time. Manual fix necessory. FFS: %s, node%s" % (
@@ -871,7 +881,8 @@ class Engine:
                             "Main/readonly inconsistencies during rename. Not supported. FFs involved: ", exception=InconsistencyError)
                     else:
                         for receiver, msg in prop_adjust_messages:
-                            self.send(receiver, msg)
+                            if not self.is_readonly_node(receiver):
+                                self.send(receiver, msg)
             else:  # caught in a move.
                 # step 0 -
                 move_target = any_moving_to
@@ -935,11 +946,12 @@ class Engine:
                 for node, node_info in sorted(self.model[rename_to].items()):
                     if not node.startswith('_'):
                         if node_info['properties'].get('ffs:renamed_from', '-') != '-':
-                            self.send(node, {
-                                'msg': 'set_properties',
-                                'ffs': rename_to,
-                                'properties': {'ffs:renamed_from': '-'}
-                            })
+                            if not self.is_readonly_node(node):
+                                self.send(node, {
+                                    'msg': 'set_properties',
+                                    'ffs': rename_to,
+                                    'properties': {'ffs:renamed_from': '-'}
+                                })
 
         for ffs, node_ffs_info in self.model.items():
             if node_ffs_info['_main'] is None and not self.is_ffs_renaming(ffs):
@@ -948,7 +960,7 @@ class Engine:
     def _enforce_properties(self):
         for ffs in self.model:
             for node, ffs_node_info in sorted(self.model[ffs].items()):
-                if node.startswith('_'):
+                if node.startswith('_') or self.is_readonly_node(node):
                     continue
                 to_set = {}
                 for k, v in self.config.get_enforced_properties().items():
@@ -985,10 +997,11 @@ class Engine:
             remove_from_main = [
                 x for x in main_snapshots if x not in keep_snapshots]
             for snapshot in remove_from_main:
-                self.send(
-                    main_node, {'msg': 'remove_snapshot', 'ffs': ffs, 'snapshot': snapshot})
-                # and forget they existed for now.
-                node_fss_info[main_node]['snapshots'].remove(snapshot)
+                if not self.is_readonly_node(main_node):
+                    self.send(
+                        main_node, {'msg': 'remove_snapshot', 'ffs': ffs, 'snapshot': snapshot})
+                    # and forget they existed for now.
+                    node_fss_info[main_node]['snapshots'].remove(snapshot)
         for node in sorted(node_fss_info):
             if node != main_node and not node.startswith('_'):
                 if restrict_to_node is None or restrict_to_node == node:
@@ -999,9 +1012,10 @@ class Engine:
                     if len(too_many) == len(target_snapshots):
                         too_many = too_many[:-1]
                     for snapshot in too_many:
-                        self.send(node, {'msg': 'remove_snapshot',
-                                         'ffs': ffs, 'snapshot': snapshot})
-                        # and forget they existed for now.
+                        if not self.is_readonly_node(node):
+                            self.send(node, {'msg': 'remove_snapshot',
+                                             'ffs': ffs, 'snapshot': snapshot})
+                            # and forget they existed for now.
                         node_fss_info[node]['snapshots'].remove(snapshot)
 
     def _send_missing_snapshots(self):
@@ -1035,7 +1049,7 @@ class Engine:
                 "Snapshots to consider sending for  %s - %s (main=%s)", ffs,  ordered_to_send, main)
             if ordered_to_send:
                 for node, node_info in node_fss_info.items():
-                    if node.startswith('_'):
+                    if node.startswith('_') or self.is_readonly_node(node):
                         continue
                     if node_info['removing']:
                         continue
@@ -1065,7 +1079,8 @@ class Engine:
                 if not sendable_snapshots:
                     self.logger.info(
                         "Replicated, but never snapshoted - capturing %s" % ffs)
-                    self.do_capture(ffs, False)
+                    if not self.is_readonly_node(main):
+                        self.do_capture(ffs, False)
 
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
         excluded_sub_ffs = []

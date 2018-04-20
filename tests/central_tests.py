@@ -4981,7 +4981,28 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
 
+    def test_ignore_callbacks(self):
+        raise NotImplementedError()
 
+    def test_readonly_hosts(self):
+        raise NotImplementedError()
+
+
+    def test_new_readonly_node_raises(self):
+        raise NotImplementedError()
+
+    def test_set_interval_read_only_node_raises(self):
+        raise NotImplementedError()
+    def test_set_chown_read_only_main_raises(self):
+        raise NotImplementedError()
+    def test_remove_readonly_node_raises(self):
+        raise NotImplementedError()
+    def test_set_priority_readonly_node_raises(self):
+        raise NotImplementedError()
+    def test_no_moving_readonly_node(self):
+        raise NotImplementedError()
+    def test_no_renaming_readonly_node(self):
+        raise NotImplementedError()
 
 if __name__ == '__main__':
     unittest.main()
