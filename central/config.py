@@ -187,7 +187,10 @@ class Config(DefaultConfig):
 
     def decide_snapshots_to_send(self, dummy_ffs_name, snapshots):
         """What snapshots for this ffs should be transmitted?"""
-        return set([snapshots[-1]])
+        if snapshots:
+            return set([snapshots[-1]])
+        else:
+            return set()
 
     def get_zpool_frequency_check(self):
         # in seconds
@@ -196,5 +199,11 @@ class Config(DefaultConfig):
     def get_ssh_rate_limit(self):
         return 0.5
 
+    def restart_on_code_changes(self):
+        return False
+
+    def get_concurrent_rsync_limit(self):
+        return 5
+       
 config = Config()
 all = [config]

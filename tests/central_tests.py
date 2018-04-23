@@ -5012,5 +5012,17 @@ class PriorityTests(PostStartupTests):
     def test_no_renaming_readonly_node(self):
         raise NotImplementedError()
 
+    def test_remove_asap_on_all(self): 
+        #see around line 740 in engine.py
+        raise NotImplementedError()
+
+    def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
+        # line 1380, in get_snapshot_interval
+        #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
+        #builtins.KeyError: 'properties'
+        raise NotImplementedError()
+
+
+
 if __name__ == '__main__':
     unittest.main()

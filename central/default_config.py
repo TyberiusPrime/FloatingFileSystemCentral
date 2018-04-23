@@ -35,11 +35,16 @@ class DefaultConfig:
        return ['ssh', '-p', '223', '-o', 'StrictHostKeyChecking=no', '-i', '/home/ffs/.ssh/id_rsa']  # default ssh command, #-i is necessary for 'sudo rsync'
     
     def get_ssh_concurrent_connection_limit(self):
-        return 5 
+        return 6 
 
     def get_ssh_rate_limit(self):
         """Time (in decimal seconds) to wait between ssh requests"""
         return 0.
+
+    def get_concurrent_rsync_limit(self):
+        """How many rsync send_snapshots may run per sending system at a time?
+        """
+        return 2
 
     def get_zpool_frequency_check(self):
         #in seconds
@@ -92,7 +97,11 @@ class DefaultConfig:
     
     def do_timebased_actions(self):
         return True
+
+    def restart_on_code_changes(self):
+        return True
         
+
 def must_return_type(typ):
     def deco(func):
         def wrapper(*args, **kwargs):
@@ -198,7 +207,10 @@ class CheckedConfig:
     
     @must_return_type(int)
     def get_ssh_concurrent_connection_limit(self):
-        return self.config.get_ssh_concurrent_connection_limit()
+        res = self.config.get_ssh_concurrent_connection_limit()
+        if res < 1:
+            raise ValueError("get_ssh_concurrent_connection_limit must be >= 1")
+        return res
 
     @must_return_type(int)
     def get_zpool_frequency_check(self):
@@ -244,3 +256,16 @@ class CheckedConfig:
     @must_return_type(float)
     def get_ssh_rate_limit(self):
         return self.config.get_ssh_rate_limit()
+
+    @must_return_type(int)
+    def get_concurrent_rsync_limit(self):
+        res = self.config.get_concurrent_rsync_limit()
+        if res < 1:
+            raise ValueError('get_concurrent_rsync_limit must be at least 1')
+        if res >= self.get_ssh_concurrent_connection_limit():
+            raise ValueError('get_concurrent_rsync_limit must be less than get_ssh_concurrent_connection_limit - otherwise sends will block everything else')
+        return res
+
+    @must_return_type(bool)
+    def restart_on_code_changes(self):
+        return self.config.restart_on_code_changes()

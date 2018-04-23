@@ -1047,6 +1047,8 @@ class Engine:
             main_snapshots = node_fss_info[main]['snapshots']
             if len([x for x in node_fss_info if x != main and not x.startswith('_')]) == 0:
                 self.logger.info("No replicates for %s on %s", ffs, main)
+            if not main_snapshots:
+                self.logger.info("No main snapshots for %s on %s" % (ffs, main))
             snapshots_to_send = set(
                 self.config.decide_snapshots_to_send(ffs, main_snapshots))
             ordered_to_send = [
@@ -1108,6 +1110,8 @@ class Engine:
             'target_storage_prefix': self.node_config[receiving_node]['storage_prefix'],
             'excluded_subdirs': excluded_sub_ffs,
         }
+        if self.node_config[sending_node].get('readonly_node', False):
+             msg['source_is_readonly'] = True
         prio = self.model[ffs][sending_node][
             'properties'].get('ffs:priority', None)
         if prio is not None:
@@ -1267,7 +1271,7 @@ class Engine:
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
         os = self.count_outgoing_snapshots() - 1 # minus one because this message is still in the list!
-        self.config.inform("Send of %s@%s from %sto %s done, outstanding snapshot transfers: %i" % (
+        self.config.inform("Send of %s@%s from %s to %s done, outstanding snapshot transfers: %i" % (
             ffs, snapshot, main, node, os))
         if (self.is_ffs_moving(ffs) and
                 node == self.model[ffs]['_moving'] and

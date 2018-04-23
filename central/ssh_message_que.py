@@ -37,6 +37,7 @@ class OutgoingMessages:
 
     def __init__(self, logger, engine, ssh_cmd):
         self.max_per_host = engine.config.get_ssh_concurrent_connection_limit()
+        self.max_rsync_per_host = engine.config.get_concurrent_rsync_limit()
         self.wait_time_between_requests = engine.config.get_ssh_rate_limit()
         self.last_message_times = {}
         self.logger = logger
@@ -91,32 +92,36 @@ class OutgoingMessages:
         for dummy_node_name, outbox in self.outgoing.items():
             unsent = [x for x in outbox if x.status == 'unsent']
             in_progress = [x for x in outbox if x.status == 'in_progress']
-            transfers_in_progress = [
-                x for x in in_progress if x.msg['msg'] == 'send_snapshot']
+            transfers_in_progress = set([
+                x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'send_snapshot'])
             new_in_progress = [
                 x for x in in_progress if x.msg['msg'] == 'new']
             if unsent:
                 if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
                     for x in self.prioritize(unsent):
                         if len(in_progress) < self.max_per_host:
-                            if (
-                                (x.msg['msg'] == 'send_snapshot' and not transfers_in_progress) or
-                                (x.msg['msg'] == 'new' and not new_in_progress) or 
-                                (x.msg['msg'] not in ('send_snapshot', 'new'))
-                            ):
-                                while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
-                                    self.logger.info(
-                                        "Delaying sending to %s", x.node_name)
-                                    time.sleep(self.wait_time_between_requests)
-                                self.last_message_times[x.node_name] = time.time()
-                                x.job_id = self.job_id
-                                self.job_id += 1
-                                self.do_send(x)
-                                in_progress.append(x)
-                                x.status = 'in_progress'
-                                x.send_time = time.time()
-                                if x.msg['msg'] == 'send_snapshot':
-                                    transfers_in_progress.append(x)
+                            if x.msg['msg'] == 'send_snapshot':
+                                if len(transfers_in_progress) >= self.max_rsync_per_host:  # no more concurrent sends than this
+                                    continue
+                                if x.msg['ffs'] in transfers_in_progress: #only one send per receiving ffs!
+                                    continue
+                            elif x.msg['msg'] == 'new' and new_in_progress:  # one new at a time. 
+                                # Possibly optimization: One new per parent ffs
+                                # otherwise the readonly=off&back-on-again on non-main parents will cause issues
+                                continue
+                            while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
+                                self.logger.info(
+                                    "Delaying sending to %s", x.node_name)
+                                time.sleep(self.wait_time_between_requests)
+                            self.last_message_times[x.node_name] = time.time()
+                            x.job_id = self.job_id
+                            self.job_id += 1
+                            self.do_send(x)
+                            in_progress.append(x)
+                            x.status = 'in_progress'
+                            x.send_time = time.time()
+                            if x.msg['msg'] == 'send_snapshot':
+                                transfers_in_progress.add(x)
                         else:
                             break
 

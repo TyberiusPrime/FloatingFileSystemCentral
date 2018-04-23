@@ -278,6 +278,13 @@ def clean_up_clones(storage_prefix):
     clone_dir = get_clone_dir(storage_prefix)
     try:
         for fn in os.listdir('/' + clone_dir):
+            try:
+                ts = fn[:fn.find('_')]
+                ts = float(ts)
+                if time.time() - 3600 > ts:  #only clean if they're older than one hour...
+                    continue
+            except ValueError:
+                pass
             cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn, '-r'] # don't care if some auuto snapshot tried to snapshot these clones...
             p = subprocess.Popen(cmd).communicate()
     except OSError:
@@ -318,14 +325,18 @@ def msg_send_snapshot(msg):
                          stderr=subprocess.PIPE).communicate()  # ignore the error on this one.
 
         # step 0 - prepare a clone to rsync from
-        p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
-                             stderr=subprocess.PIPE)
-        stdout, stderr = p.communicate()
-        if p.returncode != 0:
-            if b'dataset does not exist' in stderr:
-                raise ValueError("invalid snapshot")
-            else:
-                raise ValueError("Could not clone. Error:%s" % stderr)
+        if msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
+            source_path = '/' + full_ffs_path + '@' + snapshot
+        else:
+            source_path = '/' + clone_dir + '/' + clone_name 
+            p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
+                                 stderr=subprocess.PIPE)
+            stdout, stderr = p.communicate()
+            if p.returncode != 0:
+                if b'dataset does not exist' in stderr:
+                    raise ValueError("invalid snapshot")
+                else:
+                    raise ValueError("Could not clone. Error:%s" % stderr)
 
         # step1 - set readonly=false on receiver
         cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
@@ -362,7 +373,7 @@ def msg_send_snapshot(msg):
 
         # step2: rsync
         rsync_cmd = {
-            'source_path': '/' + clone_dir + '/' + clone_name,
+            'source_path': source_path,
             'target_path': target_path,
             'target_host': target_host,
             'target_user': target_user,
@@ -394,7 +405,7 @@ def msg_send_snapshot(msg):
                 'error': 'set_properties_read_only_on',
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
             }
-        # step5: make a snapshot
+        # step5: make a snapshot on receiver
         p = subprocess.Popen(cmd,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
         #
@@ -410,6 +421,12 @@ def msg_send_snapshot(msg):
                 'error': 'snapshot_after_rsync',
                 'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
             }
+        #step 6: clean up *our* clone dir (close in time)
+        if not msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
+            p = subprocess.Popen(['sudo', 'zfs', 'destroy', clone_dir + '/' + clone_name, '-r'],
+                stderr=subprocess.PIPE)
+            stdout, stderr = p.communicate()
+            #output of step6 is ignored
         return {
             'msg': 'send_snapshot_done',
             'target_node': target_node,
