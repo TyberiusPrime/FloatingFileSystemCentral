@@ -121,7 +121,7 @@ class OutgoingMessages:
                             x.status = 'in_progress'
                             x.send_time = time.time()
                             if x.msg['msg'] == 'send_snapshot':
-                                transfers_in_progress.add(x)
+                                transfers_in_progress.add(x.msg['ffs'])
                         else:
                             break
 

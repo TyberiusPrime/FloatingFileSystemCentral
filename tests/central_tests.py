@@ -395,6 +395,7 @@ class StartupTests(EngineTests):
         self.assertTrue(e.faulted)
 
     def test_orphan_target_from_other_ffs_raises_inconsitency(self):
+        # there's at least one node that used to be the main for an ffs missing from the configuration
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
@@ -420,6 +421,53 @@ class StartupTests(EngineTests):
                              })
         self.assertRaises(engine.ManualInterventionNeeded, inner)
         self.assertTrue(e.faulted)
+
+    def test_no_main_but_remove_asap_on_all(self):
+        # 
+        e, outgoing_messages = self.ge()
+        self.assertFalse(e.startup_done)
+        e.incoming_client({'msg': 'startup', })
+        self.assertFalse(e.startup_done)
+        self.assertEqual(len(outgoing_messages), 2)
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'beta',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'readonly': 'on',
+                                 'ffs:main': 'off',
+                                 'ffs:remove_asap': 'on',
+                             }
+                             }
+                         }
+                         })
+        e.incoming_node({'msg': 'ffs_list',
+                         'from': 'alpha',
+                         'ffs': {
+                             'one': {'snapshots': [],
+                                     'properties': {
+                                 'readonly': 'on',
+                                 'ffs:main': 'off',
+                                 'ffs:remove_asap': 'on',
+                             }
+                             }
+                         }
+                         })
+        self.assertEqual(len(outgoing_messages), 2)
+        self.assertTrue('one' in e.model) # only get's moved afterwards...
+        self.assertTrue(e.is_ffs_remove_asap_all('one'))
+        self.assertMsgEqual(outgoing_messages[0], {
+            'msg': 'remove',
+            'to': 'alpha',
+            'ffs': 'one',
+        })
+        self.assertMsgEqual(outgoing_messages[1], {
+            'msg': 'remove',
+            'to': 'beta',
+            'ffs': 'one',
+        })
+
 
     def test_multiple_main_raises(self):
         e, outgoing_messages = self.ge()
@@ -4021,9 +4069,10 @@ class OutgoingMessageTests(unittest.TestCase):
         self.assertEqual(len(unsent), 0)
 
     def test_max_one_send_snapshot(self):
-        m = {'msg': 'send_snapshot'}
+        m = {'msg': 'send_snapshot', 'ffs': 'one'}
         om = OutgoingMessageForTesting()
         self.assertTrue(om.max_per_host > 1)
+        om.max_rsync_per_host = 1
         for i in range(om.max_per_host + 1):
             mx = m.copy()
             mx['i'] = i
@@ -4041,10 +4090,34 @@ class OutgoingMessageTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(len(unsent), om.max_per_host - 1)
 
+    def test_max_one_send_snapshot_for_one_ffs_irregardless_of_max_concurrent(self):
+        m = {'msg': 'send_snapshot', 'ffs': 'one'}
+        om = OutgoingMessageForTesting()
+        om.max_rsync_per_host = 5
+        self.assertTrue(om.max_per_host > 1)
+        for i in range(om.max_per_host + 1):
+            mx = m.copy()
+            mx['i'] = i
+            mx['snapshot'] = str(i)
+            om.send_message('alpha', {}, mx)
+        out = om.outgoing['alpha']
+        self.assertEqual(len(out), om.max_per_host + 1)
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(unsent), om.max_per_host)
+        self.assertEqual(unsent[0].msg['i'], 1)
+        om.job_returned(out[0].job_id, {'msg': 'send_snapshot_done'})
+        sent = [x for x in out if x.status != 'unsent']
+        unsent = [x for x in out if x.status == 'unsent']
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(unsent), om.max_per_host - 1)
+
+
     def test_mixed(self):
         om = OutgoingMessageForTesting()
         self.assertTrue(om.max_per_host > 1)
-        om.send_message('alpha', {}, {'msg': 'send_snapshot'})
+        om.send_message('alpha', {}, {'msg': 'send_snapshot', 'ffs': 'one'})
         om.send_message('alpha', {}, {'msg': 'deploy'})
         om.send_message('alpha', {}, {'msg': 'deploy'})
         out = om.outgoing['alpha']
@@ -4055,7 +4128,7 @@ class OutgoingMessageTests(unittest.TestCase):
         self.assertEqual(len(sent), 3)
         self.assertEqual(len(unsent), 0)
 
-        om.send_message('alpha', {}, {'msg': 'send_snapshot'})
+        om.send_message('alpha', {}, {'msg': 'send_snapshot', 'ffs': 'one'})
         sent = [x for x in out if x.status != 'unsent']
         unsent = [x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 3)
@@ -4894,8 +4967,6 @@ class FailureTests(unittest.TestCase):
     def test_permission_denied(self):
         raise NotImplementedError("Complain with 'ssh no worky")
 
-    def test_remove_asap_no_main_remaining(self):
-        raise NotImplemtedError()
 
 class PriorityTests(PostStartupTests):
     def test_non_int_prio_raises_on_starutp(self):

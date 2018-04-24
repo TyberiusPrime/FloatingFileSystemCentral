@@ -608,6 +608,8 @@ class Engine:
             return True
         if self.is_ffs_renaming(ffs):  # can be only one..
             return False
+        if self.is_ffs_remove_asap_all(ffs):
+            return False
         main = self.model[ffs]['_main']
         moving_to = self.model[ffs][main][
             'properties'].get('ffs:moving_to', '-')
@@ -618,6 +620,12 @@ class Engine:
 
     def is_ffs_removing_any(self, ffs):
         return any([node_info.get('removing', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
+
+    def is_ffs_remove_asap_all(self, ffs):
+        #no properties - we're moving, removing, something, anyhow not valid to test
+        return set([x['properties'].get('ffs:remove_asap', '-') for k, x in self.model[ffs].items() if not k.startswith('_') and 'properties' in x]) == set(['on'])
+
+
 
     def is_ffs_new_any(self, ffs):
         return any([node_info.get('_new', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
@@ -739,7 +747,7 @@ class Engine:
 
     def _check_main_and_target_consistency(self):
             for ffs in self.model:
-                if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs):
+                if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
                     main = self.model[ffs]['_main']
                     main_info = self.model[ffs][main]
                     for node, node_info in self.model[ffs].items():
@@ -760,7 +768,7 @@ class Engine:
     def _handle_remove_asap(self):
         for ffs in self.model:
             main = self.model[ffs]['_main']
-            for node in self.model[ffs]:
+            for node in sorted(self.model[ffs]):
                 if not node.startswith('_') and not self.is_readonly_node(node):
                     if self.model[ffs][node]['properties'].get('ffs:remove_asap', '-') == 'on':
                         if node == main:
@@ -847,8 +855,11 @@ class Engine:
                         else:
                             #if they're all to be removed any how.
                             #TODO: test case this!
-                            if set([x['properties'].get('ffs:remove-asap', '-') for x in node_ffs_info.values()]) == 'on':
-                                del self.model[ffs]
+                            #if set([x['properties'].get('ffs:remove_asap', '-') for k, x in node_ffs_info.items() if not k.startswith('_')]) == set(['on']):
+                            if self.is_ffs_remove_asap_all(ffs):
+                            #if set([x['properties'].get('ffs:remove_asap', '-') for k, x in node_ffs_info.items() if not k.startswith('_')]) == set(['on']):
+                                #del self.model[ffs]
+                                #.continue
                                 pass
                             else:
                                 self.fault(
@@ -960,7 +971,7 @@ class Engine:
                                 })
 
         for ffs, node_ffs_info in self.model.items():
-            if node_ffs_info['_main'] is None and not self.is_ffs_renaming(ffs):
+            if node_ffs_info['_main'] is None and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
                 raise CodingError("Main remained None")
 
     def _enforce_properties(self):
@@ -981,7 +992,7 @@ class Engine:
 
     def _prune_snapshots(self):
         for ffs in self.model.keys():
-            if not self.is_ffs_renaming(ffs):
+            if not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
                 self._prune_snapshots_for_ffs(ffs)
 
     def _prune_snapshots_for_ffs(self, ffs, restrict_to_node=None):
@@ -1041,7 +1052,7 @@ class Engine:
             return prio
 
         ffs_to_consider = [(ffs, node_ffs_info) for (ffs, node_ffs_info) in self.model.items() if
-                not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs)]
+                not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs)]
         for ffs, node_fss_info in sorted(ffs_to_consider, key=get_prio):
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
@@ -1075,7 +1086,7 @@ class Engine:
 
     def _capture_replicated_without_any_snapshots(self):
         for ffs, node_fss_info in self.model.items():
-            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs):
+            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs) or self.is_ffs_remove_asap_all(ffs):
                 continue
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
