@@ -90,6 +90,16 @@ class RPsTests(unittest.TestCase):
         os.makedirs(path)
         self.paths.add(path)
 
+    @classmethod
+    def setUpClass(cls):
+        shutil.copy('../node/home/node.py', '/home/ffs/node.py')
+        shutil.copy('../node/home/ssh.py', '/home/ffs/ssh.py')
+        shutil.copy('../node/home/robust_parallel_rsync.py', '/home/ffs/robust_parallel_rsync.py')
+        subprocess.check_call(['sudo', 'chmod', 'oug+x', '/home/ffs/ssh.py'])
+        subprocess.check_call(['sudo', 'chmod', 'oug+x', '/home/ffs/robust_parallel_rsync.py'])
+
+
+
     def tearDown(self):
         for p in self.paths:
             try:
@@ -635,6 +645,8 @@ class NodeTests(unittest.TestCase):
         shutil.copy('../node/home/node.py', '/home/ffs/node.py')
         shutil.copy('../node/home/ssh.py', '/home/ffs/ssh.py')
         shutil.copy('../node/home/robust_parallel_rsync.py', '/home/ffs/robust_parallel_rsync.py')
+        subprocess.check_call(['sudo', 'chmod', 'oug+x', '/home/ffs/ssh.py'])
+        subprocess.check_call(['sudo', 'chmod', 'oug+x', '/home/ffs/robust_parallel_rsync.py'])
 
     @classmethod
     def tearDownClass(cls):
