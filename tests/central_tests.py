@@ -3006,12 +3006,7 @@ class SnapshotPruningTests(EngineTests):
     def test_snapshot_removal_fails_due_to_clones(self):
         raise NotImplementedError()
 
-    def test_orphan_fix_with_nested_ensure_parents_are_present(self):
-        #can't have this
-        #ffs.py add_targets papers/adhikary amy
-        #ffs.py add_targets papers/adhikary/201720_Wortmann_and_Adhikary_Rel_in_TAMs rose
-        raise NotImplementedError()
-         
+        
 
 class ZpoolStatusChecks(EngineTests):
 
@@ -5256,14 +5251,12 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
 
-        def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
+    def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
         # line 1380, in get_snapshot_interval
         #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
         #builtins.KeyError: 'properties'
             raise NotImplementedError()
 
-    def test_filter_directories_per_target_host(self):
-        raise NotImplementedError()
 
 
 

@@ -88,7 +88,7 @@ class ClientTests(unittest.TestCase):
         if cls.engine_process.returncode is not None:
             raise ValueError("engine has gone away")
         p = subprocess.Popen([os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                                        '../../FloatingFileSystemClient/ffs.py')),
+                                                           '../../FloatingFileSystemClient/ffs.py')),
                               '--host=localhost',
                               '--port=47776',
                               '--server_key=' + server_key,
@@ -148,8 +148,8 @@ class ClientTests(unittest.TestCase):
             pass
         shutil.copy('../node/home/node.py', '/home/ffs/node.py')
         shutil.copy('../node/home/ssh.py', '/home/ffs/ssh.py')
-        shutil.copy('../node/home/robust_parallel_rsync.py', '/home/ffs/robust_parallel_rsync.py')
-
+        shutil.copy('../node/home/robust_parallel_rsync.py',
+                    '/home/ffs/robust_parallel_rsync.py')
 
         for root in [cls.get_test_prefix()[:-1], cls.get_test_prefix2()[:-1]]:
             p = subprocess.Popen(['sudo', 'zfs', 'destroy', root, '-R'],
@@ -159,7 +159,8 @@ class ClientTests(unittest.TestCase):
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'ffs:root=on', root])
 
-        for n in ['rename_test', 'capture_test', 'capture_test2', 'capture_test3', 'capture_test4', 'orphan', 'remove_test', 'chown_test',
+        for n in ['rename_test', 'capture_test', 'capture_test2', 'capture_test3', 'capture_test4', 'orphan',
+                  'orphan/child', 'remove_test', 'chown_test',
                   'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main',
                   'time_based_snapshot_tests', 'set_prio_test']:
             subprocess.check_call(
@@ -226,7 +227,7 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(os.path.exists('/' + self.get_test_prefix() + 'one'))
         self.assertTrue('one' in self.list_ffs())
         self.assertEqual(
-                get_file_rights('/' + self.get_test_prefix() + 'one') & 0o777, 0o751)
+            get_file_rights('/' + self.get_test_prefix() + 'one') & 0o777, 0o751)
 
     def test_new_replicated(self):
         self.assertFalse(os.path.exists(
@@ -501,27 +502,26 @@ class ClientTests(unittest.TestCase):
         with open(fn) as op:
             self.assertEqual(op.read(), 'hello')
 
-
     def test_capture_auto_detect_from_current_path(self):
         with open('/' + self.get_test_prefix()[:-1] + '/capture_test3/one', 'w') as op:
             op.write("test")
         self.assertFalse(os.listdir('/' + self.get_test_prefix()
                                     [:-1] + '/capture_test3/.zfs/snapshot'))
-        self.run_expect_ok(['capture',], cwd='/' + self.get_test_prefix()[:-1] + '/capture_test3/')
+        self.run_expect_ok(['capture', ], cwd='/' +
+                           self.get_test_prefix()[:-1] + '/capture_test3/')
         self.client_wait_for_empty_que()
         self.assertTrue(os.listdir('/' + self.get_test_prefix()
                                    [:-1] + '/capture_test3/.zfs/snapshot'))
-        
 
-    
     def test_capture_only_if_changed(self):
-        # briefly: run zfs snapshot. 
+        # briefly: run zfs snapshot.
         # compare using zfs diff to previous snapshot.
         # if no files changed
         # -> throw away new snapshot
         # if this is time based, how do we prevent trying to take a snapshot the very next minute?
         # we could store the last-snapshot-tried-time in ffs:last_snapshot_time or such
-        # and then try again after 'ffs:interval'? Of course that means we'll take a snapshot much later in the worst case?
+        # and then try again after 'ffs:interval'? Of course that means we'll
+        # take a snapshot much later in the worst case?
         raise NotImplementedError()
 
     def test_slash_at_end_of_ffs(self):
@@ -536,23 +536,47 @@ class ClientTests(unittest.TestCase):
 
         self.run_expect_ok(['add_targets', 'capture_test4/', 'B'])
 
+class InternalClientTests(unittest.TestCase):
+    def test_orphan_fix_with_nested_ensure_parents_are_present(self):
+        import sys
+        sys.path.insert(0, '../../FloatingFileSystemClient')
+        import ffs
+        client = ffs.FFSClient('localhost', 9999)
+        r = list(
+            client.fix_orphans({
+                    'a': ['A', 'C'], # so these are *not* orphans
+                    'a/b': ['A', 'C'],
+                    'a/b/c': ['A'],
+                    'b': ['A', 'B'],
+                }, ['B']))
+        self.assertEqual(r[0], ('a', 'B'))
+        self.assertEqual(r[1], ('a/b', 'B'))
+        self.assertEqual(r[2], ('a/b/c', 'B'))
+        self.assertEqual(len(r), 3)
+
+
 class InstallerTests(unittest.TestCase):
+
     def test_install_checks_ownership_of_home_ffs_to_be_ffs(self):
         import sys
         sys.path.insert(0, '../../FloatingFileSystemClient')
         import ffs
+
         class DummyClient():
             pass
+
         def restore():
             subprocess.check_call(['sudo', 'chmod', '0755', '/home/ffs'])
             subprocess.check_call(['sudo', 'chmod', '0755', '/home/ffs/.ssh'])
-            subprocess.check_call(['sudo', 'chmod', '0644', '/home/ffs/.ssh/authorized_keys'])
- 
+            subprocess.check_call(
+                ['sudo', 'chmod', '0644', '/home/ffs/.ssh/authorized_keys'])
+
         installer = ffs.FFS_Installer(DummyClient())
         try:
             restore()
             installer.check_ffs_home_rights()
             subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs'])
+
             def inner():
                 installer.check_ffs_home_rights()
             self.assertRaises(ValueError, inner)
@@ -560,14 +584,12 @@ class InstallerTests(unittest.TestCase):
             subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs/.ssh'])
             self.assertRaises(ValueError, inner)
             restore()
-            subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs/.ssh/authorized_keys'])
+            subprocess.check_call(
+                ['sudo', 'chmod', '0777', '/home/ffs/.ssh/authorized_keys'])
             self.assertRaises(ValueError, inner)
 
         finally:
             restore()
-
-
-
 
 
 class CleanChildProcesses:

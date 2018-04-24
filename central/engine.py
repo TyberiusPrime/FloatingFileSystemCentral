@@ -1208,7 +1208,6 @@ class Engine:
             self.model[ffs]['_main'] = self.model[ffs]['_moving']
 
     def node_new_done(self, msg):
-        print("new done")
         node = msg['from']
         if msg['ffs'] not in self.model:
             self.fault("node_new_done from ffs not in model.",
