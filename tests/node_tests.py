@@ -1537,5 +1537,8 @@ class NodeTests(unittest.TestCase):
     def test_rename_relocates_into_other_parent_but_parent_not_present(self):
         raise NotImplementedError()
 
+    def test_send_from_snapshot_not_clone(self):
+        raise NotImplementedError()
+
 if __name__ == '__main__':
     unittest.main()

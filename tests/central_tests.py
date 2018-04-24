@@ -4990,6 +4990,7 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[5], msgs[0])
 
     def test_ignore_callbacks(self):
+        # what is this? - config option?
         raise NotImplementedError()
 
     def test_readonly_hosts(self):
@@ -5020,6 +5021,12 @@ class PriorityTests(PostStartupTests):
         # line 1380, in get_snapshot_interval
         #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
         #builtins.KeyError: 'properties'
+        raise NotImplementedError()
+
+    def test_send_snapshots_from_snapshot_not_clone_readonly_hosts(self):
+        raise NotImplementedError()
+
+    def test_filter_directories_per_target_host(self):
         raise NotImplementedError()
 
 
