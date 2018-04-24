@@ -275,13 +275,14 @@ def msg_chown_and_chmod(msg):
 
 
 def clean_up_clones(storage_prefix):
+    return 
     clone_dir = get_clone_dir(storage_prefix)
     try:
         for fn in os.listdir('/' + clone_dir):
             try:
                 ts = fn[:fn.find('_')]
                 ts = float(ts)
-                if time.time() - 3600 > ts:  #only clean if they're older than one hour...
+                if time.time() - 10 * 3600 > ts:  #only clean if they're older than ten hours...
                     continue
             except ValueError:
                 pass
@@ -326,7 +327,7 @@ def msg_send_snapshot(msg):
 
         # step 0 - prepare a clone to rsync from
         if msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
-            source_path = '/' + full_ffs_path + '@' + snapshot
+            source_path = '/' + full_ffs_path + '/.zfs/snapshot/' + snapshot
         else:
             source_path = '/' + clone_dir + '/' + clone_name 
             p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
