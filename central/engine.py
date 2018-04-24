@@ -9,7 +9,8 @@ from collections import OrderedDict
 from . import ssh_message_que
 from . import default_config
 from .exceptions import (StartupNotDone, EngineFaulted, SSHConnectFailed, ManualInterventionNeeded, CodingError, InconsistencyError,
-                         InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError,)
+                         InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError, 
+                         NodeIsReadonly)
 
 
 class needs_startup:
@@ -263,8 +264,9 @@ class Engine:
             if not isinstance(msg['targets'], list):
                 self.fault("config.decide_targets returned non-list")
         targets = [self.config.find_node(x) for x in msg['targets']]
-        if any([self.is_readonly_node(node) for node in targets]):
-            raise ValueError("Read only node: %s" % node)
+        for node in targets:
+            if self.is_readonly_node(node):
+                raise NodeIsReadonly(node, 'target')
         for x in targets:
             if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
@@ -315,7 +317,9 @@ class Engine:
         if ffs not in self.model:
             raise ValueError("FFs unknown")
         if target not in self.model[ffs]:
-            raise ValueError("Target not in list of targets")
+            raise InvalidTarget("%s not in list of targets" % target)
+        if self.is_readonly_node(target):
+            raise ValueError("Target is readonly node")
         if self.model[ffs][target].get('_new', False):
             raise NewInProgress(
                 "Target is still new - can not remove. Try again later.")
@@ -449,8 +453,11 @@ class Engine:
                 "This ffs is moving to a different main - you should not have been able to change the files anyhow")
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
+        main = self.model[ffs]['_main']
+        if self.is_readonly_node(main):
+            raise NodeIsReadonly(main, 'main')
         self.send(
-            self.model[ffs]['_main'],
+            main,
             {
                 'msg': 'chown_and_chmod',
                 'ffs': ffs,
@@ -495,6 +502,10 @@ class Engine:
             raise RenameInProgress()
         if self.is_ffs_new_any(ffs):
             raise NewInProgress()
+        if self.is_readonly_node(current_main):
+            raise NodeIsReadonly(current_main, 'main')
+        if self.is_readonly_node(target):
+            raise ValueError("Target is on readonly node")
         self.model[ffs]['_moving'] = target
         # self.model[ffs][current_main]['properties']['readonly'] = 'on'
         self.config.inform("Starting move for: %s" % ffs)
@@ -532,6 +543,9 @@ class Engine:
             raise RenameInProgress()
         if any([node_info.get('_new', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')]):
             raise NewInProgress()
+        for node in self.model[ffs]:
+            if not node.startswith('_') and self.is_readonly_node(node):
+                raise NodeIsReadonly(node)
 
         self.model[ffs]['_renaming'] = ('to', new_name)
         self.model[new_name] = {'_renaming': ('from', ffs)}
@@ -566,6 +580,9 @@ class Engine:
         else:
             interval = str(interval)
         # store on evyr node in order to remain stored on move
+        main = self.model[ffs]['_main']
+        if self.is_readonly_node(main):
+            raise NodeIsReadonly(main, 'main')
         for node in sorted(self.model[ffs]):
             if not node.startswith('_'):
                 self.send(node, {
@@ -590,7 +607,10 @@ class Engine:
         if not isinstance(priority, int) and priority != '-':
             raise ValueError("priority parameter must be an integer")
         priority = str(priority)
-        # store on evyr node in order to remain stored on move
+        main = self.model[ffs]['_main']
+        if self.is_readonly_node(main):
+            raise NodeIsReadonly(main, 'main')
+        # store on every node in order to remain stored on move
         for node in sorted(self.model[ffs]):
             if not node.startswith('_'):
                 self.send(node, {

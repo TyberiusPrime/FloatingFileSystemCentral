@@ -50,3 +50,7 @@ class InvalidTarget(KeyError):
 
 class RestartError(Exception):
     pass
+
+class NodeIsReadonly(Exception):
+    def __init__(self, node, kind=''):
+        Exception.__init__(self, "%s%s is readonly" % (node, '(%s)' % kind if kind else ''))

@@ -77,7 +77,7 @@ class EngineTests(unittest.TestCase):
                 return {}
         return NobodyConfig()
 
-    def get_engine(self, quick_ffs_definition, config=None):
+    def get_engine(self, quick_ffs_definition, config=None, additional_node_config = None):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -95,6 +95,8 @@ class EngineTests(unittest.TestCase):
         for name in quick_ffs_definition:
             nodes[name] = {'storage_prefix': '/' + name,
                            'hostname': name, 'public_key': b'#no such key'}
+            if additional_node_config and name in additional_node_config:
+                nodes[name].update(additional_node_config[name])
         if config is None:
             config = self._get_test_config()
         config._nodes = nodes
@@ -1892,7 +1894,7 @@ class RemoveTarget(PostStartupTests):
         def inner():
             e.incoming_client(
                 {'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
-        self.assertRaises(ValueError, inner)
+        self.assertRaises(engine.InvalidTarget, inner)
 
     def test_find_node(self):
         def find_node(name):
@@ -4967,6 +4969,147 @@ class FailureTests(unittest.TestCase):
     def test_permission_denied(self):
         raise NotImplementedError("Complain with 'ssh no worky")
 
+class ReadOnlyHostTests(PostStartupTests):
+
+    def ge(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['0'], 'two': ['1']},
+            'beta':  {'one': ['0'], '_two': ['1', '2']},
+            'gamma': {'_four': ['4']},
+        }, additional_node_config = {
+                'alpha': {'readonly_node': True}})
+        return engine, outgoing_messages
+
+    def test_readonly_hosts(self):
+        engine, outgoing_messages = self.ge()
+        self.assertTrue('one' in engine.model)
+        self.assertTrue(engine.model['one']['_main'] == 'alpha')
+        self.assertFalse('alpha' in engine.model['two'])
+        self.assertEqual(len(outgoing_messages), 0)
+
+    def test_new_readonly_node_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'new',
+            'ffs': 'three',
+            'targets': ['alpha', 'beta']})
+        self.assertRaises(engine.NodeIsReadonly, inner)
+        e.incoming_client({"msg": 'new',
+            'ffs': 'three',
+            'targets': ['beta']})
+        self.assertEqual(len(outgoing_messages), 1)
+ 
+    def test_set_interval_read_only_node_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'set_snapshot_interval',
+            'ffs': 'one',
+            'interval': 500})
+        self.assertRaises(engine.NodeIsReadonly, inner)
+        e.incoming_client({"msg": 'set_snapshot_interval',
+            'ffs': 'two',
+            'interval': 500})
+        self.assertEqual(len(outgoing_messages), 1)
+        e.incoming_client({"msg": 'set_snapshot_interval',
+            'ffs': 'four',
+            'interval': 500})
+        self.assertEqual(len(outgoing_messages), 2)
+  
+    def test_chown_read_only_main_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'chown_and_chmod',
+            'ffs': 'one',
+            'sub_path': '/',
+            })
+        self.assertRaises(engine.NodeIsReadonly, inner)
+        e.incoming_client({"msg": 'chown_and_chmod',
+            'ffs': 'two',
+            'sub_path': '/',
+            })
+        self.assertEqual(len(outgoing_messages), 1)
+
+    def test_remove_readonly_node_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'remove_target',
+            'ffs': 'two',
+            'target': 'alpha'
+            })
+        self.assertRaises(engine.InvalidTarget, inner)  #not on this target
+        def inner():
+            e.incoming_client({"msg": 'remove_target',
+            'ffs': 'one',
+            'target': 'alpha'
+            })
+        self.assertRaises(ValueError, inner)  #is main
+
+
+        e.incoming_client({"msg": 'remove_target',
+            'ffs': 'one',
+            'target': 'beta'
+            })
+        
+        self.assertEqual(len(outgoing_messages), 1)
+
+    def test_set_priority_readonly_node_raises(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'set_priority',
+            'ffs': 'one',
+            'priority': 500})
+        self.assertRaises(engine.NodeIsReadonly, inner)
+        e.incoming_client({"msg": 'set_priority',
+            'ffs': 'two',
+            'priority': 500})
+        self.assertEqual(len(outgoing_messages), 1)
+        e.incoming_client({"msg": 'set_priority',
+            'ffs': 'four',
+            'priority': 500})
+        self.assertEqual(len(outgoing_messages), 2)
+
+    def test_no_moving_readonly_node(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'move_main',
+            'ffs': 'one',
+            'target': 'beta'})
+        self.assertRaises(engine.NodeIsReadonly, inner)
+        def inner():
+            e.incoming_client({"msg": 'move_main',
+            'ffs': 'two',
+            'target': 'alpha'})
+        self.assertRaises(engine.InvalidTarget, inner)
+
+    def test_no_renaming_readonly_node(self):
+        e, outgoing_messages = self.ge()
+        def inner():
+            e.incoming_client({"msg": 'rename',
+            'ffs': 'one',
+            'new_name': 'three'})
+        self.assertRaises(engine.NodeIsReadonly, inner)
+
+    def test_send_snapshots_from_snapshot_not_clone_readonly_hosts(self):
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['0','1'], 'two': ['1']},
+            'beta':  {'one': ['0'], '_two': ['1', '2']},
+            'gamma': {'_four': ['4']},
+        }, additional_node_config = {
+                'alpha': {'readonly_node': True}})
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
+            'msg': 'send_snapshot',
+            'ffs': 'one',
+            'target_ffs': 'one',
+            'to': 'alpha',
+            'snapshot': '1',
+            'target_host': 'beta',
+            'target_node': 'beta',
+            'source_is_readonly': True,
+        })
+
+ 
+
 
 class PriorityTests(PostStartupTests):
     def test_non_int_prio_raises_on_starutp(self):
@@ -5063,38 +5206,10 @@ class PriorityTests(PostStartupTests):
     def test_ignore_callbacks(self):
         # what is this? - config option?
         raise NotImplementedError()
-
-    def test_readonly_hosts(self):
-        raise NotImplementedError()
-
-
-    def test_new_readonly_node_raises(self):
-        raise NotImplementedError()
-
-    def test_set_interval_read_only_node_raises(self):
-        raise NotImplementedError()
-    def test_set_chown_read_only_main_raises(self):
-        raise NotImplementedError()
-    def test_remove_readonly_node_raises(self):
-        raise NotImplementedError()
-    def test_set_priority_readonly_node_raises(self):
-        raise NotImplementedError()
-    def test_no_moving_readonly_node(self):
-        raise NotImplementedError()
-    def test_no_renaming_readonly_node(self):
-        raise NotImplementedError()
-
-    def test_remove_asap_on_all(self): 
-        #see around line 740 in engine.py
-        raise NotImplementedError()
-
     def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
         # line 1380, in get_snapshot_interval
         #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
         #builtins.KeyError: 'properties'
-        raise NotImplementedError()
-
-    def test_send_snapshots_from_snapshot_not_clone_readonly_hosts(self):
         raise NotImplementedError()
 
     def test_filter_directories_per_target_host(self):
