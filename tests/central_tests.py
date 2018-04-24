@@ -3001,11 +3001,6 @@ class SnapshotPruningTests(EngineTests):
             'snapshot': '1',
             'to': 'beta'
         })
-
-
-    def test_snapshot_removal_fails_due_to_clones(self):
-        raise NotImplementedError()
-
         
 
 class ZpoolStatusChecks(EngineTests):
@@ -3777,8 +3772,7 @@ class TestStartupTriggeringActions(EngineTests):
             'alpha': {'_one': ['1', '1b', '2', '3', ]},
             'beta':  {'one': ['-1', '0']},
             'gamma': {},
-        },
-            config=cfg)
+        }, config=cfg)
         self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'remove_snapshot',
@@ -4833,7 +4827,7 @@ class TimeBasedSnapshotTests(PostStartupTests):
         # fake an outgoing snapshot
         e.model['six']['beta']['upcoming_snapshots'] = ['blocks_auto']
         e.one_minute_passed()
-        # no snapshot before
+        # no snapshot before -> make one
         self.assertTrue(e.model['two']['beta']['upcoming_snapshots'])
         # unparsable - not ffs before.
         self.assertTrue(e.model['one']['beta']['upcoming_snapshots'])
@@ -4892,6 +4886,17 @@ class TimeBasedSnapshotTests(PostStartupTests):
             'to': 'alpha'
         })
         
+    def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
+        # line 1380, in get_snapshot_interval
+        #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
+        #builtins.KeyError: 'properties'
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:snapshot_interval', '100')]},
+            'alpha':  {'one': ['1', ('ffs:snapshot_interval', '50')]},
+        })
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['alpha']})
+        e.one_minute_passed()
+
  
 
 
@@ -4977,7 +4982,7 @@ class ClientFacingTests(PostStartupTests):
         self.assertRaises(engine.StartupNotDone, inner)
 
 
-class FailureTests(unittest.TestCase):
+class FailureTests(PostStartupTests):
 
     def test_deploy_failed(self):
         raise NotImplementedError("Make sure complaint is spot on")
@@ -4992,10 +4997,41 @@ class FailureTests(unittest.TestCase):
 
     def test_remove_target_failed_dataset_is_busy(self):
         # just set remove asap...
-        raise NotImplementedError()
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1']},
+            'alpha':  {'one': ['1']},
+        })
+        self.assertFalse(e.model['one']['alpha'].get("removing", False))
+        e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(outgoing_messages[0], {'msg': 'remove', 'to': 'alpha', 'ffs': 'one'})
+        self.assertTrue('alpha' in e.model['one'])
+        self.assertTrue(e.model['one']['alpha'].get("removing", False))
+        e.incoming_node({'msg': 'remove_failed', 'reason': 'target_is_busy', 'ffs': 'one', 'from': 'alpha'})
+        self.assertFalse('alpha' in e.model['one'])
 
     def test_permission_denied(self):
         raise NotImplementedError("Complain with 'ssh no worky")
+
+    def test_snapshot_removal_fails_due_to_clones(self):
+        cfg = self._get_test_config()
+        informs = []
+        complaints = []
+        cfg.inform = lambda x: informs.append(x)
+        cfg.complain = lambda x: complaints.append(x)
+
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['0']},
+            'beta':  {'one': ['-1', '0']},
+            'gamma': {},
+        }, config=cfg)
+        self.assertEqual(len(outgoing_messages), 1)
+        informs.clear()
+        e.incoming_node({'msg': 'remove_snapshot_failed', 'ffs': 'one', 'snapshot': '-1', 'from': 'beta', 'error_msg': 'Snapshot had dependent clones.'})
+        self.assertFalse(e.faulted)
+        self.assertEqual(len(informs), 1)
+        self.assertEqual(len(complaints), 0)
+
 
 class ReadOnlyHostTests(PostStartupTests):
 
@@ -5250,12 +5286,6 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[3], msgs[4])
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
-
-    def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
-        # line 1380, in get_snapshot_interval
-        #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
-        #builtins.KeyError: 'properties'
-            raise NotImplementedError()
 
 
 

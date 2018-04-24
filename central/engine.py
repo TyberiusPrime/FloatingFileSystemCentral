@@ -631,6 +631,8 @@ class Engine:
         if self.is_ffs_remove_asap_all(ffs):
             return False
         main = self.model[ffs]['_main']
+        if '_new' in self.model[ffs][main]:
+            return False
         moving_to = self.model[ffs][main][
             'properties'].get('ffs:moving_to', '-')
         if moving_to != '-':
@@ -1335,14 +1337,17 @@ class Engine:
         del self.model[ffs][node]
 
     def node_remove_failed(self, msg):
+        node = msg['from']
+        ffs = msg['ffs']
         if msg['reason'] == 'target_is_busy':
             # just keep it in 'removing' status (or already removed).
             # the node will have set ffs:remove_asap=on and that will retrigger
             # removal upon startup
-            pass
+            del self.model[ffs][node]
         elif msg['reason'] == 'target_does_not_exist':
             # most likely a repeated request from the user
             # ignore
+            del self.model[ffs][node]
             pass
         else:
             self.fault(
@@ -1365,7 +1370,7 @@ class Engine:
             self.model[ffs][node]['snapshots'].remove(msg['snapshot'])
 
     def node_remove_snapshot_failed(self, msg):
-        self.config.complain("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
+        self.config.inform("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
                              (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
         self.logger.error("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
                           (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
@@ -1420,33 +1425,34 @@ class Engine:
         if not self.faulted:
             now = time.time()
             for ffs, ffs_info in self.model.items():
-                iv = self.get_snapshot_interval(ffs)
-                if iv and iv > 0:
-                    self.logger.info("Checking snapshot interval for %s, interval=%ss", ffs, iv)
-                    main = ffs_info['_main']
-                    do_snapshot = False
-                    if ffs_info[main]['upcoming_snapshots']:
-                        # never auto snapshot while we're lagging behind.
-                        self.logger.info("No auto snapshot, lagging behind: %s: %s", ffs, ffs_info[main]['upcoming_snapshots'])
-                        pass
-                    else:
-                        if len(ffs_info[main]['snapshots']) == 0:
-                            self.logger.info("No snapshot so far, %s", ffs)
-                            do_snapshot = True
+                if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_new_any(ffs):
+                    iv = self.get_snapshot_interval(ffs)
+                    if iv and iv > 0:
+                        self.logger.info("Checking snapshot interval for %s, interval=%ss", ffs, iv)
+                        main = ffs_info['_main']
+                        do_snapshot = False
+                        if ffs_info[main]['upcoming_snapshots']:
+                            # never auto snapshot while we're lagging behind.
+                            self.logger.info("No auto snapshot, lagging behind: %s: %s", ffs, ffs_info[main]['upcoming_snapshots'])
+                            pass
                         else:
-                            try:
-                                snapshot_time = self.parse_time_from_snapshot(
-                                    ffs_info[main]['snapshots'][-1]
-                                )
-                                self.logger.info("Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
-                                if snapshot_time + (iv) < now:
-                                    self.logger.info("Auto-snapshot: %s" % ffs)
-                                    do_snapshot = True
-                            except ValueError:  # could not parse time, assume we need to redo it
+                            if len(ffs_info[main]['snapshots']) == 0:
+                                self.logger.info("No snapshot so far, %s", ffs)
                                 do_snapshot = True
-                                pass
-                        if do_snapshot:
-                            self.do_capture(ffs, False, 'auto')
+                            else:
+                                try:
+                                    snapshot_time = self.parse_time_from_snapshot(
+                                        ffs_info[main]['snapshots'][-1]
+                                    )
+                                    self.logger.info("Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
+                                    if snapshot_time + (iv) < now:
+                                        self.logger.info("Auto-snapshot: %s" % ffs)
+                                        do_snapshot = True
+                                except ValueError:  # could not parse time, assume we need to redo it
+                                    do_snapshot = True
+                                    pass
+                            if do_snapshot:
+                                self.do_capture(ffs, False, 'auto')
             return True
         return False
 
