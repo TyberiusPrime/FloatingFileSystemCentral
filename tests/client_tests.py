@@ -88,7 +88,7 @@ class ClientTests(unittest.TestCase):
         if cls.engine_process.returncode is not None:
             raise ValueError("engine has gone away")
         p = subprocess.Popen([os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                                           '../../FloatingFileSystemClient/ffs.py')),
+                                                        '../../FloatingFileSystemClient/ffs.py')),
                               '--host=localhost',
                               '--port=47776',
                               '--server_key=' + server_key,
@@ -514,10 +514,6 @@ class ClientTests(unittest.TestCase):
         
 
     
-    def test_install_checks_ownership_of_home_ffs_to_be_ffs(self):
-        raise NotImplementedError()
-
-
     def test_capture_only_if_changed(self):
         # briefly: run zfs snapshot. 
         # compare using zfs diff to previous snapshot.
@@ -539,6 +535,39 @@ class ClientTests(unittest.TestCase):
                                    [:-1] + '/capture_test4/.zfs/snapshot'))
 
         self.run_expect_ok(['add_targets', 'capture_test4/', 'B'])
+
+class InstallerTests(unittest.TestCase):
+    def test_install_checks_ownership_of_home_ffs_to_be_ffs(self):
+        import sys
+        sys.path.insert(0, '../../FloatingFileSystemClient')
+        import ffs
+        class DummyClient():
+            pass
+        def restore():
+            subprocess.check_call(['sudo', 'chmod', '0755', '/home/ffs'])
+            subprocess.check_call(['sudo', 'chmod', '0755', '/home/ffs/.ssh'])
+            subprocess.check_call(['sudo', 'chmod', '0644', '/home/ffs/.ssh/authorized_keys'])
+ 
+        installer = ffs.FFS_Installer(DummyClient())
+        try:
+            restore()
+            installer.check_ffs_home_rights()
+            subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs'])
+            def inner():
+                installer.check_ffs_home_rights()
+            self.assertRaises(ValueError, inner)
+            restore()
+            subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs/.ssh'])
+            self.assertRaises(ValueError, inner)
+            restore()
+            subprocess.check_call(['sudo', 'chmod', '0777', '/home/ffs/.ssh/authorized_keys'])
+            self.assertRaises(ValueError, inner)
+
+        finally:
+            restore()
+
+
+
 
 
 class CleanChildProcesses:
