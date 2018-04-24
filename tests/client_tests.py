@@ -159,7 +159,7 @@ class ClientTests(unittest.TestCase):
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'ffs:root=on', root])
 
-        for n in ['rename_test', 'capture_test', 'capture_test2', 'orphan', 'remove_test', 'chown_test',
+        for n in ['rename_test', 'capture_test', 'capture_test2', 'capture_test3', 'capture_test4', 'orphan', 'remove_test', 'chown_test',
                   'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main',
                   'time_based_snapshot_tests', 'set_prio_test']:
             subprocess.check_call(
@@ -503,7 +503,15 @@ class ClientTests(unittest.TestCase):
 
 
     def test_capture_auto_detect_from_current_path(self):
-        raise NotImplementedError()
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test3/one', 'w') as op:
+            op.write("test")
+        self.assertFalse(os.listdir('/' + self.get_test_prefix()
+                                    [:-1] + '/capture_test3/.zfs/snapshot'))
+        self.run_expect_ok(['capture',], cwd='/' + self.get_test_prefix()[:-1] + '/capture_test3/')
+        self.client_wait_for_empty_que()
+        self.assertTrue(os.listdir('/' + self.get_test_prefix()
+                                   [:-1] + '/capture_test3/.zfs/snapshot'))
+        
 
     
     def test_install_checks_ownership_of_home_ffs_to_be_ffs(self):
@@ -521,7 +529,16 @@ class ClientTests(unittest.TestCase):
         raise NotImplementedError()
 
     def test_slash_at_end_of_ffs(self):
-        raise NotImplementedError()
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test4/one', 'w') as op:
+            op.write("test")
+        self.assertFalse(os.listdir('/' + self.get_test_prefix()
+                                    [:-1] + '/capture_test4/.zfs/snapshot'))
+        self.run_expect_ok(['capture', 'capture_test4/'])
+        self.client_wait_for_empty_que()
+        self.assertTrue(os.listdir('/' + self.get_test_prefix()
+                                   [:-1] + '/capture_test4/.zfs/snapshot'))
+
+        self.run_expect_ok(['add_targets', 'capture_test4/', 'B'])
 
 
 class CleanChildProcesses:
