@@ -2,6 +2,7 @@ import json
 import pprint
 from twisted.internet import reactor, protocol, error
 import time
+import os
 from .exceptions import SSHConnectFailed, ManualInterventionNeeded
 
 
@@ -89,13 +90,21 @@ class OutgoingMessages:
         return sorted(messages, key=key)
 
     def send_if_possible(self):
+        def any_parent_being_sent(ffs, new_in_progress):
+            suffix, _ = os.path.split(ffs)
+            while suffix:
+                if suffix in new_in_progress:
+                    return True
+                suffix, _ = os.path.split(suffix)
+            return False
+
         for dummy_node_name, outbox in self.outgoing.items():
             unsent = [x for x in outbox if x.status == 'unsent']
             in_progress = [x for x in outbox if x.status == 'in_progress']
             transfers_in_progress = set([
                 x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'send_snapshot'])
             new_in_progress = [
-                x for x in in_progress if x.msg['msg'] == 'new']
+                x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'new']
             if unsent:
                 if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
                     for x in self.prioritize(unsent):
@@ -105,7 +114,7 @@ class OutgoingMessages:
                                     continue
                                 if x.msg['ffs'] in transfers_in_progress: #only one send per receiving ffs!
                                     continue
-                            elif x.msg['msg'] == 'new' and new_in_progress:  # one new at a time. 
+                            elif x.msg['msg'] == 'new' and any_parent_being_sent(x.msg['ffs'], new_in_progress):  # one new at a time. 
                                 # Possibly optimization: One new per parent ffs
                                 # otherwise the readonly=off&back-on-again on non-main parents will cause issues
                                 continue
@@ -122,6 +131,8 @@ class OutgoingMessages:
                             x.send_time = time.time()
                             if x.msg['msg'] == 'send_snapshot':
                                 transfers_in_progress.add(x.msg['ffs'])
+                            if x.msg['msg'] == 'new':
+                                new_in_progress.append(x.msg['ffs'])
                         else:
                             break
 

@@ -77,7 +77,7 @@ class EngineTests(unittest.TestCase):
                 return {}
         return NobodyConfig()
 
-    def get_engine(self, quick_ffs_definition, config=None, additional_node_config = None):
+    def get_engine(self, quick_ffs_definition, config=None, additional_node_config = None, sender_cls = FakeMessageSender):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -102,7 +102,7 @@ class EngineTests(unittest.TestCase):
         config._nodes = nodes
         config = default_config.CheckedConfig(config)
 
-        fm = FakeMessageSender()
+        fm = sender_cls()
         e = engine.Engine(
             config,
             fm,
@@ -1150,8 +1150,49 @@ class NewTests(PostStartupTests):
         def inner():
             e.incoming_client(
                 {"msg": 'add_targets', 'ffs': 'one/two', 'targets': ['beta']})
+
         self.assertRaises(ValueError, inner)
-        
+
+    def test_nested_creation_delayed_until_parent_has_been_created(self):
+        # basically, make shu, then shu/sha in rapid succession
+        # can't have the second new send to the node before the first new returned
+        # otherwise we run into mount problems / race condidtions with the readonly
+        # on non-main targets
+        # easy solution: only process one new at a time?
+        cfg = self._get_test_config()
+        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        omtf = OutgoingMessageForTesting()
+        def om():
+            return omtf 
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1'], '_two': ['1']},
+            'beta': {},
+        }, sender_cls = om)
+        e.incoming_client({"msg": 'new', 'ffs': 'one/a', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        e.incoming_client({"msg": 'new', 'ffs': 'two/b', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        e.incoming_client({"msg": 'new', 'ffs': 'three', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client({"msg": 'new', 'ffs': 'three/c', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client({"msg": 'new', 'ffs': 'three/d', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client({"msg": 'new', 'ffs': 'three/d/e', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'two/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/c', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/d', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+
+
 def remove_snapshot_from_message(msg):
     msg = msg.copy()
     if 'snapshot' in msg:
@@ -2963,14 +3004,6 @@ class SnapshotPruningTests(EngineTests):
 
 
     def test_snapshot_removal_fails_due_to_clones(self):
-        raise NotImplementedError()
-
-    def test_nested_creation_delayed_until_parent_has_been_created(self):
-        # basically, make shu, then shu/sha in rapid succession
-        # can't have the second new send to the node before the first new returned
-        # otherwise we run into mount problems / race condidtions with the readonly
-        # on non-main targets
-        # easy solution: only process one new at a time?
         raise NotImplementedError()
 
     def test_orphan_fix_with_nested_ensure_parents_are_present(self):
@@ -5096,6 +5129,7 @@ class ReadOnlyHostTests(PostStartupTests):
             'gamma': {'_four': ['4']},
         }, additional_node_config = {
                 'alpha': {'readonly_node': True}})
+
         self.assertEqual(len(outgoing_messages), 1)
         self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
@@ -5108,6 +5142,25 @@ class ReadOnlyHostTests(PostStartupTests):
             'source_is_readonly': True,
         })
 
+    def test_ignore_callbacks(self):
+        # an ignore callback is a function that allows you to *hide* ffs
+        # from the engine
+        # this is usefull for example if you have a readonly host
+        # that you just need to pull some data from before final decomission
+        # (think broken zpool that can only be imported readonly)
+        # but it has an ffs (main) that you need to work on
+        # on another host, and now you want to ovoid
+        # the 'two mains, fix this' issue
+        engine, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['0','1'], 'two': ['1'], '_three': ['0']},
+            'beta':  {'_one': ['0'], '_two': ['1', '2']},
+            'gamma': {'_four': ['4']},
+        }, additional_node_config = {
+                'alpha': {'readonly_node': True,
+                'ignore_callback': lambda ffs, properties: ffs == 'one'
+                }})
+        self.assertTrue('alpha' in engine.model['three'])
+        self.assertFalse('alpha' in engine.model['one'])
  
 
 
@@ -5203,14 +5256,11 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
 
-    def test_ignore_callbacks(self):
-        # what is this? - config option?
-        raise NotImplementedError()
-    def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
+        def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
         # line 1380, in get_snapshot_interval
         #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
         #builtins.KeyError: 'properties'
-        raise NotImplementedError()
+            raise NotImplementedError()
 
     def test_filter_directories_per_target_host(self):
         raise NotImplementedError()
