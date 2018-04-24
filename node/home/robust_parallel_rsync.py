@@ -115,8 +115,16 @@ def parallel_chown_chmod_and_rsync(cmd):
     cores = cmd.get('cores', 2)
     if cores == -1:
         cores = None
+    #do the first one - that creates the subdirs and top level files without recursion
+    #non-parallel
+    #otherwise there's a race condition that might be triggered
+    #because the sub-dir rsyncs see 'dir does not exist', but till they get around to 
+    #create it, it does, and then they explode
+    it = iter_subdirs()
+    first = next(it)
+    do_rsync(first)
     p=multiprocessing.Pool(cores)
-    result=p.map(do_rsync, iter_subdirs())
+    result=p.map(do_rsync, it)
     p.close()
     p.join()
     #result = map(chown_chmod_and_rsync, list(iter_subdirs()))

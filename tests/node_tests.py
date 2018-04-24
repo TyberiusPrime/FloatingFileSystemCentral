@@ -592,6 +592,10 @@ class RPsTests(unittest.TestCase):
         self.assertEqual(read_file(os.path.join(source_path, "dir $with", 'file (with)')), 'hello')
         self.assertEqual(read_file(os.path.join(source_path, "file $with")), 'hello')
  
+    def test_target_dir_exists(self):
+        #{'ssh_process_return_code': 1, 'from': 'rose', 'error': 'rsync_failure', 'content': 'stdout:\nb\'\'\n\nstderr:\nb\'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --omit-dir-times -ltxx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /rose/ffs/.ffs_sync_clones/1524556033.364719_2960bee1fc431d24d3b020e185b65454/web/ ffs@amy:/amy/ffs/e/20150616_AG_Stiewe_Katharina_Politt_CRISPR_p53_Amplicon_HCT116/web/\\n rsync returncode: 11rsync: mkdir "/amy/ffs/e/20150616_AG_Stiewe_Katharina_Politt_CRISPR_p53_Amplicon_HCT116/web" failed: File exists (17)\\nrsync error: error in file IO (code 11) at main.c(674) [Receiver=3.1.1]\\n\''} No message in msg, outgoing was: {'excluded_subdirs': [],
+        # it think this is a race condition - the first rsync - parent folder without recursive (A) is still running, the child-folder recursive (B) checks whether the dir is there (false), A creates the dir, B  tries to create it again, boom
+        raise NotImplementedError("I don't know how to trigger this.")
 
 
 def touch(filename):
