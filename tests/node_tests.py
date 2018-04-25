@@ -846,7 +846,7 @@ class NodeTests(unittest.TestCase):
         out_msg = self.dispatch(in_msg)
         self.assertNotError(out_msg)
         self.assertSnapshot('fiveB', 'ffs-b')
-        self.assertEqual(out_msg['msg'], 'capture_done')
+        self.assertEqual(out_msg['msg'], 'capture_if_changed_done')
         self.assertEqual(out_msg['ffs'], 'fiveB')
         self.assertEqual(out_msg['snapshot'], 'ffs-b')
 
@@ -861,6 +861,8 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['snapshot'], 'ffs-c')
         self.assertEqual(out_msg['changed'], False)
 
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'fiveB'])
         with open('/' + NodeTests.get_test_prefix() + 'fiveB/one', 'w') as op:
             op.write("hello")
 

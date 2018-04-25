@@ -192,7 +192,7 @@ def msg_capture(msg):
     if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
-    if snapshot_name in list_snapshots_for_ffs(ffs):
+    if snapshot_name in list_snapshots_for_ffs(full_ffs_path):
         raise ValueError("Snapshot already exists")
     if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
         msg['sub_path'] = '/'
@@ -220,20 +220,20 @@ def msg_capture_if_changed(msg):
     if ffs_snapshots:
         last_snapshot = ffs_snapshots[-1]
         cmd = ['sudo','zfs', 'diff', full_ffs_path + '@' + last_snapshot, full_ffs_path]
-        raise ValueError(" ".join(cmd))
-
-        ctx = check_output(cmd).strip()
-        if ctx:
+        try:
+            ctx = check_output(cmd).strip()
+            if ctx:
+                changed = True
+            else:
+                changed = False
+        except subprocess.CalledProcessError: # if it fails, snapshot to be safe 
             changed = True
-        else:
-            changed = False
     else:
-        changed = True
-
+        changed = True # no snapshot - changed
     if changed:
         check_call(
             ['sudo', 'zfs', 'snapshot', combined])
-    return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name, 'changed': changed}
+    return {'msg': msg['msg'] + '_done', 'ffs': ffs, 'snapshot': snapshot_name, 'changed': changed}
 
 def msg_remove(msg):
     ffs = msg['ffs']
