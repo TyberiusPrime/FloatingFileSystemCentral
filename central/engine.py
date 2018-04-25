@@ -115,6 +115,8 @@ class Engine:
             self.node_new_done(msg)
         elif msg['msg'] == 'capture_done':
             self.node_capture_done(msg)
+        elif msg['msg'] == 'capture_if_changed_done':
+            self.node_capture_done(msg)
         elif msg['msg'] == 'send_snapshot_done':
             self.node_send_snapshot_done(msg)
         elif msg['msg'] == 'remove_snapshot_done':
@@ -146,6 +148,8 @@ class Engine:
             return self.client_add_targets(msg)
         elif command == 'capture':
             return self.client_capture(msg)
+        elif command == 'capture_if_changed':
+            return self.client_capture_if_changed(msg)
         elif command == 'chown_and_chmod':
             return self.client_chown_and_chmod(msg)
         elif command == 'move_main':
@@ -387,6 +391,13 @@ class Engine:
 
     @needs_startup()
     def client_capture(self, msg):
+        return self._client_capture(msg, if_changed=False)
+
+    @needs_startup()
+    def client_capture_if_changed(self, msg):
+        self._client_capture(msg, if_changed=True)
+     
+    def _client_capture(self, msg, if_changed):
         if 'ffs' not in msg:
             raise ValueError("No ffs specified")
         ffs = msg['ffs']
@@ -402,10 +413,10 @@ class Engine:
             raise RenameInProgress()
         postfix = msg.get('postfix', '')
         snapshot = self.do_capture(ffs, msg.get(
-            'chown_and_chmod', False), postfix)
+            'chown_and_chmod', False), postfix, if_changed=if_changed)
         return {'ok': True, 'snapshot': snapshot}
 
-    def do_capture(self, ffs, chown_and_chmod, postfix=''):
+    def do_capture(self, ffs, chown_and_chmod, postfix='', if_changed=False):
         snapshot = self._name_snapshot(ffs, postfix)
         main = self.model[ffs]['_main']
         if not snapshot in self.config.decide_snapshots_to_send(ffs, self.model[ffs][main]['snapshots'] + [snapshot]):
@@ -413,7 +424,7 @@ class Engine:
                        )
 
         out_msg = {
-            'msg': 'capture',
+            'msg': 'capture' if not if_changed else 'capture_if_changed',
             'ffs': ffs,
             'snapshot': snapshot,
         }
@@ -1263,25 +1274,29 @@ class Engine:
                        msg, InconsistencyError)
         if 'snapshot' not in msg:
             self.fault("No snapshot in msg", msg, CodingError)
-        snapshot = msg['snapshot']
-        if snapshot in self.model[ffs][node]['snapshots']:
-            self.fault("Snapshot was already in model", msg, CodingError)
-        self.model[ffs][node]['snapshots'].append(snapshot)
+        if (
+            (msg['msg'] == 'capture_done') or 
+            ((msg['msg'] == 'capture_if_changed_done') and msg['changed'])
+        ):
+            snapshot = msg['snapshot']
+            if snapshot in self.model[ffs][node]['snapshots']:
+                self.fault("Snapshot was already in model", msg, CodingError)
+            self.model[ffs][node]['snapshots'].append(snapshot)
 
-        if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
-            self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+            if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
+                self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
 
-        main = self.model[ffs]['_main']
-        for node in sorted(self.node_config):
-            if node != main and node in self.model[ffs] and not self.model[ffs][node].get('removing', False):
-                postfix = self.model[ffs][node][
-                    'properties'].get('ffs:postfix_only', True)
-                if postfix is True or snapshot.endswith('-' + postfix):
-                    self._send_snapshot(main, node, ffs, snapshot)
-        if not self.is_ffs_moving(ffs):
-            self._prune_snapshots_for_ffs(ffs, main)
-        else:
-            self.config.inform("Move step 2 done: %s" % ffs)
+            main = self.model[ffs]['_main']
+            for node in sorted(self.node_config):
+                if node != main and node in self.model[ffs] and not self.model[ffs][node].get('removing', False):
+                    postfix = self.model[ffs][node][
+                        'properties'].get('ffs:postfix_only', True)
+                    if postfix is True or snapshot.endswith('-' + postfix):
+                        self._send_snapshot(main, node, ffs, snapshot)
+            if not self.is_ffs_moving(ffs):
+                self._prune_snapshots_for_ffs(ffs, main)
+            else:
+                self.config.inform("Move step 2 done: %s" % ffs)
 
     def node_send_snapshot_done(self, msg):
         main = msg['from']

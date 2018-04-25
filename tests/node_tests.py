@@ -654,10 +654,11 @@ class NodeTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-        p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix2()[:-1], '-R'],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        #p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix()[:-1], '-R'],
+                             #stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        #p = subprocess.Popen(['sudo', 'zfs', 'destroy', cls.get_test_prefix2()[:-1], '-R'],
+                             #stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        pass
 
     def dispatch(self, in_msg):
         if not 'storage_prefix' in in_msg:
@@ -835,6 +836,47 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(out_msg['msg'], 'capture_done')
         self.assertEqual(out_msg['ffs'], 'five')
         self.assertEqual(out_msg['snapshot'], 'b')
+
+    def test_capture_if_changed(self):
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'fiveB'])
+        in_msg = {'msg': 'capture_if_changed',
+                  'ffs': 'fiveB', 'snapshot': 'ffs-b'}
+        self.assertNotSnapshot('fiveB', 'ffs-b')
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertSnapshot('fiveB', 'ffs-b')
+        self.assertEqual(out_msg['msg'], 'capture_done')
+        self.assertEqual(out_msg['ffs'], 'fiveB')
+        self.assertEqual(out_msg['snapshot'], 'ffs-b')
+
+        in_msg = {'msg': 'capture_if_changed',
+                  'ffs': 'fiveB', 'snapshot': 'ffs-c'}
+        self.assertNotSnapshot('fiveB', 'ffs-c')
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertNotSnapshot('fiveB', 'ffs-c')
+        self.assertEqual(out_msg['msg'], 'capture_if_changed_done')
+        self.assertEqual(out_msg['ffs'], 'fiveB')
+        self.assertEqual(out_msg['snapshot'], 'ffs-c')
+        self.assertEqual(out_msg['changed'], False)
+
+        with open('/' + NodeTests.get_test_prefix() + 'fiveB/one', 'w') as op:
+            op.write("hello")
+
+        in_msg = {'msg': 'capture_if_changed',
+                  'ffs': 'fiveB', 'snapshot': 'ffs-c'}
+        self.assertNotSnapshot('fiveB', 'ffs-c')
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertSnapshot('fiveB', 'ffs-c')
+        self.assertEqual(out_msg['msg'], 'capture_if_changed_done')
+        self.assertEqual(out_msg['ffs'], 'fiveB')
+        self.assertEqual(out_msg['snapshot'], 'ffs-c')
+        self.assertEqual(out_msg['changed'], True)
+
+
+
 
     def test_snapshot_exists(self):
         subprocess.check_call(

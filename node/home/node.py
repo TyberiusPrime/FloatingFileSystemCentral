@@ -79,6 +79,9 @@ def list_ffs(storage_prefix, strip_prefix=False, include_testing=False):
 def list_snapshots():
     return [x.split("\t")[0] for x in zfs_output(['sudo', 'zfs', 'list', '-t', 'snapshot', '-H', '-s', 'creation']).strip().split("\n")]
 
+def list_snapshots_for_ffs(zfs):
+    return os.listdir('/' + zfs + '/.zfs/snapshot')
+
 
 def get_snapshots(ffs, storage_prefix):
     all_snapshots = list_snapshots()
@@ -189,7 +192,7 @@ def msg_capture(msg):
     if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
         raise ValueError("invalid ffs")
     combined = '%s@%s' % (full_ffs_path, snapshot_name)
-    if combined in list_snapshots():
+    if snapshot_name in list_snapshots_for_ffs(ffs):
         raise ValueError("Snapshot already exists")
     if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
         msg['sub_path'] = '/'
@@ -199,6 +202,38 @@ def msg_capture(msg):
         ['sudo', 'zfs', 'snapshot', combined])
     return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name}
 
+def msg_capture_if_changed(msg):
+    ffs = msg['ffs']
+    snapshot_name = msg['snapshot']
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    if full_ffs_path not in list_ffs(msg['storage_prefix'], False, True):
+        raise ValueError("invalid ffs")
+    combined = '%s@%s' % (full_ffs_path, snapshot_name)
+    sn_list = list_snapshots_for_ffs(full_ffs_path)
+    if snapshot_name in sn_list:
+        raise ValueError("Snapshot already exists")
+    if 'chown_and_chmod' in msg and msg['chown_and_chmod']:
+        msg['sub_path'] = '/'
+        msg_chown_and_chmod(msg)  # fields do match
+    
+    ffs_snapshots =[x for x in sn_list if x.startswith('ffs-')]
+    if ffs_snapshots:
+        last_snapshot = ffs_snapshots[-1]
+        cmd = ['sudo','zfs', 'diff', full_ffs_path + '@' + last_snapshot, full_ffs_path]
+        raise ValueError(" ".join(cmd))
+
+        ctx = check_output(cmd).strip()
+        if ctx:
+            changed = True
+        else:
+            changed = False
+    else:
+        changed = True
+
+    if changed:
+        check_call(
+            ['sudo', 'zfs', 'snapshot', combined])
+    return {'msg': 'capture_done', 'ffs': ffs, 'snapshot': snapshot_name, 'changed': changed}
 
 def msg_remove(msg):
     ffs = msg['ffs']
@@ -275,17 +310,9 @@ def msg_chown_and_chmod(msg):
 
 
 def clean_up_clones(storage_prefix):
-    return 
     clone_dir = get_clone_dir(storage_prefix)
     try:
         for fn in os.listdir('/' + clone_dir):
-            try:
-                ts = fn[:fn.find('_')]
-                ts = float(ts)
-                if time.time() - 10 * 3600 > ts:  #only clean if they're older than ten hours...
-                    continue
-            except ValueError:
-                pass
             cmd = ['sudo', 'zfs', 'destroy', clone_dir + '/' + fn, '-r'] # don't care if some auuto snapshot tried to snapshot these clones...
             p = subprocess.Popen(cmd).communicate()
     except OSError:
@@ -320,125 +347,120 @@ def msg_send_snapshot(msg):
     my_hash = my_hash.hexdigest()
     clone_name = "%f_%s" % (time.time(), my_hash)
     clone_dir = get_clone_dir(msg['storage_prefix'])
-    try:
-        # step -1 - make sure we have an .ffs_sync_clones directory.
-        subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
-                         stderr=subprocess.PIPE).communicate()  # ignore the error on this one.
+    # step -1 - make sure we have an .ffs_sync_clones directory.
+    subprocess.Popen(['sudo', 'zfs', 'create', clone_dir],
+                        stderr=subprocess.PIPE).communicate()  # ignore the error on this one.
 
-        # step 0 - prepare a clone to rsync from
-        if msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
-            source_path = '/' + full_ffs_path + '/.zfs/snapshot/' + snapshot
-        else:
-            source_path = '/' + clone_dir + '/' + clone_name 
-            p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
-                                 stderr=subprocess.PIPE)
-            stdout, stderr = p.communicate()
-            if p.returncode != 0:
-                if b'dataset does not exist' in stderr:
-                    raise ValueError("invalid snapshot")
-                else:
-                    raise ValueError("Could not clone. Error:%s" % stderr)
-
-        # step1 - set readonly=false on receiver
-        cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
-
-        p = subprocess.Popen(cmd,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        #
-        stdout, stderr = p.communicate(json.dumps({
-            'msg': 'set_properties',
-            'ffs': target_ffs,
-            'properties': {'readonly': 'off'},
-            'storage_prefix': target_storage_prefix,
-            'do_mount': True,
-        }).encode('utf-8'))
+    # step 0 - prepare a clone to rsync from
+    if msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
+        source_path = '/' + full_ffs_path + '/.zfs/snapshot/' + snapshot
+    else:
+        source_path = '/' + clone_dir + '/' + clone_name 
+        p = subprocess.Popen(['sudo', 'zfs', 'clone', full_ffs_path + '@' + snapshot, clone_dir + '/' + clone_name],
+                                stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
         if p.returncode != 0:
-            return {
-                'error': 'set_properties_read_only_off',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
-            }
-        try:
-            r = json.loads(stdout.decode('utf-8'))
-            if not 'msg' in r or r['msg'] != 'set_properties_done':
-                return {
-                'error': 'set_properties_read_only_off_no_json',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
-            }
+            if b'dataset does not exist' in stderr:
+                raise ValueError("invalid snapshot")
+            else:
+                raise ValueError("Could not clone. Error:%s" % stderr)
 
+    # step1 - set readonly=false on receiver
+    cmd = target_ssh_cmd + ["%s@%s" % (target_user, target_host), '-T']
 
-        except ValueError:
-            return {
-                'error': 'set_properties_read_only_off_no_json',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
-            }
-
-        # step2: rsync
-        rsync_cmd = {
-            'source_path': source_path,
-            'target_path': target_path,
-            'target_host': target_host,
-            'target_user': target_user,
-            'target_ssh_cmd': target_ssh_cmd,
-            'cores': 4, # limit to a 'sane' value - you will run into ssh-concurrent connection limits otherwise
-            'excluded_subdirs': excluded_subdirs,
-        }
-        p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        rsync_stdout, rsync_stderr = p.communicate(
-            json.dumps(rsync_cmd).encode('utf-8'))
-        rc = p.returncode
-        if rc != 0:
-            return {
-                'error': 'rsync_failure',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (rsync_stdout, rsync_stderr)
-            }
-        p = subprocess.Popen(cmd,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        # step4: restore readonly
-        stdout, stderr = p.communicate(json.dumps({
-            'msg': 'set_properties',
-            'ffs': target_ffs,
-            'properties': {'readonly': 'on'},
-            'storage_prefix': target_storage_prefix,
-        }).encode('utf-8'))
-        if p.returncode != 0:
-            return {
-                'error': 'set_properties_read_only_on',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
-            }
-        # step5: make a snapshot on receiver
-        p = subprocess.Popen(cmd,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-        #
-        stdout, stderr = p.communicate(json.dumps({
-            'msg': 'capture',
-            'ffs': target_ffs,
-            'snapshot': snapshot,
-
-            'storage_prefix': target_storage_prefix,
-        }).encode('utf-8'))
-        if p.returncode != 0:
-            return {
-                'error': 'snapshot_after_rsync',
-                'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
-            }
-        #step 6: clean up *our* clone dir (close in time)
-        if not msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
-            p = subprocess.Popen(['sudo', 'zfs', 'destroy', clone_dir + '/' + clone_name, '-r'],
-                stderr=subprocess.PIPE)
-            stdout, stderr = p.communicate()
-            #output of step6 is ignored
+    p = subprocess.Popen(cmd,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    #
+    stdout, stderr = p.communicate(json.dumps({
+        'msg': 'set_properties',
+        'ffs': target_ffs,
+        'properties': {'readonly': 'off'},
+        'storage_prefix': target_storage_prefix,
+        'do_mount': True,
+    }).encode('utf-8'))
+    if p.returncode != 0:
         return {
-            'msg': 'send_snapshot_done',
-            'target_node': target_node,
-            'ffs': ffs_from,
-            'clone_name': clone_name,
-            'snapshot': snapshot,
+            'error': 'set_properties_read_only_off',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+        }
+    try:
+        r = json.loads(stdout.decode('utf-8'))
+        if not 'msg' in r or r['msg'] != 'set_properties_done':
+            return {
+            'error': 'set_properties_read_only_off_no_json',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
         }
 
-    finally:
-        clean_up_clones(msg['storage_prefix'])
-        #pass
+
+    except ValueError:
+        return {
+            'error': 'set_properties_read_only_off_no_json',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+        }
+
+    # step2: rsync
+    rsync_cmd = {
+        'source_path': source_path,
+        'target_path': target_path,
+        'target_host': target_host,
+        'target_user': target_user,
+        'target_ssh_cmd': target_ssh_cmd,
+        'cores': 4, # limit to a 'sane' value - you will run into ssh-concurrent connection limits otherwise
+        'excluded_subdirs': excluded_subdirs,
+    }
+    p = subprocess.Popen(['python3', '/home/ffs/robust_parallel_rsync.py'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    rsync_stdout, rsync_stderr = p.communicate(
+        json.dumps(rsync_cmd).encode('utf-8'))
+    rc = p.returncode
+    if rc != 0:
+        return {
+            'error': 'rsync_failure',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (rsync_stdout, rsync_stderr)
+        }
+    p = subprocess.Popen(cmd,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    # step4: restore readonly
+    stdout, stderr = p.communicate(json.dumps({
+        'msg': 'set_properties',
+        'ffs': target_ffs,
+        'properties': {'readonly': 'on'},
+        'storage_prefix': target_storage_prefix,
+    }).encode('utf-8'))
+    if p.returncode != 0:
+        return {
+            'error': 'set_properties_read_only_on',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+        }
+    # step5: make a snapshot on receiver
+    p = subprocess.Popen(cmd,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+    #
+    stdout, stderr = p.communicate(json.dumps({
+        'msg': 'capture',
+        'ffs': target_ffs,
+        'snapshot': snapshot,
+
+        'storage_prefix': target_storage_prefix,
+    }).encode('utf-8'))
+    if p.returncode != 0:
+        return {
+            'error': 'snapshot_after_rsync',
+            'content': "stdout:\n%s\n\nstderr:\n%s" % (stdout, stderr)
+        }
+    #step 6: clean up *our* clone dir (close in time)
+    if not msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
+        p = subprocess.Popen(['sudo', 'zfs', 'destroy', clone_dir + '/' + clone_name, '-r'],
+            stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+        #output of step6 is ignored
+    return {
+        'msg': 'send_snapshot_done',
+        'target_node': target_node,
+        'ffs': ffs_from,
+        'clone_name': clone_name,
+        'snapshot': snapshot,
+    }
 
 
 def msg_deploy(msg):
@@ -455,6 +477,7 @@ def msg_deploy(msg):
             )
         with zipfile.ZipFile("/home/ffs/node.zip") as zf:
             zf.extractall()
+        clean_up_clones(msg['storage_prefix'])
         return {"msg": 'deploy_done'}
     finally:
         os.chdir(org_dir)
@@ -590,6 +613,8 @@ def dispatch(msg):
             result = msg_new(msg)
         elif msg['msg'] == 'capture':
             result = msg_capture(msg)
+        elif msg['msg'] == 'capture_if_changed':
+            result = msg_capture_if_changed(msg)
         elif msg['msg'] == 'remove':
             result = msg_remove(msg)
         elif msg['msg'] == 'remove_snapshot':

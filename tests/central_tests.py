@@ -1192,6 +1192,27 @@ class NewTests(PostStartupTests):
         omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/d', 'properties': {'ffs:main': 'on'}})
         self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
 
+    def test_sibling_new_delays(self):
+        # make sure that shu/one and shu/two get run seperatly (read only issues!)
+        cfg = self._get_test_config()
+        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        omtf = OutgoingMessageForTesting()
+        def om():
+            return omtf 
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1'], '_two': ['1']},
+            'beta': {},
+        }, sender_cls = om)
+        e.incoming_client({"msg": 'new', 'ffs': 'one/a', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        e.incoming_client({"msg": 'new', 'ffs': 'one/b', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        e.incoming_client({"msg": 'new', 'ffs': 'three', 'targets': ['alpha']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+
+
 
 def remove_snapshot_from_message(msg):
     msg = msg.copy()
@@ -1716,6 +1737,53 @@ class CaptureTest(PostStartupTests):
             })
         self.assertRaises(engine.RenameInProgress, inner)
 
+
+    def test_capture_if_changed(self):
+        e, outgoing_messages = self.ge()
+        e.incoming_client({"msg": 'capture_if_changed', 'ffs': 'one'})
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
+            'to': 'beta',
+            'msg': 'capture_if_changed',
+            'ffs': 'one'
+        }
+        )
+        snapshot_name = outgoing_messages[0]['snapshot']
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'capture_if_changed_done',
+                         'from': 'beta',
+                         'ffs': 'one',
+                         'snapshot': snapshot_name,
+                         'changed': False,
+                         })
+        self.assertEqual(len(outgoing_messages), 0)
+
+        e.incoming_client({"msg": 'capture_if_changed', 'ffs': 'one'})
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]),
+                            {
+            'to': 'beta',
+            'msg': 'capture_if_changed',
+            'ffs': 'one'
+        }
+        )
+        snapshot_name = outgoing_messages[0]['snapshot']
+        outgoing_messages.clear()
+        e.incoming_node({'msg': 'capture_if_changed_done',
+                         'from': 'beta',
+                         'ffs': 'one',
+                         'snapshot': snapshot_name,
+                         'changed': True,
+                         })
+        self.assertEqual(len(outgoing_messages), 1)
+
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],
+        {
+            'to': 'beta',
+            'msg': 'send_snapshot',
+            'ffs': 'one',
+            'target_host': 'alpha',
+            'snapshot': snapshot_name,
+        })
 
 class RemoveTarget(PostStartupTests):
 
