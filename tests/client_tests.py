@@ -159,7 +159,7 @@ class ClientTests(unittest.TestCase):
             subprocess.check_call(
                 ['sudo', 'zfs', 'set', 'ffs:root=on', root])
 
-        for n in ['rename_test', 'capture_test', 'capture_test2', 'capture_test3', 'capture_test4', 'orphan',
+        for n in ['rename_test', 'capture_test', 'capture_test2', 'capture_test3', 'capture_test4', 'capture_test5', 'orphan',
                   'orphan/child', 'remove_test', 'chown_test',
                   'add_target_test', 'move_test_no_replicate', 'move_test_move_to_main',
                   'time_based_snapshot_tests', 'set_prio_test']:
@@ -265,25 +265,32 @@ class ClientTests(unittest.TestCase):
                          0o000)
 
     def test_capture_and_chmod(self):
-        with open('/' + self.get_test_prefix()[:-1] + '/capture_test/one', 'w') as op:
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test3/one', 'w') as op:
             op.write("test")
         subprocess.check_call(
-            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test/one'])
-        self.assertFalse(os.listdir('/' + self.get_test_prefix()
-                                    [:-1] + '/capture_test/.zfs/snapshot'))
-        self.run_expect_ok(['capture', 'capture_test',
+            ['sudo', 'chmod', '0000', '/' + self.get_test_prefix()[:-1] + '/capture_test3/one'])
+
+        start_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test3/.zfs/snapshot') )
+        self.assertFalse([
+            x for x in
+            os.listdir('/' + self.get_test_prefix()
+                       [:-1] + '/capture_test3/.zfs/snapshot')
+            if x.endswith('-shu')
+        ])
+        #
+        self.run_expect_ok(['capture', 'capture_test3',
                             '--chown_and_chmod', '--postfix=shu'])
         self.client_wait_for_empty_que()
-        self.assertTrue(os.listdir('/' + self.get_test_prefix()
-                                   [:-1] + '/capture_test/.zfs/snapshot'))
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test3/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 1)
         self.assertTrue([
             x for x in
             os.listdir('/' + self.get_test_prefix()
-                       [:-1] + '/capture_test/.zfs/snapshot')
+                       [:-1] + '/capture_test3/.zfs/snapshot')
             if x.endswith('-shu')
         ])
         # config default permissions are uog+rw
-        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/capture_test/one') & 0o0777,
+        self.assertEqual(get_file_rights('/' + self.get_test_prefix()[:-1] + '/capture_test3/one') & 0o0777,
                          0o666)
 
     def test_list_orphans(self):
@@ -505,13 +512,12 @@ class ClientTests(unittest.TestCase):
     def test_capture_auto_detect_from_current_path(self):
         with open('/' + self.get_test_prefix()[:-1] + '/capture_test3/one', 'w') as op:
             op.write("test")
-        self.assertFalse(os.listdir('/' + self.get_test_prefix()
-                                    [:-1] + '/capture_test3/.zfs/snapshot'))
+        start_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test3/.zfs/snapshot') )
         self.run_expect_ok(['capture', ], cwd='/' +
                            self.get_test_prefix()[:-1] + '/capture_test3/')
         self.client_wait_for_empty_que()
-        self.assertTrue(os.listdir('/' + self.get_test_prefix()
-                                   [:-1] + '/capture_test3/.zfs/snapshot'))
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test3/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 1)
 
     def test_capture_only_if_changed(self):
         # briefly: run zfs snapshot.
@@ -522,19 +528,43 @@ class ClientTests(unittest.TestCase):
         # we could store the last-snapshot-tried-time in ffs:last_snapshot_time or such
         # and then try again after 'ffs:interval'? Of course that means we'll
         # take a snapshot much later in the worst case?
-        raise NotImplementedError()
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test5/one', 'w') as op:
+            op.write("test")
+        start_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test5/.zfs/snapshot') )
+        self.run_expect_ok(['capture', 'capture_test5', '--if_changed'])
+        self.client_wait_for_empty_que()
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test5/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 1)
+        self.run_expect_ok(['capture', 'capture_test5', '--if_changed'])
+        self.client_wait_for_empty_que()
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test5/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 1) # no change
+
+        #writing the same stuff to the file should trigger, right?
+        with open('/' + self.get_test_prefix()[:-1] + '/capture_test5/one', 'w') as op:
+            op.write("test")
+        self.run_expect_ok(['capture', 'capture_test5', '--if_changed'])
+        self.client_wait_for_empty_que()
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test5/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 2) # no change
 
     def test_slash_at_end_of_ffs(self):
         with open('/' + self.get_test_prefix()[:-1] + '/capture_test4/one', 'w') as op:
             op.write("test")
-        self.assertFalse(os.listdir('/' + self.get_test_prefix()
-                                    [:-1] + '/capture_test4/.zfs/snapshot'))
+        start_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test4/.zfs/snapshot') )
         self.run_expect_ok(['capture', 'capture_test4/'])
         self.client_wait_for_empty_que()
-        self.assertTrue(os.listdir('/' + self.get_test_prefix()
-                                   [:-1] + '/capture_test4/.zfs/snapshot'))
+        now_count = len(os.listdir('/' + self.get_test_prefix() [:-1] + '/capture_test4/.zfs/snapshot') )
+        self.assertEqual(now_count, start_count + 1)
 
         self.run_expect_ok(['add_targets', 'capture_test4/', 'B'])
+    
+    def test_capture_all_if_changed(self):
+        self.run_expect_ok(['service', 'capture_all_if_changed'])  
+        self.client_wait_for_empty_que()
+        # a simple ok from the engine is enough for me
+        # the rest is tested by central_tests and node_tests
+
 
 class InternalClientTests(unittest.TestCase):
     def test_orphan_fix_with_nested_ensure_parents_are_present(self):

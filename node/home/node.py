@@ -454,13 +454,15 @@ def msg_send_snapshot(msg):
             stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
         #output of step6 is ignored
-    return {
+    res = {
         'msg': 'send_snapshot_done',
         'target_node': target_node,
         'ffs': ffs_from,
-        'clone_name': clone_name,
         'snapshot': snapshot,
     }
+    if not msg.get('source_is_readonly', False): # read from snapshot directly - for readonly pools
+        res['clone_name'] = clone_name
+    return res
 
 
 def msg_deploy(msg):

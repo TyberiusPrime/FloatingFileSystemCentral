@@ -1591,14 +1591,47 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(get_file_rights(
             '/' + NodeTests.get_test_prefix() + 'from_9/a') & 0o777, 0)
 
-    def test_rename_relocates_into_other_parent(self):
-        raise NotImplementedError("Test parent is read only...")
-
-    def test_rename_relocates_into_other_parent_but_parent_not_present(self):
-        raise NotImplementedError()
-
     def test_send_from_snapshot_not_clone(self):
-        raise NotImplementedError()
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix() + 'from_10'])
+        subprocess.check_call(
+            ['sudo', 'zfs', 'create', NodeTests.get_test_prefix2() + 'from_10'])
+        subprocess.check_call(
+            ['sudo', 'chmod', '777', '/' + NodeTests.get_test_prefix() + 'from_10'])
+        write_file('/' + NodeTests.get_test_prefix() + 'from_10/one', 'hello')
+        subprocess.check_call(
+            ['sudo', 'zfs', 'snapshot', NodeTests.get_test_prefix() + 'from_10@a'])
+
+        self.assertSnapshot('from_10', 'a')
+        self.assertFalse(os.path.exists(
+            '/' + NodeTests.get_test_prefix2() + 'from_10/one'))
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix() + 'from_10/one'))
+        # so that the actual dir differes from the snapshot and we can test
+        # that that we're reading from the snapshot!
+        write_file('/' + NodeTests.get_test_prefix() + 'from_10/one', 'hello2')
+        in_msg = {'msg': 'send_snapshot',
+                  'ffs': 'from_10',
+                  'snapshot': 'a',
+                  'target_host': '127.0.0.1',
+                  'target_node': 'localhost',
+                  'target_user': 'ffs',
+                  'target_ssh_cmd': target_ssh_cmd,
+                  'target_ffs': 'from_10',
+                  'target_storage_prefix': '/' + NodeTests.get_test_prefix2()[:-1],
+                  'source_is_readonly': True,
+                  }
+        self.assertNotSnapshot('from_10', 'a', True)
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertTrue(os.path.exists(
+            '/' + NodeTests.get_test_prefix2() + 'from_10/one'))
+        self.assertSnapshot('from_10', 'a', True)
+        self.assertEqual(
+            read_file('/' + NodeTests.get_test_prefix() + 'from_10/one'), 'hello2')
+        self.assertEqual(
+            read_file('/' + NodeTests.get_test_prefix2() + 'from_10/one'), 'hello')
+        self.assertFalse('clone_name' in out_msg)
 
 if __name__ == '__main__':
     unittest.main()

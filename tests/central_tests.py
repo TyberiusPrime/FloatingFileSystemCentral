@@ -1785,6 +1785,34 @@ class CaptureTest(PostStartupTests):
             'snapshot': snapshot_name,
         })
 
+    def test_capture_all_if_changed(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['1'], '_two': ['1']},
+            'beta': {'_three': [],},
+        })
+        self.assertEqual(len(outgoing_messages), 0)
+        e.incoming_client({"msg": "service_capture_all_if_changed"})
+        self.assertEqual(len(outgoing_messages), 3)
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[0]), {
+            'msg': 'capture_if_changed',
+            'ffs': 'one',
+            'to': 'alpha',
+        })
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[1]), {
+            'msg': 'capture_if_changed',
+            'ffs': 'three',
+            'to': 'beta',
+        })
+        self.assertMsgEqual(remove_snapshot_from_message(outgoing_messages[2]), {
+            'msg': 'capture_if_changed',
+            'ffs': 'two',
+            'to': 'alpha',
+        })
+                
+
+
+
+
 class RemoveTarget(PostStartupTests):
 
     def test_basic(self):
@@ -4719,6 +4747,26 @@ class RenameTests(PostStartupTests):
                 'msg': 'rename', 'ffs': 'one', 'new_name': 'three'
             })
         self.assertRaises(engine.RenameInProgress, inner)
+
+    def test_rename_raises_on_unequal_parents(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1'], '_one/a': ['1'], '_two': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'ffs': 'one/a', 'new_name': 'two/a'
+            })
+        self.assertRaises(ValueError, inner)
+
+    def test_rename_parent(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1'], '_one/a': ['1'], '_two': ['1']},
+        })
+        def inner():
+            e.incoming_client({
+                'msg': 'rename', 'ffs': 'one', 'new_name': 'three'
+            })
+        self.assertRaises(ValueError, inner)
 
 
 class ChmodTests(PostStartupTests):

@@ -9,16 +9,17 @@ from collections import OrderedDict
 from . import ssh_message_que
 from . import default_config
 from .exceptions import (StartupNotDone, EngineFaulted, SSHConnectFailed, ManualInterventionNeeded, CodingError, InconsistencyError,
-                         InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError, 
+                         InProgress, MoveInProgress, NewInProgress, RemoveInProgress, RenameInProgress, InvalidTarget, RestartError,
                          NodeIsReadonly)
 
 
 class needs_startup:
+
     def __init__(self, fault_ok=False):
         if not isinstance(fault_ok, bool):
             raise ValueError('@needs_startup should read @needs_startup() ')
         self.fault_ok = fault_ok
-    
+
     def __call__(self, func):
         def wrapper(inner_self, *args, **kwargs):
             if inner_self.startup_done:
@@ -164,6 +165,8 @@ class Engine:
             return self.client_service_is_started()
         elif command == 'service_restart':
             return self.client_service_restart()
+        elif command == 'service_capture_all_if_changed':
+            return self.client_service_capture_all_if_changed()
         elif command == 'list_ffs':
             return self.client_list_ffs(msg)
         elif command == 'list_targets':
@@ -180,6 +183,11 @@ class Engine:
         self.logger.info("Client requested restart")
         raise RestartError()
 
+    def client_service_capture_all_if_changed(self):
+        for ffs in sorted(self.model):
+            self.do_capture(ffs, False, '', if_changed=True)
+        return {'ok': True}
+
     @needs_startup(True)
     def client_list_ffs(self, msg):
         full = bool(msg.get('full', False))
@@ -187,13 +195,14 @@ class Engine:
         if not full:
             for ffs, ffs_info in self.model.items():
                 result[ffs] = [ffs_info['_main']] + [x for x in ffs_info if x !=
-                                                    ffs_info['_main'] and not x.startswith('_')]
+                                                     ffs_info['_main'] and not x.startswith('_')]
         else:
             for ffs, ffs_info in self.model.items():
                 result[ffs] = {'targets': [ffs_info['_main']] + [x for x in ffs_info if x !=
-                                                    ffs_info['_main'] and not x.startswith('_')],
-                }
-                result[ffs]['properties'] = {node: self.model[ffs][node]['properties'] for node in result[ffs]['targets']}
+                                                                 ffs_info['_main'] and not x.startswith('_')],
+                               }
+                result[ffs]['properties'] = {node: self.model[ffs][node][
+                    'properties'] for node in result[ffs]['targets']}
         return result
 
     def client_list_targets(self):
@@ -240,16 +249,17 @@ class Engine:
     def check_ffs_name(self, path):
         if not re.match("^[a-zA-Z0-9][A-Za-z0-9/_-]*$", path):
             raise ValueError("Invalid path: %s" % repr(path))
-        
+
     def check_targets_have_parent(self, ffs, targets):
         if '/' in ffs:
             parent = os.path.split(ffs)[0]
             if parent not in self.model:
                 raise ValueError("Parent ffs does not exist")
-            targets_without_parent = set(targets).difference([x for x in self.model[parent] if not x.startswith('_')])
+            targets_without_parent = set(targets).difference(
+                [x for x in self.model[parent] if not x.startswith('_')])
             if targets_without_parent:
-                raise ValueError("Parent ffs not present on %s" % (targets_without_parent, ))
-
+                raise ValueError("Parent ffs not present on %s" %
+                                 (targets_without_parent, ))
 
     @needs_startup()
     def client_new(self, msg):
@@ -375,8 +385,8 @@ class Engine:
                       {'msg': 'new',
                        'ffs': ffs,
                        'properties': props,
-                        'rights': self.config.get_chmod_rights(ffs),
-                        'owner': self.config.get_chown_user(ffs),
+                       'rights': self.config.get_chmod_rights(ffs),
+                       'owner': self.config.get_chown_user(ffs),
 
                        }
                       )
@@ -395,8 +405,8 @@ class Engine:
 
     @needs_startup()
     def client_capture_if_changed(self, msg):
-        self._client_capture(msg, if_changed=True)
-     
+        return self._client_capture(msg, if_changed=True)
+
     def _client_capture(self, msg, if_changed):
         if 'ffs' not in msg:
             raise ValueError("No ffs specified")
@@ -546,6 +556,13 @@ class Engine:
             raise ValueError("new_name parameter must be a string")
         if new_name in self.model:
             raise ValueError("An ffs with the new name already exists.")
+        old_parent, _ = os.path.split(ffs)
+        new_parent, _ = os.path.split(new_name)
+        if old_parent != new_parent:
+            raise ValueError("Rename only renames within the parent. Sorry, you'll have to manipulate the underling zfs on each node for now")
+        for potential_child in self.model:
+            if potential_child.startswith(ffs + '/'):
+                raise ValueError("Rename of parent ffs is currently unsupported. Sorry, you'll have to manipulate the underlying zfs structure")
         if self.is_ffs_moving(ffs):
             raise MoveInProgress()
         if self.is_ffs_removing_any(ffs):
@@ -655,10 +672,9 @@ class Engine:
         return any([node_info.get('removing', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
 
     def is_ffs_remove_asap_all(self, ffs):
-        #no properties - we're moving, removing, something, anyhow not valid to test
+        # no properties - we're moving, removing, something, anyhow not valid
+        # to test
         return set([x['properties'].get('ffs:remove_asap', '-') for k, x in self.model[ffs].items() if not k.startswith('_') and 'properties' in x]) == set(['on'])
-
-
 
     def is_ffs_new_any(self, ffs):
         return any([node_info.get('_new', False) for node, node_info in self.model[ffs].items() if not node.startswith('_')])
@@ -726,17 +742,21 @@ class Engine:
         self.logger.info("All list_ffs returned")
         self.model = {}
         for node, ffs_list in self.node_ffs_infos.items():
-            ignore_callback = self.config.get_nodes()[node].get('ignore_callback', lambda dummy_ffs, dummy_ffs_props: False)
+            ignore_callback = self.config.get_nodes()[node].get(
+                'ignore_callback', lambda dummy_ffs, dummy_ffs_props: False)
             for ffs, ffs_info in ffs_list.items():
                 if ignore_callback(ffs, ffs_info['properties']):
-                    self.logger.info("Ignored %s from %s (ignore_callback)" % (ffs, node))
+                    self.logger.info(
+                        "Ignored %s from %s (ignore_callback)" % (ffs, node))
                     continue
                 if ffs not in self.model:
                     self.model[ffs] = {}
                     self.model[ffs][
                         '_snapshots_in_transit'] = collections.Counter()
                 self.model[ffs][node] = ffs_info
-                self.model[ffs][node]['upcoming_snapshots'] = [] # these are snapshots that are being captured, - not in_transit!
+                # these are snapshots that are being captured, - not
+                # in_transit!
+                self.model[ffs][node]['upcoming_snapshots'] = []
         #print("stage 2")
         self._check_invalid_properties()
         #print("stage 3")
@@ -765,7 +785,7 @@ class Engine:
                                    exception=ManualInterventionNeeded)
                     for must_be_numeric, must_be_positive in [
                         ('snapshot_interval', True),
-                        ('priority', False)]:
+                            ('priority', False)]:
                         value = node_info['properties'].get(
                             'ffs:' + must_be_numeric, '-')
                         if value != '-':
@@ -779,24 +799,26 @@ class Engine:
                                            exception=ManualInterventionNeeded)
 
     def _check_main_and_target_consistency(self):
-            for ffs in self.model:
-                if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
-                    main = self.model[ffs]['_main']
-                    main_info = self.model[ffs][main]
-                    for node, node_info in self.model[ffs].items():
-                        if node != main and not node.startswith('_'):
-                            for prop in [
-                                    'ffs:snapshot_interval',
-                                    'ffs:priority']:
-                                node_prop = node_info['properties'].get(prop, '-') 
-                                if node_prop != '-': 
-                                    main_prop = main_info['properties'].get(prop, '-') 
-                                    if main_prop == '-':
-                                        self.fault("%s set on %s on %s, but not on main (%s)."% (prop, ffs, node, main))
-                                    elif main_prop != node_prop:
-                                        if not self.is_readonly_node(node):
-                                            self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                            'properties': {prop: main_prop}})
+        for ffs in self.model:
+            if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
+                main = self.model[ffs]['_main']
+                main_info = self.model[ffs][main]
+                for node, node_info in self.model[ffs].items():
+                    if node != main and not node.startswith('_'):
+                        for prop in [
+                                'ffs:snapshot_interval',
+                                'ffs:priority']:
+                            node_prop = node_info['properties'].get(prop, '-')
+                            if node_prop != '-':
+                                main_prop = main_info[
+                                    'properties'].get(prop, '-')
+                                if main_prop == '-':
+                                    self.fault("%s set on %s on %s, but not on main (%s)." % (
+                                        prop, ffs, node, main))
+                                elif main_prop != node_prop:
+                                    if not self.is_readonly_node(node):
+                                        self.send(node, {'msg': 'set_properties', 'ffs': ffs,
+                                                         'properties': {prop: main_prop}})
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -886,17 +908,19 @@ class Engine:
                             self.fault(
                                 "No main, muliple non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
                         else:
-                            #if they're all to be removed any how.
-                            #TODO: test case this!
-                            #if set([x['properties'].get('ffs:remove_asap', '-') for k, x in node_ffs_info.items() if not k.startswith('_')]) == set(['on']):
+                            # if they're all to be removed any how.
+                            # TODO: test case this!
+                            # if set([x['properties'].get('ffs:remove_asap',
+                            # '-') for k, x in node_ffs_info.items() if not
+                            # k.startswith('_')]) == set(['on']):
                             if self.is_ffs_remove_asap_all(ffs):
-                            #if set([x['properties'].get('ffs:remove_asap', '-') for k, x in node_ffs_info.items() if not k.startswith('_')]) == set(['on']):
+                                # if set([x['properties'].get('ffs:remove_asap', '-') for k, x in node_ffs_info.items() if not k.startswith('_')]) == set(['on']):
                                 #del self.model[ffs]
                                 #.continue
                                 pass
                             else:
                                 self.fault(
-                                "No main, none non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
+                                    "No main, none non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
 
             self.model[ffs]['_main'] = main
             if not any_moving_to:
@@ -937,8 +961,8 @@ class Engine:
                 # step 0 -
                 move_target = any_moving_to
                 if ((ffs in renames.keys() or ffs in renames.values()) or (
-                    move_target in renames.keys() or move_target in renames.values())
-                    ):
+                            move_target in renames.keys() or move_target in renames.values())
+                        ):
                     ffs_involved = [x for x in renames.items() if x[0] == ffs or x[1] == ffs or x[
                         0] == move_target or x[1] == move_target]
                     self.fault("Rename and move mixed. Unsupported: %s %s %s" % (
@@ -1079,20 +1103,22 @@ class Engine:
         eats later snapshots
         """
         def get_prio(ffs_node_info_tup):
-            ffs, node_fss_info = ffs_node_info_tup 
+            ffs, node_fss_info = ffs_node_info_tup
             main = node_fss_info['_main']
-            prio = int(node_fss_info[main]['properties'].get('ffs:priority', 1000))
+            prio = int(node_fss_info[main][
+                       'properties'].get('ffs:priority', 1000))
             return prio
 
         ffs_to_consider = [(ffs, node_ffs_info) for (ffs, node_ffs_info) in self.model.items() if
-                not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs)]
+                           not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs)]
         for ffs, node_fss_info in sorted(ffs_to_consider, key=get_prio):
             main = node_fss_info['_main']
             main_snapshots = node_fss_info[main]['snapshots']
             if len([x for x in node_fss_info if x != main and not x.startswith('_')]) == 0:
                 self.logger.info("No replicates for %s on %s", ffs, main)
             if not main_snapshots:
-                self.logger.info("No main snapshots for %s on %s" % (ffs, main))
+                self.logger.info(
+                    "No main snapshots for %s on %s" % (ffs, main))
             snapshots_to_send = set(
                 self.config.decide_snapshots_to_send(ffs, main_snapshots))
             ordered_to_send = [
@@ -1139,9 +1165,10 @@ class Engine:
         for another_ffs in self.model:
             if another_ffs.startswith(ffs + '/'):
                 remainder = another_ffs[len(ffs) + 1:]
-                if not '/' in remainder: # don't nest
+                if not '/' in remainder:  # don't nest
                     excluded_sub_ffs.add(remainder)
-        excluded_sub_ffs.update(self.config.exclude_subdirs_callback(ffs, sending_node, receiving_node))
+        excluded_sub_ffs.update(self.config.exclude_subdirs_callback(
+            ffs, sending_node, receiving_node))
         excluded_sub_ffs = sorted(list(excluded_sub_ffs))
         msg = {
             'msg': 'send_snapshot',
@@ -1157,7 +1184,7 @@ class Engine:
             'excluded_subdirs': excluded_sub_ffs,
         }
         if self.node_config[sending_node].get('readonly_node', False):
-             msg['source_is_readonly'] = True
+            msg['source_is_readonly'] = True
         prio = self.model[ffs][sending_node][
             'properties'].get('ffs:priority', None)
         if prio is not None:
@@ -1275,7 +1302,7 @@ class Engine:
         if 'snapshot' not in msg:
             self.fault("No snapshot in msg", msg, CodingError)
         if (
-            (msg['msg'] == 'capture_done') or 
+            (msg['msg'] == 'capture_done') or
             ((msg['msg'] == 'capture_if_changed_done') and msg['changed'])
         ):
             snapshot = msg['snapshot']
@@ -1315,18 +1342,19 @@ class Engine:
         snapshot = msg['snapshot']
         if snapshot in self.model[ffs][node]['snapshots']:
             self.fault("Snapshot was already in model", msg, CodingError)
-        
+
         self.model[ffs][node]['snapshots'].append(snapshot)
         self.model[ffs]['_snapshots_in_transit'][snapshot] -= 1
         if self.model[ffs]['_snapshots_in_transit'][snapshot] == 0:
             del self.model[ffs]['_snapshots_in_transit'][snapshot]
-        os = self.count_outgoing_snapshots() - 1 # minus one because this message is still in the list!
+        # minus one because this message is still in the list!
+        os = self.count_outgoing_snapshots() - 1
         self.config.inform("Send of %s@%s from %s to %s done, outstanding snapshot transfers: %i" % (
             ffs, snapshot, main, node, os))
         if (self.is_ffs_moving(ffs) and
-                node == self.model[ffs]['_moving'] and
-                msg['snapshot'] == self.model[ffs]['_move_snapshot']
-                ):
+            node == self.model[ffs]['_moving'] and
+            msg['snapshot'] == self.model[ffs]['_move_snapshot']
+            ):
             self.config.inform(("Move step 3 done: %s" % ffs))
             self.send(self.model[ffs]['_main'], {
                 'msg': 'set_properties',
@@ -1388,7 +1416,7 @@ class Engine:
 
     def node_remove_snapshot_failed(self, msg):
         self.config.inform("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
-                             (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
+                           (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
         self.logger.error("Non-fatal: Removal of snapshot %s@%s on %s failed with message: %s" %
                           (msg['ffs'], msg['snapshot'], msg['from'], msg['error_msg']))
 
@@ -1445,12 +1473,14 @@ class Engine:
                 if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_new_any(ffs):
                     iv = self.get_snapshot_interval(ffs)
                     if iv and iv > 0:
-                        self.logger.info("Checking snapshot interval for %s, interval=%ss", ffs, iv)
+                        self.logger.info(
+                            "Checking snapshot interval for %s, interval=%ss", ffs, iv)
                         main = ffs_info['_main']
                         do_snapshot = False
                         if ffs_info[main]['upcoming_snapshots']:
                             # never auto snapshot while we're lagging behind.
-                            self.logger.info("No auto snapshot, lagging behind: %s: %s", ffs, ffs_info[main]['upcoming_snapshots'])
+                            self.logger.info("No auto snapshot, lagging behind: %s: %s", ffs, ffs_info[
+                                             main]['upcoming_snapshots'])
                             pass
                         else:
                             if len(ffs_info[main]['snapshots']) == 0:
@@ -1461,9 +1491,11 @@ class Engine:
                                     snapshot_time = self.parse_time_from_snapshot(
                                         ffs_info[main]['snapshots'][-1]
                                     )
-                                    self.logger.info("Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
+                                    self.logger.info(
+                                        "Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
                                     if snapshot_time + (iv) < now:
-                                        self.logger.info("Auto-snapshot: %s" % ffs)
+                                        self.logger.info(
+                                            "Auto-snapshot: %s" % ffs)
                                         do_snapshot = True
                                 except ValueError:  # could not parse time, assume we need to redo it
                                     do_snapshot = True
