@@ -1124,12 +1124,14 @@ class Engine:
                         self.do_capture(ffs, False)
 
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
-        excluded_sub_ffs = []
+        excluded_sub_ffs = set()
         for another_ffs in self.model:
             if another_ffs.startswith(ffs + '/'):
                 remainder = another_ffs[len(ffs) + 1:]
                 if not '/' in remainder: # don't nest
-                    excluded_sub_ffs.append(remainder)
+                    excluded_sub_ffs.add(remainder)
+        excluded_sub_ffs.update(self.config.exclude_subdirs_callback(ffs, sending_node, receiving_node))
+        excluded_sub_ffs = sorted(list(excluded_sub_ffs))
         msg = {
             'msg': 'send_snapshot',
             'ffs': ffs,

@@ -100,6 +100,17 @@ class DefaultConfig:
 
     def restart_on_code_changes(self):
         return True
+
+    def exclude_subdirs_callback(self, ffs, source_node, target_node):
+        """Execlude some subdirs from being synced to target node
+        (via rsync --exclude= option).
+        Useful for example to exclude cache dirs from being synced.
+
+        This only works for top-level sub dirs!
+        Returning anything with a '/' in it will lead to an exception.
+        """
+        return []
+
         
 
 def must_return_type(typ):
@@ -269,3 +280,13 @@ class CheckedConfig:
     @must_return_type(bool)
     def restart_on_code_changes(self):
         return self.config.restart_on_code_changes()
+
+    @must_return_type(list)
+    def exclude_subdirs_callback(self, ffs, source_node, target_node):
+        res = self.config.exclude_subdirs_callback(ffs, source_node, target_node)
+        if res is None:
+            res = []
+        for x in res:
+            if '/' in x:
+                raise ValueError("exclude_subdirs_callback only works on top level sub-dirs - no / allowed")
+        return res

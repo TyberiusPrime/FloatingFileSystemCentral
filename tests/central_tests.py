@@ -1217,6 +1217,22 @@ class CaptureTest(PostStartupTests):
             'excluded_subdirs': ['a']
         })
 
+    def test_send_snapshot_config_exclude_subdirs_callback(self):
+        config = self._get_test_config()
+        config.exclude_subdirs_callback = lambda ffs, source_node, target_node: ['donotsync']
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_one': ['b', 'a', ], '_one/a': ['c']},
+            'beta':  {'one': ['b', ], 'one/a': ['c']},
+        }, config=config)
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],{
+            'msg': 'send_snapshot',
+            'to': 'alpha',
+            'ffs': 'one',
+            'snapshot': 'a',
+            'target_host': 'beta',
+            'excluded_subdirs': ['a', 'donotsync']
+        })
     def test_pruning_after_capture(self):
         cfg = self._get_test_config()
 
