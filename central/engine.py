@@ -863,6 +863,7 @@ class Engine:
             self.fault("Multiple renames to the same target",
                        exception=InconsistencyError)
 
+        errors = []
         for ffs, node_ffs_info in list(self.model.items()):
             main = None
             non_ro_count = 0
@@ -905,11 +906,11 @@ class Engine:
                         main = None
                     else:
                         if non_ro_count > 1:
-                            self.fault(
+                            errors.append(
                                 "No main, muliple non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
+                            continue
                         else:
                             # if they're all to be removed any how.
-                            # TODO: test case this!
                             # if set([x['properties'].get('ffs:remove_asap',
                             # '-') for k, x in node_ffs_info.items() if not
                             # k.startswith('_')]) == set(['on']):
@@ -919,9 +920,9 @@ class Engine:
                                 #.continue
                                 pass
                             else:
-                                self.fault(
+                                errors.append(
                                     "No main, none non-readonly for '%s' on %s" % (ffs, [x for x in node_ffs_info.keys() if not x.startswith('_')]))
-
+                                continue
             self.model[ffs]['_main'] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
@@ -1026,6 +1027,9 @@ class Engine:
                                     'ffs': rename_to,
                                     'properties': {'ffs:renamed_from': '-'}
                                 })
+        if errors:
+            self.fault("\n".join(errors))
+
 
         for ffs, node_ffs_info in self.model.items():
             if node_ffs_info['_main'] is None and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
