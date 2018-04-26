@@ -24,7 +24,7 @@ class MessageInProgress:
         
 
     def __repr__(self):
-        return "Message to %s: %s" % (self.node_name, self.msg)
+        return "Message to %s: %s - %s" % (self.node_name, self.msg, self.status)
 
 
 def format_msg(msg):
@@ -101,10 +101,12 @@ class OutgoingMessages:
                     return True
                 suffix, _ = os.path.split(suffix)
             return False
-        def any_sibling_being_sent(ffs, new_in_progress):
+        def any_sibling_being_being_sent_before(ffs, new_in_progress):
             parent, _ = os.path.split(ffs)
-            for x in new_in_progress:
-                if x.startswith(parent + '/') and x != ffs:
+            for x in new_in_progress: 
+                if x == ffs: # nothing *before this
+                    break 
+                if x.startswith(parent + '/'):
                     return True
             return False
 
@@ -126,9 +128,8 @@ class OutgoingMessages:
                                     continue
                             elif x.msg['msg'] == 'new' and (
                                 any_parent_being_sent(x.msg['ffs'], new_in_progress)
-                                or any_sibling_being_sent(x.msg['ffs'], new_in_progress)
-                            ):  # one new at a time. 
-                                # Possibly optimization: One new per parent ffs
+                                or any_sibling_being_being_sent_before(x.msg['ffs'], new_in_progress)
+                            ):  # one new at a time per parent / don't send if parents are not done
                                 # otherwise the readonly=off&back-on-again on non-main parents will cause issues
                                 continue
                             while self.last_message_times.get(x.node_name, 0) > time.time() - self.wait_time_between_requests:
