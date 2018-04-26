@@ -1213,6 +1213,38 @@ class NewTests(PostStartupTests):
         self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
 
 
+    def test_new_parent_issue(self):
+        cfg = self._get_test_config()
+        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        omtf = OutgoingMessageForTesting()
+        def om():
+            return omtf 
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_papers': ['1'], '_papers/mueller': ['1'], '_papers/mueller/20141031': ['1'], '_papers/adhikary': ['1'], '_papers/adhikary/shu': ['1']},
+            'beta': {'papers': ['1'], 'papers/adhikary': ['1']},
+        }, sender_cls = om)
+        #so we can check as we do below
+        omtf.outgoing['alpha'] = []
+        omtf.outgoing['beta'] = []
+        def inner():
+            e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
+        self.assertRaises(ValueError, inner)
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/adhikary/shu', 'targets': ['beta']})
+
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller', 'targets': ['beta']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_node({"msg": 'new_done', 'ffs': 'papers/mueller', 'from': 'beta', 'properties': {'readonly': 'on', 'ffs:main': 'off'}})
+        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1) # the send_snapshot
+        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+
+
 
 def remove_snapshot_from_message(msg):
     msg = msg.copy()

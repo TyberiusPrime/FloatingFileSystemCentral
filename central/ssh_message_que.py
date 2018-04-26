@@ -104,7 +104,7 @@ class OutgoingMessages:
         def any_sibling_being_sent(ffs, new_in_progress):
             parent, _ = os.path.split(ffs)
             for x in new_in_progress:
-                if x.startswith(parent + '/'):
+                if x.startswith(parent + '/') and x != ffs:
                     return True
             return False
 
@@ -114,7 +114,8 @@ class OutgoingMessages:
             transfers_in_progress = set([
                 x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'send_snapshot'])
             new_in_progress = [
-                x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'new']
+                x.msg['ffs'] for x in outbox if x.status in ('unsent', 'in_progress') and x.msg['msg'] == 'new']
+            print(new_in_progress)
             if unsent:
                 if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
                     for x in self.prioritize(unsent):
