@@ -115,7 +115,6 @@ class OutgoingMessages:
                 x.msg['ffs'] for x in in_progress if x.msg['msg'] == 'send_snapshot'])
             new_in_progress = [
                 x.msg['ffs'] for x in outbox if x.status in ('unsent', 'in_progress') and x.msg['msg'] == 'new']
-            print(new_in_progress)
             if unsent:
                 if len(in_progress) < self.max_per_host: # no need to check anything if we're already at max send capacity
                     for x in self.prioritize(unsent):
