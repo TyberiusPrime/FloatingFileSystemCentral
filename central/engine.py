@@ -201,8 +201,8 @@ class Engine:
                 result[ffs] = {'targets': [ffs_info['_main']] + [x for x in ffs_info if x !=
                                                                  ffs_info['_main'] and not x.startswith('_')],
                                }
-                result[ffs]['properties'] = {node: self.model[ffs][node][
-                    'properties'] for node in result[ffs]['targets']}
+                result[ffs]['properties'] = {node: self.model[ffs][node].get('properties', {})
+                     for node in result[ffs]['targets']}
         return result
 
     def client_list_targets(self):

@@ -77,7 +77,7 @@ class EngineTests(unittest.TestCase):
                 return {}
         return NobodyConfig()
 
-    def get_engine(self, quick_ffs_definition, config=None, additional_node_config = None, sender_cls = FakeMessageSender):
+    def get_engine(self, quick_ffs_definition, config=None, additional_node_config=None, sender_cls=FakeMessageSender):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -397,7 +397,8 @@ class StartupTests(EngineTests):
         self.assertTrue(e.faulted)
 
     def test_orphan_target_from_other_ffs_raises_inconsitency(self):
-        # there's at least one node that used to be the main for an ffs missing from the configuration
+        # there's at least one node that used to be the main for an ffs missing
+        # from the configuration
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
@@ -425,7 +426,7 @@ class StartupTests(EngineTests):
         self.assertTrue(e.faulted)
 
     def test_no_main_but_remove_asap_on_all(self):
-        # 
+        #
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({'msg': 'startup', })
@@ -457,7 +458,7 @@ class StartupTests(EngineTests):
                          }
                          })
         self.assertEqual(len(outgoing_messages), 2)
-        self.assertTrue('one' in e.model) # only get's moved afterwards...
+        self.assertTrue('one' in e.model)  # only get's moved afterwards...
         self.assertTrue(e.is_ffs_remove_asap_all('one'))
         self.assertMsgEqual(outgoing_messages[0], {
             'msg': 'remove',
@@ -469,7 +470,6 @@ class StartupTests(EngineTests):
             'to': 'beta',
             'ffs': 'one',
         })
-
 
     def test_multiple_main_raises(self):
         e, outgoing_messages = self.ge()
@@ -877,7 +877,7 @@ class NewTests(PostStartupTests):
             },
             'owner': e.config.get_chown_user('two'),
             'rights': e.config.get_chmod_rights('two'),
-            })
+        })
         self.assertTrue('two' in e.model)
         self.assertEqual(e.model['two']['_main'], 'alpha')
         self.assertEqual(e.model['two']['alpha'], {'_new': True})
@@ -913,7 +913,7 @@ class NewTests(PostStartupTests):
             'owner': e.config.get_chown_user('two'),
             'rights': e.config.get_chmod_rights('two'),
 
-            })
+        })
         self.assertMsgEqual(outgoing_messages[0], {
             'to': 'alpha',
             'msg': 'new',
@@ -925,7 +925,7 @@ class NewTests(PostStartupTests):
             'owner': e.config.get_chown_user('two'),
             'rights': e.config.get_chmod_rights('two'),
 
-            })
+        })
         self.assertTrue('two' in e.model)
         self.assertEqual(e.model['two']['_main'], 'beta')
         e.incoming_node(
@@ -1147,6 +1147,7 @@ class NewTests(PostStartupTests):
             'alpha': {'_one': ['1'], '_one/two': ['1']},
             'beta': {},
         })
+
         def inner():
             e.incoming_client(
                 {"msg": 'add_targets', 'ffs': 'one/two', 'targets': ['beta']})
@@ -1160,127 +1161,186 @@ class NewTests(PostStartupTests):
         # on non-main targets
         # easy solution: only process one new at a time?
         cfg = self._get_test_config()
-        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        cfg.get_ssh_concurrent_connection_limit = lambda: 5
         omtf = OutgoingMessageForTesting()
+
         def om():
-            return omtf 
+            return omtf
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1'], '_two': ['1']},
             'beta': {},
-        }, sender_cls = om)
+        }, sender_cls=om)
         e.incoming_client({"msg": 'new', 'ffs': 'one/a', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
         e.incoming_client({"msg": 'new', 'ffs': 'two/b', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
         e.incoming_client({"msg": 'new', 'ffs': 'three', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
-        e.incoming_client({"msg": 'new', 'ffs': 'three/c', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
-        e.incoming_client({"msg": 'new', 'ffs': 'three/d', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
-        e.incoming_client({"msg": 'new', 'ffs': 'three/d/e', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client(
+            {"msg": 'new', 'ffs': 'three/c', 'targets': ['alpha']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client(
+            {"msg": 'new', 'ffs': 'three/d', 'targets': ['alpha']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
+        e.incoming_client(
+            {"msg": 'new', 'ffs': 'three/d/e', 'targets': ['alpha']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 3)
 
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'two/a', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/c', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/d', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'two/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'three', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/c', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'three/d', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
 
     def test_sibling_new_delays(self):
-        # make sure that shu/one and shu/two get run seperatly (read only issues!)
+        # make sure that shu/one and shu/two get run seperatly (read only
+        # issues!)
         cfg = self._get_test_config()
-        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        cfg.get_ssh_concurrent_connection_limit = lambda: 5
         omtf = OutgoingMessageForTesting()
+
         def om():
-            return omtf 
+            return omtf
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1'], '_two': ['1']},
             'beta': {},
-        }, sender_cls = om)
+        }, sender_cls=om)
         e.incoming_client({"msg": 'new', 'ffs': 'one/a', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
         e.incoming_client({"msg": 'new', 'ffs': 'one/b', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
         e.incoming_client({"msg": 'new', 'ffs': 'three', 'targets': ['alpha']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
-        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
-
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
+        omtf.job_returned(omtf.outgoing['alpha'][0].job_id, {
+                          'msg': 'new_done', 'from': 'alpha', 'ffs': 'one/a', 'properties': {'ffs:main': 'on'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 2)
 
     def test_new_parent_issue(self):
         cfg = self._get_test_config()
-        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        cfg.get_ssh_concurrent_connection_limit = lambda: 5
         omtf = OutgoingMessageForTesting()
+
         def om():
-            return omtf 
+            return omtf
         e, outgoing_messages = self.get_engine({
             'alpha': {'_papers': ['1'], '_papers/mueller': ['1'], '_papers/mueller/20141031': ['1'], '_papers/adhikary': ['1'], '_papers/adhikary/shu': ['1']},
             'beta': {'papers': ['1'], 'papers/adhikary': ['1']},
-        }, sender_cls = om)
-        #so we can check as we do below
+        }, sender_cls=om)
+        # so we can check as we do below
         omtf.outgoing['alpha'] = []
         omtf.outgoing['beta'] = []
+
         def inner():
-            e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
+            e.incoming_client(
+                {'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
         self.assertRaises(ValueError, inner)
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/adhikary/shu', 'targets': ['beta']})
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/adhikary/shu', 'targets': ['beta']})
 
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
-        e.incoming_node({"msg": 'new_done', 'ffs': 'papers/mueller', 'from': 'beta', 'properties': {'readonly': 'on', 'ffs:main': 'off'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1) # the send_snapshot
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/mueller', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
+        e.incoming_node({"msg": 'new_done', 'ffs': 'papers/mueller',
+                         'from': 'beta', 'properties': {'readonly': 'on', 'ffs:main': 'off'}})
+        self.assertEqual(len([x for x in outgoing_messages[
+                         'alpha'] if x.status == 'in_progress']), 1)  # the send_snapshot
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 2)
 
     def test_new_parent_issue(self):
         cfg = self._get_test_config()
-        cfg.get_ssh_concurrent_connection_limit = lambda : 5
+        cfg.get_ssh_concurrent_connection_limit = lambda: 5
         omtf = OutgoingMessageForTesting()
+
         def om():
-            return omtf 
+            return omtf
         e, outgoing_messages = self.get_engine({
             'alpha': {'_papers': ['1'], '_papers/mueller': ['1'], '_papers/mueller/20141031': ['1'], '_papers/adhikary': ['1'], '_papers/adhikary/shu': ['1']},
             'beta': {},
-        }, sender_cls = om)
-        #so we can check as we do below
+        }, sender_cls=om)
+        # so we can check as we do below
         omtf.outgoing['alpha'] = []
         omtf.outgoing['beta'] = []
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/mueller', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/adhikary', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/adhikary', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/adhikary/shu', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/adhikary/shu', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
+        e.incoming_client(
+            {'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
-        e.incoming_client({'msg': 'add_targets', 'ffs': 'papers/mueller/20141031', 'targets': ['beta']})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 0)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
-
-        e.incoming_node({"msg": 'new_done', 'ffs': 'papers', 'from': 'beta', 'properties': {'readonly': 'on', 'ffs:main': 'off'}})
-        self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
-        self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
+        e.incoming_node({"msg": 'new_done', 'ffs': 'papers', 'from': 'beta', 'properties': {
+                        'readonly': 'on', 'ffs:main': 'off'}})
+        self.assertEqual(
+            len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
+        self.assertEqual(
+            len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
 
 def remove_snapshot_from_message(msg):
@@ -1298,7 +1358,7 @@ class CaptureTest(PostStartupTests):
             'beta':  {'one': ['b', ], 'one/a': ['c']},
         },)
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],{
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -1309,13 +1369,14 @@ class CaptureTest(PostStartupTests):
 
     def test_send_snapshot_config_exclude_subdirs_callback(self):
         config = self._get_test_config()
-        config.exclude_subdirs_callback = lambda ffs, source_node, target_node: ['donotsync']
+        config.exclude_subdirs_callback = lambda ffs, source_node, target_node: [
+            'donotsync']
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['b', 'a', ], '_one/a': ['c']},
             'beta':  {'one': ['b', ], 'one/a': ['c']},
         }, config=config)
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqualMinusSnapshot(outgoing_messages[0],{
+        self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
             'msg': 'send_snapshot',
             'to': 'alpha',
             'ffs': 'one',
@@ -1323,6 +1384,7 @@ class CaptureTest(PostStartupTests):
             'target_host': 'beta',
             'excluded_subdirs': ['a', 'donotsync']
         })
+
     def test_pruning_after_capture(self):
         cfg = self._get_test_config()
 
@@ -1806,7 +1868,6 @@ class CaptureTest(PostStartupTests):
             })
         self.assertRaises(engine.RenameInProgress, inner)
 
-
     def test_capture_if_changed(self):
         e, outgoing_messages = self.ge()
         e.incoming_client({"msg": 'capture_if_changed', 'ffs': 'one'})
@@ -1846,7 +1907,7 @@ class CaptureTest(PostStartupTests):
         self.assertEqual(len(outgoing_messages), 1)
 
         self.assertMsgEqualMinusSnapshot(outgoing_messages[0],
-        {
+                                         {
             'to': 'beta',
             'msg': 'send_snapshot',
             'ffs': 'one',
@@ -1857,7 +1918,7 @@ class CaptureTest(PostStartupTests):
     def test_capture_all_if_changed(self):
         e, outgoing_messages = self.get_engine({
             'alpha': {'_one': ['1'], '_two': ['1']},
-            'beta': {'_three': [],},
+            'beta': {'_three': [], },
         })
         self.assertEqual(len(outgoing_messages), 0)
         e.incoming_client({"msg": "service_capture_all_if_changed"})
@@ -1877,9 +1938,6 @@ class CaptureTest(PostStartupTests):
             'ffs': 'two',
             'to': 'alpha',
         })
-                
-
-
 
 
 class RemoveTarget(PostStartupTests):
@@ -2248,9 +2306,9 @@ class AddTargetTests(PostStartupTests):
                              'to': 'gamma',
                              'ffs': 'one',
                              'properties': {'ffs:main': 'off', 'readonly': 'on'},
-                            'owner': e.config.get_chown_user('one'),
-                            'rights': e.config.get_chmod_rights('one'),
- 
+                             'owner': e.config.get_chown_user('one'),
+                             'rights': e.config.get_chmod_rights('one'),
+
                              }
                             )
         self.assertEqual(1, len(outgoing_messages))
@@ -2502,17 +2560,18 @@ class AddTargetTests(PostStartupTests):
 
         })
         fm.outgoing.clear()
+
         def inner():
             e.incoming_node(
                 {'msg': 'new_done',
-                'ffs': 'one',
-                'from': 'gamma',
-                'properties': {
-                    'ffs:main': 'off',
-                    'readonly': 'on'
-                }
-                }
-            )  #which triggers a 'capture' message, see test_add_targets_no_snapshots_to_send_captures_after_add_target
+                 'ffs': 'one',
+                 'from': 'gamma',
+                 'properties': {
+                     'ffs:main': 'off',
+                     'readonly': 'on'
+                 }
+                 }
+            )  # which triggers a 'capture' message, see test_add_targets_no_snapshots_to_send_captures_after_add_target
         self.assertRaises(engine.ManualInterventionNeeded, inner)
 
     def test_add_targets_no_snapshots_to_send_captures_after_add_target(self):
@@ -2757,25 +2816,27 @@ class AddTargetTests(PostStartupTests):
             'alpha': {'_one': ['1']},
             'beta': {},
         })
+
         def inner():
             e.client_new({
-            'msg': 'new',
-            'ffs': 'one/two',
-            'targets': ['alpha', 'beta'],
-            'owner': e.config.get_chown_user('one/two'),
-            'rights': e.config.get_chmod_rights('one/two'),
+                'msg': 'new',
+                'ffs': 'one/two',
+                'targets': ['alpha', 'beta'],
+                'owner': e.config.get_chown_user('one/two'),
+                'rights': e.config.get_chmod_rights('one/two'),
 
-        })
+            })
         self.assertRaises(ValueError, inner)
+
         def inner():
             e.client_new({
-            'msg': 'new',
-            'ffs': 'one/two',
-            'targets': ['beta'],
-            'owner': e.config.get_chown_user('one/two'),
-            'rights': e.config.get_chmod_rights('one/two'),
+                'msg': 'new',
+                'ffs': 'one/two',
+                'targets': ['beta'],
+                'owner': e.config.get_chown_user('one/two'),
+                'rights': e.config.get_chmod_rights('one/two'),
 
-        })
+            })
         self.assertRaises(ValueError, inner)
         e.client_new({
             'msg': 'new',
@@ -2794,8 +2855,6 @@ class AddTargetTests(PostStartupTests):
             'rights': e.config.get_chmod_rights('three'),
 
         })
-
-
 
 
 class MoveTest(PostStartupTests):
@@ -3182,7 +3241,7 @@ class SnapshotPruningTests(EngineTests):
             'snapshot': '1',
             'to': 'beta'
         })
-        
+
 
 class ZpoolStatusChecks(EngineTests):
 
@@ -4001,7 +4060,8 @@ class TestStartupTriggeringActions(EngineTests):
 
     def test_capture_if_no_snapshots_to_send_but_replicates_decide_on_snapshots(self):
         cfg = self._get_test_config()
-        cfg.decide_snapshots_to_send = lambda ffs, snapshots: [x for x in snapshots if x.startswith('ffs-')]
+        cfg.decide_snapshots_to_send = lambda ffs, snapshots: [
+            x for x in snapshots if x.startswith('ffs-')]
         engine, outgoing_messages = self.get_engine({
             # thes that we stick to this order. Nodes return snapshots in
             # creation order!
@@ -4018,16 +4078,16 @@ class TestStartupTriggeringActions(EngineTests):
 
     def test_prio_ordinging_during_send_missing(self):
         beta_def = {
-            '_A0':['1', '2', ('ffs:priority', '1001')],
-            '_A101':['1', '2', ('ffs:priority', '1')],
+            '_A0': ['1', '2', ('ffs:priority', '1001')],
+            '_A101': ['1', '2', ('ffs:priority', '1')],
         }
         alpha_def = {
-            'A0':['1', ('ffs:priority', '1001')],
-            'A101':['1', ('ffs:priority', '1')],
+            'A0': ['1', ('ffs:priority', '1001')],
+            'A101': ['1', ('ffs:priority', '1')],
         }
         for i in range(1, 100):
-            beta_def['_A%i'%i] = ['1', '2']
-            alpha_def['A%i'%i] = ['1', '2']
+            beta_def['_A%i' % i] = ['1', '2']
+            alpha_def['A%i' % i] = ['1', '2']
         e, outgoing_messages = self.get_engine({
             'beta':  beta_def,
             'alpha':  alpha_def,
@@ -4048,9 +4108,6 @@ class TestStartupTriggeringActions(EngineTests):
             'target_host': 'alpha',
             'priority': 1001,
         })
-
-
-
 
 
 class CrossTalkTest(EngineTests):
@@ -4317,7 +4374,6 @@ class OutgoingMessageTests(unittest.TestCase):
         unsent = [x for x in out if x.status == 'unsent']
         self.assertEqual(len(sent), 1)
         self.assertEqual(len(unsent), om.max_per_host - 1)
-
 
     def test_mixed(self):
         om = OutgoingMessageForTesting()
@@ -4821,6 +4877,7 @@ class RenameTests(PostStartupTests):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1'], '_one/a': ['1'], '_two': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'rename', 'ffs': 'one/a', 'new_name': 'two/a'
@@ -4831,6 +4888,7 @@ class RenameTests(PostStartupTests):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1'], '_one/a': ['1'], '_two': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 'msg': 'rename', 'ffs': 'one', 'new_name': 'three'
@@ -5011,12 +5069,12 @@ class TimeBasedSnapshotTests(PostStartupTests):
 
         e, outgoing_messages = self.get_engine({
             'beta':  {
-                '_one': ['1', ('ffs:snapshot_interval', 15*60)],
-                '_two': [('ffs:snapshot_interval', 30*60)],
-                '_three': ['ffs-shubidudh', ('ffs:snapshot_interval', 15*60)],
-                '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15*60)],
-                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1*60)],
-                '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1*60)],
+                '_one': ['1', ('ffs:snapshot_interval', 15 * 60)],
+                '_two': [('ffs:snapshot_interval', 30 * 60)],
+                '_three': ['ffs-shubidudh', ('ffs:snapshot_interval', 15 * 60)],
+                '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15 * 60)],
+                '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
+                '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
             },
         })
         self.assertFalse(e.model['one']['beta']['upcoming_snapshots'])
@@ -5047,7 +5105,6 @@ class TimeBasedSnapshotTests(PostStartupTests):
                  "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
             return 'ffs-' + '-'.join(t)
 
-
         e, outgoing_messages = self.get_engine({
             'beta':  {
                 '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1)],
@@ -5060,11 +5117,11 @@ class TimeBasedSnapshotTests(PostStartupTests):
         e.one_minute_passed()
         self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
         e.model['five']['beta']['upcoming_snapshots'].clear()
+
         def inner():
             e.fault("test")
         self.assertRaises(engine.ManualInterventionNeeded, inner)
         self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
-
 
     def test_main_has_no_interval_others_do(self):
         def inner():
@@ -5086,20 +5143,17 @@ class TimeBasedSnapshotTests(PostStartupTests):
             'properties': {'ffs:snapshot_interval': '100'},
             'to': 'alpha'
         })
-        
+
     def test_new_not_send_or_finished_and_one_minute_passed_does_not_raise(self):
         # line 1380, in get_snapshot_interval
         #interval = info[main]['properties'].get('ffs:snapshot_interval', '-')
-        #builtins.KeyError: 'properties'
+        # builtins.KeyError: 'properties'
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1', ('ffs:snapshot_interval', '100')]},
             'alpha':  {'one': ['1', ('ffs:snapshot_interval', '50')]},
         })
         e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['alpha']})
         e.one_minute_passed()
-
- 
-
 
 
 class ClientFacingTests(PostStartupTests):
@@ -5118,18 +5172,43 @@ class ClientFacingTests(PostStartupTests):
             'alpha':  {'one': ['1']},
         })
         l = e.incoming_client({'msg': 'list_ffs',
-        'full': True})
-        self.assertEqual(l, 
-            {'one': 
-                {
-                    'targets': ['beta', 'alpha'],
-                    'properties': {
-                        'beta': {'ffs:shu': '123', 'ffs:main': 'on', 'readonly': 'off'},
-                        'alpha': {'ffs:main': 'off', 'readonly': 'on'}
-                    }
-                }
-            })
+                               'full': True})
+        self.assertEqual(l,
+                         {'one':
+                          {
+                              'targets': ['beta', 'alpha'],
+                              'properties': {
+                                  'beta': {'ffs:shu': '123', 'ffs:main': 'on', 'readonly': 'off'},
+                                  'alpha': {'ffs:main': 'off', 'readonly': 'on'}
+                              }
+                          }
+                          })
 
+    def test_list_ffs_full_during_new(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {'_one': ['1', ('ffs:shu', '123')]},
+            'alpha':  {'one': ['1']},
+        })
+        e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['alpha']})
+        l = e.incoming_client({'msg': 'list_ffs',
+                               'full': True})
+        self.assertEqual(l,
+                         {'one':
+                          {
+                              'targets': ['beta', 'alpha'],
+                              'properties': {
+                                  'beta': {'ffs:shu': '123', 'ffs:main': 'on', 'readonly': 'off'},
+                                  'alpha': {'ffs:main': 'off', 'readonly': 'on'}
+                              }
+                          },
+                          'two': {
+                              'targets': ['alpha'],
+                              'properties': {
+                                  'alpha': {}
+                              }
+                          },
+                          }
+                         )
 
     def test_client_list_ffs_in_case_of_new(self):
         e, outgoing_messages = self.get_engine({
@@ -5154,7 +5233,6 @@ class ClientFacingTests(PostStartupTests):
         l = e.incoming_client({'msg': 'list_ffs'})
         self.assertEqual(l, {'one': ['beta', 'alpha']})
 
-
     def test_client_list_ffs_if_engine_faulted(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
@@ -5178,6 +5256,7 @@ class ClientFacingTests(PostStartupTests):
             config,
             fm,
         )
+
         def inner():
             l = e.incoming_client({"msg": 'list_ffs'})
         self.assertRaises(engine.StartupNotDone, inner)
@@ -5187,7 +5266,6 @@ class FailureTests(PostStartupTests):
 
     def test_deploy_failed(self):
         raise NotImplementedError("Make sure complaint is spot on")
-
 
     def test_ssh_connect_failed(self):
         raise NotImplementedError()
@@ -5203,12 +5281,15 @@ class FailureTests(PostStartupTests):
             'alpha':  {'one': ['1']},
         })
         self.assertFalse(e.model['one']['alpha'].get("removing", False))
-        e.incoming_client({'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
+        e.incoming_client(
+            {'msg': 'remove_target', 'ffs': 'one', 'target': 'alpha'})
         self.assertEqual(len(outgoing_messages), 1)
-        self.assertMsgEqual(outgoing_messages[0], {'msg': 'remove', 'to': 'alpha', 'ffs': 'one'})
+        self.assertMsgEqual(outgoing_messages[0], {
+                            'msg': 'remove', 'to': 'alpha', 'ffs': 'one'})
         self.assertTrue('alpha' in e.model['one'])
         self.assertTrue(e.model['one']['alpha'].get("removing", False))
-        e.incoming_node({'msg': 'remove_failed', 'reason': 'target_is_busy', 'ffs': 'one', 'from': 'alpha'})
+        e.incoming_node(
+            {'msg': 'remove_failed', 'reason': 'target_is_busy', 'ffs': 'one', 'from': 'alpha'})
         self.assertFalse('alpha' in e.model['one'])
 
     def test_permission_denied(self):
@@ -5228,7 +5309,8 @@ class FailureTests(PostStartupTests):
         }, config=cfg)
         self.assertEqual(len(outgoing_messages), 1)
         informs.clear()
-        e.incoming_node({'msg': 'remove_snapshot_failed', 'ffs': 'one', 'snapshot': '-1', 'from': 'beta', 'error_msg': 'Snapshot had dependent clones.'})
+        e.incoming_node({'msg': 'remove_snapshot_failed', 'ffs': 'one', 'snapshot': '-1',
+                         'from': 'beta', 'error_msg': 'Snapshot had dependent clones.'})
         self.assertFalse(e.faulted)
         self.assertEqual(len(informs), 1)
         self.assertEqual(len(complaints), 0)
@@ -5241,8 +5323,8 @@ class ReadOnlyHostTests(PostStartupTests):
             'alpha': {'_one': ['0'], 'two': ['1']},
             'beta':  {'one': ['0'], '_two': ['1', '2']},
             'gamma': {'_four': ['4']},
-        }, additional_node_config = {
-                'alpha': {'readonly_node': True}})
+        }, additional_node_config={
+            'alpha': {'readonly_node': True}})
         return engine, outgoing_messages
 
     def test_readonly_hosts(self):
@@ -5254,113 +5336,121 @@ class ReadOnlyHostTests(PostStartupTests):
 
     def test_new_readonly_node_raises(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'new',
-            'ffs': 'three',
-            'targets': ['alpha', 'beta']})
+                               'ffs': 'three',
+                               'targets': ['alpha', 'beta']})
         self.assertRaises(engine.NodeIsReadonly, inner)
         e.incoming_client({"msg": 'new',
-            'ffs': 'three',
-            'targets': ['beta']})
+                           'ffs': 'three',
+                           'targets': ['beta']})
         self.assertEqual(len(outgoing_messages), 1)
- 
+
     def test_set_interval_read_only_node_raises(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'set_snapshot_interval',
-            'ffs': 'one',
-            'interval': 500})
+                               'ffs': 'one',
+                               'interval': 500})
         self.assertRaises(engine.NodeIsReadonly, inner)
         e.incoming_client({"msg": 'set_snapshot_interval',
-            'ffs': 'two',
-            'interval': 500})
+                           'ffs': 'two',
+                           'interval': 500})
         self.assertEqual(len(outgoing_messages), 1)
         e.incoming_client({"msg": 'set_snapshot_interval',
-            'ffs': 'four',
-            'interval': 500})
+                           'ffs': 'four',
+                           'interval': 500})
         self.assertEqual(len(outgoing_messages), 2)
-  
+
     def test_chown_read_only_main_raises(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'chown_and_chmod',
-            'ffs': 'one',
-            'sub_path': '/',
-            })
+                               'ffs': 'one',
+                               'sub_path': '/',
+                               })
         self.assertRaises(engine.NodeIsReadonly, inner)
         e.incoming_client({"msg": 'chown_and_chmod',
-            'ffs': 'two',
-            'sub_path': '/',
-            })
+                           'ffs': 'two',
+                           'sub_path': '/',
+                           })
         self.assertEqual(len(outgoing_messages), 1)
 
     def test_remove_readonly_node_raises(self):
         e, outgoing_messages = self.ge()
-        def inner():
-            e.incoming_client({"msg": 'remove_target',
-            'ffs': 'two',
-            'target': 'alpha'
-            })
-        self.assertRaises(engine.InvalidTarget, inner)  #not on this target
-        def inner():
-            e.incoming_client({"msg": 'remove_target',
-            'ffs': 'one',
-            'target': 'alpha'
-            })
-        self.assertRaises(ValueError, inner)  #is main
 
+        def inner():
+            e.incoming_client({"msg": 'remove_target',
+                               'ffs': 'two',
+                               'target': 'alpha'
+                               })
+        self.assertRaises(engine.InvalidTarget, inner)  # not on this target
+
+        def inner():
+            e.incoming_client({"msg": 'remove_target',
+                               'ffs': 'one',
+                               'target': 'alpha'
+                               })
+        self.assertRaises(ValueError, inner)  # is main
 
         e.incoming_client({"msg": 'remove_target',
-            'ffs': 'one',
-            'target': 'beta'
-            })
-        
+                           'ffs': 'one',
+                           'target': 'beta'
+                           })
+
         self.assertEqual(len(outgoing_messages), 1)
 
     def test_set_priority_readonly_node_raises(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'set_priority',
-            'ffs': 'one',
-            'priority': 500})
+                               'ffs': 'one',
+                               'priority': 500})
         self.assertRaises(engine.NodeIsReadonly, inner)
         e.incoming_client({"msg": 'set_priority',
-            'ffs': 'two',
-            'priority': 500})
+                           'ffs': 'two',
+                           'priority': 500})
         self.assertEqual(len(outgoing_messages), 1)
         e.incoming_client({"msg": 'set_priority',
-            'ffs': 'four',
-            'priority': 500})
+                           'ffs': 'four',
+                           'priority': 500})
         self.assertEqual(len(outgoing_messages), 2)
 
     def test_no_moving_readonly_node(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'move_main',
-            'ffs': 'one',
-            'target': 'beta'})
+                               'ffs': 'one',
+                               'target': 'beta'})
         self.assertRaises(engine.NodeIsReadonly, inner)
+
         def inner():
             e.incoming_client({"msg": 'move_main',
-            'ffs': 'two',
-            'target': 'alpha'})
+                               'ffs': 'two',
+                               'target': 'alpha'})
         self.assertRaises(engine.InvalidTarget, inner)
 
     def test_no_renaming_readonly_node(self):
         e, outgoing_messages = self.ge()
+
         def inner():
             e.incoming_client({"msg": 'rename',
-            'ffs': 'one',
-            'new_name': 'three'})
+                               'ffs': 'one',
+                               'new_name': 'three'})
         self.assertRaises(engine.NodeIsReadonly, inner)
 
     def test_send_snapshots_from_snapshot_not_clone_readonly_hosts(self):
         engine, outgoing_messages = self.get_engine({
-            'alpha': {'_one': ['0','1'], 'two': ['1']},
+            'alpha': {'_one': ['0', '1'], 'two': ['1']},
             'beta':  {'one': ['0'], '_two': ['1', '2']},
             'gamma': {'_four': ['4']},
-        }, additional_node_config = {
-                'alpha': {'readonly_node': True}})
+        }, additional_node_config={
+            'alpha': {'readonly_node': True}})
 
         self.assertEqual(len(outgoing_messages), 1)
         self.assertMsgEqualMinusSnapshot(outgoing_messages[0], {
@@ -5384,19 +5474,19 @@ class ReadOnlyHostTests(PostStartupTests):
         # on another host, and now you want to ovoid
         # the 'two mains, fix this' issue
         engine, outgoing_messages = self.get_engine({
-            'alpha': {'_one': ['0','1'], 'two': ['1'], '_three': ['0']},
+            'alpha': {'_one': ['0', '1'], 'two': ['1'], '_three': ['0']},
             'beta':  {'_one': ['0'], '_two': ['1', '2']},
             'gamma': {'_four': ['4']},
-        }, additional_node_config = {
-                'alpha': {'readonly_node': True,
-                'ignore_callback': lambda ffs, properties: ffs == 'one'
-                }})
+        }, additional_node_config={
+            'alpha': {'readonly_node': True,
+                      'ignore_callback': lambda ffs, properties: ffs == 'one'
+                      }})
         self.assertTrue('alpha' in engine.model['three'])
         self.assertFalse('alpha' in engine.model['one'])
- 
 
 
 class PriorityTests(PostStartupTests):
+
     def test_non_int_prio_raises_on_starutp(self):
         def inner():
             e, outgoing_messages = self.get_engine({
@@ -5416,8 +5506,6 @@ class PriorityTests(PostStartupTests):
             'properties': {'ffs:priority': '100'},
             'to': 'alpha'
         })
-        
- 
 
     def test_prio_only_set_on_non_main(self):
         def inner():
@@ -5427,12 +5515,12 @@ class PriorityTests(PostStartupTests):
             })
         self.assertRaises(engine.ManualInterventionNeeded, inner)
 
-     
     def test_client_set_prio_not_specified(self):
         e, outgoing_messages = self.get_engine({
             'beta':  {'_one': ['1']},
             'alpha':  {'one': ['1']},
         })
+
         def inner():
             e.incoming_client({
                 "msg": 'set_priority',
@@ -5440,7 +5528,6 @@ class PriorityTests(PostStartupTests):
                 'interval': 34
             })
         self.assertRaises(engine.CodingError, inner)
-
 
     def test_client_set_prio(self):
         e, outgoing_messages = self.get_engine({
@@ -5473,12 +5560,18 @@ class PriorityTests(PostStartupTests):
 
         o = ssh_message_que.OutgoingMessages(None, e, None)
         msgs = [
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'remove_snapshot', 'priority': 1000, 'snapshot': 'b'}),
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'remove_snapshot', 'priority': 900, 'snapshot': 'a'}),
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'capture', 'ffs': 'b'}),
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'new', 'ffs': 'a'}),
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'send_snapshot', 'ffs': 'b', 'snapshot': 'a'}),
-            ssh_message_que.MessageInProgress('node1', {}, {'msg': 'set_properties', 'ffs': 'b', 'properties': {'a': 'true'}}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'remove_snapshot', 'priority': 1000, 'snapshot': 'b'}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'remove_snapshot', 'priority': 900, 'snapshot': 'a'}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'capture', 'ffs': 'b'}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'new', 'ffs': 'a'}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'send_snapshot', 'ffs': 'b', 'snapshot': 'a'}),
+            ssh_message_que.MessageInProgress(
+                'node1', {}, {'msg': 'set_properties', 'ffs': 'b', 'properties': {'a': 'true'}}),
         ]
         ordered = list(o.prioritize(msgs))
         self.assertEqual(ordered[0], msgs[5])
@@ -5487,8 +5580,6 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[3], msgs[4])
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
-
-
 
 
 if __name__ == '__main__':
