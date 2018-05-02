@@ -273,10 +273,11 @@ class Engine:
             raise CodingError("No targets specified")
         if not isinstance(msg['targets'], list):
             raise CodingError("targets must be alist")
+        default_targets = self.config.decide_targets(ffs)
+        if not isinstance(default_targets, list):
+            self.fault("config.decide_targets returned non-list")
         if not msg['targets']:
-            msg['targets'] = self.config.decide_targets(ffs)
-            if not isinstance(msg['targets'], list):
-                self.fault("config.decide_targets returned non-list")
+            msg['targets'] = default_targets
         targets = [self.config.find_node(x) for x in msg['targets']]
         for node in targets:
             if self.is_readonly_node(node):

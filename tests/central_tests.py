@@ -1282,6 +1282,22 @@ class NewTests(PostStartupTests):
         self.assertEqual(len([x for x in outgoing_messages['alpha'] if x.status == 'in_progress']), 1)
         self.assertEqual(len([x for x in outgoing_messages['beta'] if x.status == 'in_progress']), 1)
 
+    def test_decide_targets_is_always_called(self):
+        cfg = self._get_test_config()
+        def dt(ffs):
+            if ffs == 'b':
+                raise ValueError('hello')
+            return['beta']
+        cfg.decide_targets = dt
+        e, outgoing_messages = self.get_engine({
+            'alpha': {'_a': ['1']},
+            'beta': {},
+        }, config=cfg)
+        e.incoming_client({'msg': 'new', 'ffs': 'c', 'targets': ['alpha']})
+        def inner():
+            e.incoming_client({'msg': 'new', 'ffs': 'b', 'targets': ['alpha']})
+        self.assertRaises(ValueError, inner)
+
 
 def remove_snapshot_from_message(msg):
     msg = msg.copy()
