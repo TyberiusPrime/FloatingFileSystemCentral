@@ -71,10 +71,10 @@ class Config(DefaultConfig):
         logger.setLevel(logging.DEBUG)
 
         debug_logger = logging.handlers.RotatingFileHandler(
-            "/var/log/ffs/debug.log", mode='a', maxBytes=20 * 1024 * 1024, backupCount=1, encoding=None, delay=0)
+            "/var/log/ffs/debug.log", mode='a', maxBytes=200 * 1024, backupCount=1, encoding=None, delay=0)
         debug_logger.setLevel(logging.DEBUG)
         error_logger = logging.handlers.RotatingFileHandler(
-            "/var/log/ffs/error.log", mode='a', maxBytes=10 * 1024 * 1024, backupCount=1, encoding=None, delay=0)
+            "/var/log/ffs/error.log", mode='a', maxBytes=10 * 1024, backupCount=1, encoding=None, delay=0)
         error_logger.setLevel(logging.ERROR)
         console_logger = logging.StreamHandler()
         console_logger.setLevel(logging.ERROR)
