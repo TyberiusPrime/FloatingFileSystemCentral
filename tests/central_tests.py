@@ -5091,6 +5091,9 @@ class TimeBasedSnapshotTests(PostStartupTests):
                 '_four': [name_snapshot(0), ('ffs:snapshot_interval', 15 * 60)],
                 '_five': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
                 '_six': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
+                '_seven': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
+                '_eight': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
+                '_nine': [name_snapshot(-161), ('ffs:snapshot_interval', 1 * 60)],
             },
         })
         self.assertFalse(e.model['one']['beta']['upcoming_snapshots'])
@@ -5101,6 +5104,12 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertFalse(e.model['six']['beta']['upcoming_snapshots'])
         # fake an outgoing snapshot
         e.model['six']['beta']['upcoming_snapshots'] = ['blocks_auto']
+        #fake that we checked in between
+        e.model['seven']['_last_auto_snapshot_time'] = time.time() - 59
+        last_snapshot_time = time.time() - 61
+        e.model['eight']['_last_auto_snapshot_time'] = last_snapshot_time
+        e.model['nine']['_last_auto_snapshot_time'] = last_snapshot_time
+
         e.one_minute_passed()
         # no snapshot before -> make one
         self.assertTrue(e.model['two']['beta']['upcoming_snapshots'])
@@ -5113,6 +5122,32 @@ class TimeBasedSnapshotTests(PostStartupTests):
         self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
         # not if there's a currently outgoing snapshot
         self.assertEqual(len(e.model['six']['beta']['upcoming_snapshots']), 1)
+        #not if we have attempted a capture_if_changed snapshot in beetween 
+        self.assertFalse(e.model['seven']['beta']['upcoming_snapshots'])
+        #but true if the attempt has been early enough
+        self.assertTrue(e.model['eight']['beta']['upcoming_snapshots'])
+        self.assertTrue(e.model['nine']['beta']['upcoming_snapshots'])
+        self.assertTrue(e.model['eight']['_last_auto_snapshot_time'] > last_snapshot_time)
+
+        #now simulate that one changed and one did not
+        e.incoming_node({'msg': 'capture_if_changed_done', 'from': 'beta',
+                'ffs': 'eight', 'snapshot': e.model['eight']['beta']['upcoming_snapshots'][0], 'changed': True})
+        e.incoming_node({'msg': 'capture_if_changed_done', 'from': 'beta',
+                'ffs': 'nine', 'snapshot': e.model['nine']['beta']['upcoming_snapshots'][0], 'changed': False})
+        self.assertFalse(e.model['eight']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['nine']['beta']['upcoming_snapshots'])
+
+        e.one_minute_passed()
+        self.assertFalse(e.model['eight']['beta']['upcoming_snapshots'])
+        self.assertFalse(e.model['nine']['beta']['upcoming_snapshots'])
+
+        #now, by backdating this time, the truly changed should not resend, but the other one should
+        e.model['eight']['_last_auto_snapshot_time'] = last_snapshot_time
+        e.model['nine']['_last_auto_snapshot_time'] = last_snapshot_time
+        e.one_minute_passed()
+        self.assertFalse(e.model['eight']['beta']['upcoming_snapshots'])
+        self.assertTrue(e.model['nine']['beta']['upcoming_snapshots'])
+
 
     def test_no_interval_if_faulted(self):
         def name_snapshot(offset_for_testing):
@@ -5130,13 +5165,16 @@ class TimeBasedSnapshotTests(PostStartupTests):
         # time has passed
         self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
         e.model['five']['beta']['upcoming_snapshots'].clear()
+        del e.model['five']['_last_auto_snapshot_time']
         e.one_minute_passed()
         self.assertTrue(e.model['five']['beta']['upcoming_snapshots'])
         e.model['five']['beta']['upcoming_snapshots'].clear()
+        del e.model['five']['_last_auto_snapshot_time']
 
         def inner():
             e.fault("test")
         self.assertRaises(engine.ManualInterventionNeeded, inner)
+        e.one_minute_passed()
         self.assertFalse(e.model['five']['beta']['upcoming_snapshots'])
 
     def test_main_has_no_interval_others_do(self):

@@ -1293,7 +1293,7 @@ class Engine:
                     self.do_capture(ffs, False)
 
     def node_capture_done(self, msg):
-        node = msg['from']
+        sender = msg['from']
         if 'ffs' not in msg:
             self.fault("missing ffs parameter", CodingError)
         ffs = msg['ffs']
@@ -1301,22 +1301,19 @@ class Engine:
             self.fault("capture_done from ffs not in model.",
                        msg, InconsistencyError)
         main = self.model[ffs]['_main']
-        if main != node:
+        if main != sender:
             self.fault("Capture message received from non main node",
                        msg, InconsistencyError)
         if 'snapshot' not in msg:
             self.fault("No snapshot in msg", msg, CodingError)
+        snapshot = msg['snapshot']
         if (
             (msg['msg'] == 'capture_done') or
             ((msg['msg'] == 'capture_if_changed_done') and msg['changed'])
         ):
-            snapshot = msg['snapshot']
-            if snapshot in self.model[ffs][node]['snapshots']:
+            if snapshot in self.model[ffs][sender]['snapshots']:
                 self.fault("Snapshot was already in model", msg, CodingError)
-            self.model[ffs][node]['snapshots'].append(snapshot)
-
-            if snapshot in self.model[ffs][node].get('upcoming_snapshots', []):
-                self.model[ffs][node]['upcoming_snapshots'].remove(snapshot)
+            self.model[ffs][sender]['snapshots'].append(snapshot)
 
             main = self.model[ffs]['_main']
             for node in sorted(self.node_config):
@@ -1329,6 +1326,10 @@ class Engine:
                 self._prune_snapshots_for_ffs(ffs, main)
             else:
                 self.config.inform("Move step 2 done: %s" % ffs)
+        #either way, it's no longer upcoming
+        if snapshot in self.model[ffs][sender].get('upcoming_snapshots', []):
+            self.model[ffs][sender]['upcoming_snapshots'].remove(snapshot)
+
 
     def node_send_snapshot_done(self, msg):
         main = msg['from']
@@ -1499,14 +1500,20 @@ class Engine:
                                     self.logger.info(
                                         "Last snapshot time: %s, now: %s, make snapshot=%s", snapshot_time, now, snapshot_time + (iv) < now)
                                     if snapshot_time + (iv) < now:
-                                        self.logger.info(
-                                            "Auto-snapshot: %s" % ffs)
-                                        do_snapshot = True
+                                        #two options: we have a last snapshot time, or we do not...
+                                        if (not '_last_auto_snapshot_time' in ffs_info or 
+                                            (ffs_info['_last_auto_snapshot_time'] + iv < now)):
+                                            self.logger.info(
+                                                "Auto-snapshot: %s" % ffs)
+                                            do_snapshot = True
                                 except ValueError:  # could not parse time, assume we need to redo it
                                     do_snapshot = True
                                     pass
                             if do_snapshot:
-                                self.do_capture(ffs, False, 'auto')
+                                # the _last_auto_snapshot_time is used so we don't 
+                                # try to retrigger the snapshot every minute
+                                self.model[ffs]['_last_auto_snapshot_time'] = now
+                                self.do_capture(ffs, False, 'auto', if_changed=True)
             return True
         return False
 
