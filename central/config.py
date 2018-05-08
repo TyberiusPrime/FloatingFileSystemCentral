@@ -141,11 +141,6 @@ class Config(DefaultConfig):
         """
         import time
 
-        def parse_snapshot(x):
-            parts = x.split("-")
-            ts = "-".join(parts[1:7])
-            #ts = x[x.find('-') + 1:x.rfind('-')]
-            return time.mktime(time.strptime(ts, "%Y-%m-%d-%H-%M-%S"))
         snapshots = list(reversed(sorted(snapshots)))  # newest first
         keep = set([x for x in snapshots if not x.startswith('ffs-')
                     and not x.startswith('zfs-auto-snap_')
@@ -153,38 +148,9 @@ class Config(DefaultConfig):
         snapshots = [x for x in snapshots if x.startswith('ffs-')]
         keep_by_default = 10
         keep.update(snapshots[:keep_by_default])  # always keep the last 10
-
-        snapshots = snapshots[keep_by_default:]
-        snapshot_times = [(parse_snapshot(x), x)
-                          for x in snapshots][::-1]  # oldest first
-        snapshots = set(snapshots)
-
-        def find_snapshot_between(start, stop):
-            for ts, sn in snapshot_times:
-                if start < ts < stop:
-                    return sn
-            return None
-
-        intervals_to_check = []
-        for count, seconds, name in [
-            (24, 3600, 'hour'),  # last 24 h,
-            (7, 3600 * 24, 'day'),  # last 7 days
-            (5, 3600 * 24 * 8, 'week'),  # last 5 weeks
-            (12, 3600 * 24 * 30, 'month'),  # last 12 months
-            (10, 3600 * 24 * 365, 'year'),  # last 10 years
-        ]:
-            # keep one from each of the last hours
-            for interval in range(1, count + 1):
-                start = time.time() - interval * seconds
-                stop = time.time() - (interval - 1) * seconds
-                intervals_to_check.append(
-                    (start, stop, "%s_%i" % (name, interval)))
-        for start, stop, name in intervals_to_check:
-            found = find_snapshot_between(start, stop)
-            if found:
-                snapshots.remove(found)
-                snapshot_times.remove((parse_snapshot(found), found))
-                keep.add(found)
+        #now apply time based policy
+        keep.update(default_config.keep_snapshots_time_policy(
+            snapshots, quarters=4, hours=24, days=10, weeks=5, months=12, years=10))
         return keep
 
     def decide_snapshots_to_send(self, dummy_ffs_name, snapshots):

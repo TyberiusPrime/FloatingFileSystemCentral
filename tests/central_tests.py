@@ -5208,6 +5208,66 @@ class TimeBasedSnapshotTests(PostStartupTests):
         })
         e.incoming_client({'msg': 'new', 'ffs': 'two', 'targets': ['alpha']})
         e.one_minute_passed()
+    
+    def test_keep_snapshots_time_policy(self):
+        import datetime
+        class UTC(datetime.tzinfo):
+            def utcoffset(self, dt):
+                return datetime.timedelta(0)
+            def dst(self, dt):
+                return datetime.timedelta(0)
+
+
+        now = datetime.datetime(2018, 1, 1, 0, 0, tzinfo=UTC())
+        sn = [ ]
+        #one per hour
+        def format_time(t):
+            ft = ["%.4i" % t.year, "%.2i" % t.month, "%.2i" % t.day,
+                "%.2i" % t.hour, "%.2i" % t.minute, "%.2i" % t.second]
+            return 'ffs' + '-' + '-'.join(ft)
+        def add(t):
+            s = format_time(t)
+            if not s in sn:
+                sn.append(s)
+            t += datetime.timedelta(minutes=7)
+            s = '!' + format_time(t)
+            if not s in sn:
+                sn.append(s)
+        for i in range(1, 5):
+            add(now - datetime.timedelta(minutes=i * 15) )
+        for i in range(1, 25):
+            add(now - datetime.timedelta(hours=i) )
+        for i in range(1, 8):
+            add(now - datetime.timedelta(days=i) )
+        for i in range(1, 6):
+            add(now - datetime.timedelta(days=7 * i) )
+        for i in range(1, 13):
+            add(now - datetime.timedelta(days=30 * i))
+        for i in range(1, 15):
+            add(now - datetime.timedelta(days=365 * i) )
+
+        should_keep = {x for x in sn if not x.startswith("!")}
+        should_remove = {x[1:] for x in sn if x.startswith("!")}
+        sn = [x if not x.startswith('!') else x[1:] for x in sn]
+        actual = default_config.keep_snapshots_time_policy(sn, quarters=4, hours=24, days=7, weeks=5, months=12, years=15, 
+        allow_one_snapshot_to_fill_multiple_intervals=True, now=now.timestamp()) 
+        self.assertEqual(actual, should_keep)
+        actual2 = default_config.keep_snapshots_time_policy(sn, quarters=4, hours=24, days=7, weeks=5, months=12, years=15, 
+            allow_one_snapshot_to_fill_multiple_intervals=False, now=now.timestamp()) 
+        self.assertTrue(len(actual2) > len(actual)) # actual2 must have *more* snapshots
+        self.assertTrue(actual2.issuperset(should_keep))
+
+
+ 
+
+
+ 
+
+
+
+        
+
+
 
 
 class ClientFacingTests(PostStartupTests):

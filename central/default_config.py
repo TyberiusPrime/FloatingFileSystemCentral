@@ -290,3 +290,77 @@ class CheckedConfig:
             if '/' in x:
                 raise ValueError("exclude_subdirs_callback only works on top level sub-dirs - no / allowed")
         return res
+
+def keep_snapshots_time_policy(snapshots, quarters=4, hours=12, days=7, weeks=10, months=6, years=5, allow_one_snapshot_to_fill_multiple_intervals=False, now=None):
+    """Keep one snapshot (starting with ffs) for each of the following intervals
+    <quarters>  15 minutes,
+    <hours>  hours,
+    <days>  days,
+    <weeks>  weeks,
+    <months>  months, 
+    <years>  years
+    each.
+
+    if allow_one_snapshot_to_fill_multiple_intervals is set,
+        you get the smallest possible number of snapshots 
+        to fullfill the intervals
+        otherwise each interval get's a unique snapshot (if availabel)
+
+    For testing, now can be set to a unix timestamp.
+     
+    This is a heler for your own decide_snapshots_to_keep method
+
+    """
+    snapshots = [x for x in snapshots if x.startswith('ffs')]
+    keep = set()
+    import time, calendar
+    if now is None:
+        now = time.time()
+    def parse_snapshot(x):
+            parts = x.split("-")
+            ts = "-".join(parts[1:7])
+            #ts = x[x.find('-') + 1:x.rfind('-')]
+            return calendar.timegm(time.strptime(ts, "%Y-%m-%d-%H-%M-%S"))
+
+    snapshot_times = sorted([(parse_snapshot(x), x)
+                        for x in snapshots])  # oldest first
+    snapshots = set(snapshots)
+
+    def find_snapshot_between(start, stop):
+        return [sn for (ts, sn) in snapshot_times if start <= ts < stop]
+        for ts, sn in snapshot_times:
+            if start <= ts < stop:
+                return sn
+        return None
+
+    intervals_to_check = []
+    for count, seconds, name in [
+        (quarters, 15 * 60, 'quarter'),  # last quarters
+        (hours, 3600, 'hour'),  # last 24 h,
+        (days, 3600 * 24, 'day'),  # last 7 days
+        (weeks, 3600 * 24 * 7, 'week'),  # last 5 weeks
+        (months, 3600 * 24 * 30, 'month'),  # last 12 months
+        (years, 3600 * 24 * 365, 'year'),  # last 10 years
+    ]:
+        # keep one from each of the last hours
+        for interval in range(1, count + 1):
+            start = now - interval * seconds
+            stop = now - (interval - 1) * seconds
+            intervals_to_check.append(
+                (start, stop, "%s_%i" % (name, interval)))
+    def format_time(t):
+        ft = ["%.4i" % t.tm_year, "%.2i" % t.tm_mon, "%.2i" % t.tm_mday,
+                "%.2i" % t.tm_hour, "%.2i" % t.tm_min, "%.2i" % t.tm_sec]
+        return 'ffs-' + '-'.join(ft)
+    for start, stop, name in intervals_to_check:
+        found = find_snapshot_between(start, stop)
+        if found:
+            found = found[0]
+            if not allow_one_snapshot_to_fill_multiple_intervals:
+                snapshots.remove(found)
+                snapshot_times.remove((parse_snapshot(found), found))
+            keep.add(found)
+    return keep
+
+
+
