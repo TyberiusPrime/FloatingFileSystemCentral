@@ -5,7 +5,7 @@ import sys
 import logging.handlers
 import os
 import re
-from . default_config import DefaultConfig
+from . default_config import DefaultConfig, keep_snapshots_time_policy
 
 # nodes configuration
 """nodes = """
@@ -149,7 +149,7 @@ class Config(DefaultConfig):
         keep_by_default = 10
         keep.update(snapshots[:keep_by_default])  # always keep the last 10
         #now apply time based policy
-        keep.update(default_config.keep_snapshots_time_policy(
+        keep.update(keep_snapshots_time_policy(
             snapshots, quarters=4, hours=24, days=10, weeks=5, months=12, years=10))
         return keep
 
