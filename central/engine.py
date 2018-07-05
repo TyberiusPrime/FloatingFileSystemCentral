@@ -1213,7 +1213,7 @@ class Engine:
         props = msg['properties']
         self.model[ffs][node]['properties'].update(props)
         if 'ffs:moving_to' in props:  # first step in moving to a new main
-            if not self.is_ffs_moving(ffs):
+            if not self.is_ffs_moving(ffs) and props['ffs:moving-to'] != '-':
                 self.fault(
                     "Received unexpected set_propertes_done containing ffs:moving_to on an unmoving ffs", msg, InconsistencyError)
             if (props.get('ffs:main', False) == 'off' and

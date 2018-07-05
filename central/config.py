@@ -51,11 +51,11 @@ class Config(DefaultConfig):
         'storage_prefix': '/nostromo/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383',
     },
-    'wilfred': {
-        'hostname': 'wilfred',
-        'storage_prefix': '/wilfred/ffs',
-        'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCym9t69yMEUNeULQPpplD9oIYlUgWhoPOo8XZkYD3gU5ErsJuKQ5wwWKlvITbuTo3M+sboVgBd7gXJormo9WT1lCHXDZ5E3IL6gyIckdWV4fuptN6f18gbKcQPviOhN8YehlM7fijGigwGSvUmR01p9ckoTuJCRfp5GyQIRMNL93mkSH7ir89EP0z14LFzfTeeWZZmh9+ZGomhc/Xll9TsrOosy7jhPOvrYeUXJ6a/vMSovu4gbXJ5lzm0hW1zhNp21X3uridKX2XYyl+vOT19Bg+ZBVxPR9i37L+S4RRjb/NvuoQHiuTAzQ6GT87HVo7kb4fIgRxtT1vGi85D4wkn ffs@pcmt410',
-    },
+    #'wilfred': {
+        #'hostname': 'wilfred',
+        #'storage_prefix': '/wilfred/ffs',
+        #'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCym9t69yMEUNeULQPpplD9oIYlUgWhoPOo8XZkYD3gU5ErsJuKQ5wwWKlvITbuTo3M+sboVgBd7gXJormo9WT1lCHXDZ5E3IL6gyIckdWV4fuptN6f18gbKcQPviOhN8YehlM7fijGigwGSvUmR01p9ckoTuJCRfp5GyQIRMNL93mkSH7ir89EP0z14LFzfTeeWZZmh9+ZGomhc/Xll9TsrOosy7jhPOvrYeUXJ6a/vMSovu4gbXJ5lzm0hW1zhNp21X3uridKX2XYyl+vOT19Bg+ZBVxPR9i37L+S4RRjb/NvuoQHiuTAzQ6GT87HVo7kb4fIgRxtT1vGi85D4wkn ffs@pcmt410',
+    #},
 }
     def get_logging(self):
         if not os.path.exists('/var/log/ffs'):
