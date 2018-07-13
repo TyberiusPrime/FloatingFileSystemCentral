@@ -974,7 +974,7 @@ class Engine:
                     if main != any_moving_to:
                         # we were before step 3, remove main, so we restart with a capture
                         # and ignore if we had already captured and replicated.
-                        self.do_capture(ffs, False)
+                        self.model[ffs]['_move_snapshot'] = self.do_capture(ffs, False)
                     else:  # main had already been moved
                         # all that remains is to remove the moving marker
                         self.send(any_moving_from, {
@@ -1213,7 +1213,7 @@ class Engine:
         props = msg['properties']
         self.model[ffs][node]['properties'].update(props)
         if 'ffs:moving_to' in props:  # first step in moving to a new main
-            if not self.is_ffs_moving(ffs) and props['ffs:moving-to'] != '-':
+            if not self.is_ffs_moving(ffs) and props['ffs:moving_to'] != '-':
                 self.fault(
                     "Received unexpected set_propertes_done containing ffs:moving_to on an unmoving ffs", msg, InconsistencyError)
             if (props.get('ffs:main', False) == 'off' and
@@ -1326,6 +1326,8 @@ class Engine:
                 self._prune_snapshots_for_ffs(ffs, main)
             else:
                 self.config.inform("Move step 2 done: %s" % ffs)
+                if not '_move_snapshot' in self.model[ffs]:
+                    raise ValueError("missing move snapshot - what happend?")
         #either way, it's no longer upcoming
         if snapshot in self.model[ffs][sender].get('upcoming_snapshots', []):
             self.model[ffs][sender]['upcoming_snapshots'].remove(snapshot)
@@ -1357,6 +1359,9 @@ class Engine:
         os = self.count_outgoing_snapshots() - 1
         self.config.inform("Send of %s@%s from %s to %s done, outstanding snapshot transfers: %i" % (
             ffs, snapshot, main, node, os))
+        self.logger.info("Send of %s@%s from %s to %s done, is_moving=%s, _moving=%s, _move_snapshot=%s" % (
+                ffs, snapshot, main, node, self.is_ffs_moving(ffs), self.model[ffs].get('_moving', None),
+                self.model[ffs].get('_move_snapshot', None)))
         if (self.is_ffs_moving(ffs) and
             node == self.model[ffs]['_moving'] and
             msg['snapshot'] == self.model[ffs]['_move_snapshot']

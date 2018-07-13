@@ -3887,6 +3887,7 @@ class TestStartupTriggeringActions(EngineTests):
             'msg': 'capture',
             'ffs': 'one',
         })
+        self.assertEqual(engine.model['one']['_move_snapshot'], outgoing_messages[0]['snapshot'])
 
     def test_move_interrupted_stage_2_after_capture(self):
         engine, outgoing_messages = self.get_engine({

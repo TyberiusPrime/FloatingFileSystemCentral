@@ -71,7 +71,7 @@ class Config(DefaultConfig):
         logger.setLevel(logging.DEBUG)
 
         debug_logger = logging.handlers.RotatingFileHandler(
-            "/var/log/ffs/debug.log", mode='a', maxBytes=200 * 1024, backupCount=1, encoding=None, delay=0)
+            "/var/log/ffs/debug.log", mode='a', maxBytes=200 * 1024, backupCount=2, encoding=None, delay=0)
         debug_logger.setLevel(logging.DEBUG)
         error_logger = logging.handlers.RotatingFileHandler(
             "/var/log/ffs/error.log", mode='a', maxBytes=10 * 1024, backupCount=1, encoding=None, delay=0)
@@ -168,7 +168,7 @@ class Config(DefaultConfig):
         return 0.5
 
     def restart_on_code_changes(self):
-        return False
+        return True
 
     def get_concurrent_rsync_limit(self):
         return 5
