@@ -144,6 +144,7 @@ class Config(DefaultConfig):
         snapshots = list(reversed(sorted(snapshots)))  # newest first
         keep = set([x for x in snapshots if not x.startswith('ffs-')
                     and not x.startswith('zfs-auto-snap_')
+                    or x.endswith("-keep")
                     ])  # keep any non-ffs snapshots. They don't get synced though!
         snapshots = [x for x in snapshots if x.startswith('ffs-')]
         keep_by_default = 10

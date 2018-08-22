@@ -1165,6 +1165,16 @@ class Engine:
                     if not self.is_readonly_node(main):
                         self.do_capture(ffs, False)
 
+    def get_ffs_priority(self, ffs):
+        main = self.model[ffs]['_main']
+        prio = self.model[ffs][main][
+            'properties'].get('ffs:priority', None)
+        if prio is None:
+            if '/' in ffs:
+                parent = ffs[:ffs.rfind('/')]
+                return self.get_ffs_priority(parent)
+        return prio
+
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
         excluded_sub_ffs = set()
         for another_ffs in self.model:
@@ -1193,8 +1203,7 @@ class Engine:
         prio = self.model[ffs][sending_node][
             'properties'].get('ffs:priority', None)
         if prio is not None:
-            msg['priority'] = int(self.model[ffs][sending_node][
-                                  'properties']['ffs:priority'])
+            msg['priority'] = int(prio)
         self.send(sending_node, msg)
         self.model[ffs]['_snapshots_in_transit'][snapshot_name] += 1
 

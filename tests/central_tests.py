@@ -5602,7 +5602,7 @@ class ReadOnlyHostTests(PostStartupTests):
 
 class PriorityTests(PostStartupTests):
 
-    def test_non_int_prio_raises_on_starutp(self):
+    def test_non_int_prio_raises_on_startup(self):
         def inner():
             e, outgoing_messages = self.get_engine({
                 'beta':  {'_one': ['1', ('ffs:priority', 'shu')]},
@@ -5696,6 +5696,20 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(ordered[4], msgs[1])
         self.assertEqual(ordered[5], msgs[0])
 
+
+    def test_prio_inheritance(self):
+        e, outgoing_messages = self.get_engine({
+            'beta':  {
+                '_one': ['1', ('ffs:priority', '100')],
+                '_one/two': ['1', ('ffs:priority', '200')],
+                '_one/two/three': ['1', ('ffs:priority', '300')],
+                '_one/two/four': ['1', ],
+                      },
+        })
+        self.assertEqual(e.get_ffs_priority('one'), '100')
+        self.assertEqual(e.get_ffs_priority('one/two'), '200')
+        self.assertEqual(e.get_ffs_priority('one/two/three'), '300')
+        self.assertEqual(e.get_ffs_priority('one/two/four'), '200')
 
 if __name__ == '__main__':
     unittest.main()
