@@ -1200,8 +1200,7 @@ class Engine:
         }
         if self.node_config[sending_node].get('readonly_node', False):
             msg['source_is_readonly'] = True
-        prio = self.model[ffs][sending_node][
-            'properties'].get('ffs:priority', None)
+        prio = self.get_ffs_priority(ffs) 
         if prio is not None:
             msg['priority'] = int(prio)
         self.send(sending_node, msg)
