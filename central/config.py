@@ -52,7 +52,7 @@ class Config(DefaultConfig):
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDsHKLAos/0PnCUS4F/vXUmjDpPEUUgMSNPIFgluBKlFjFh0z4gHgZcAr4oRWO1wRv66Fu3hK+jM0doEL+bCAa4hDZT2vSAlUOGGgnphtcjhzUrNwDUorT7ZtY2/0PWvldPFnKcBYkSpweiLKmiiJbhK2qhENsQee2UfFqB2W1yqc43eCCksxnQtrCJAA+I7ilHGde++8t6z5A7fW4M857LegPQfrAcXAlIIT6A//HEwYvS2XadX0jlBNC/oo9Gy4bGYiAwjsePAjC0ItRUjNLVN2bbgqC6CYpotmCTaX9788Cra9/B1AJ2UoxBwmDMzT5b5jrYpjVI1BEL9sFH2wPv ffs@pcmt383',
         },
         'mm': {
-        'hostname': 'mm', # so we use the 10gb interface
+        'hostname': 'pcmt283', 
         'storage_prefix': '/mm/ffs',
         'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283',
 
