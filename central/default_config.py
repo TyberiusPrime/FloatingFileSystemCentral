@@ -54,7 +54,7 @@ class DefaultConfig:
         return 47777
 
     def get_chown_user(self, dummy_ffs):
-        return 'finkernagel'
+        return 'ffs'
     
     def get_chmod_rights(self, dummy_ffs):
         return 'uog+rwX'

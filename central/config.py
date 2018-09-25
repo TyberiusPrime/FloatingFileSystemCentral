@@ -7,15 +7,6 @@ import os
 import re
 from .default_config import DefaultConfig, keep_snapshots_time_policy
 
-# nodes configuration
-"""nodes = """
-
-
-def martha_ignore(ffs, properties):
-    if ffs == 'e/20180413_AG_Mueller_Association_Between_Biomarkers_and_TCell_Response_simulations':
-        return True
-    return False
-
 
 class Config(DefaultConfig):
     def get_nodes(self):
@@ -206,6 +197,8 @@ class Config(DefaultConfig):
         return 5
 
     def exclude_subdirs_callback(self, ffs, source_node, target_node):
+        """You can prevent some sub directories of your FFS to be synced to specific targets by 
+        returning a list of sub directories to be excluded here"""
         if target_node == 'wilfred':
             if 'e/' in ffs:
                 return ['cache', 'results']
@@ -213,6 +206,8 @@ class Config(DefaultConfig):
                 return ['genomes']
         return []
 
+    def get_chown_user(self):
+        return 'finkernagel'
 
 config = Config()
 all = [config]
