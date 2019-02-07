@@ -288,7 +288,7 @@ class Engine:
             if x not in self.node_config:
                 raise ValueError("Not a valid target: %s" % x)
         if ffs in self.model:
-            raise ValueError("Already present, can't create as new")
+            raise ValueError("Already present, can't create as new", msg)
         self.check_targets_have_parent(ffs, targets)
         main = targets[0]
         any_found = False
@@ -384,6 +384,11 @@ class Engine:
             props = self.config.get_default_properties().copy()
             props.update(self.config.get_enforced_properties())
             props.update({'ffs:main': 'off', 'readonly': 'on'})
+            properties_to_clone_to_new_targets = ['ffs:priority', 'ffs:one_per_machine']
+            main_props = self.model[ffs][self.model[ffs]['_main']]['properties']
+            for k in properties_to_clone_to_new_targets:
+                if k in main_props:
+                    props[k] = main_props[k]
             self.send(target,
                       {'msg': 'new',
                        'ffs': ffs,
@@ -660,8 +665,6 @@ class Engine:
             raise ValueError("ffs parameter must be a string")
         if ffs not in self.model:
             raise ValueError("Nonexistant ffs specified")
-        if 'priority' not in msg:
-            raise CodingError("no priority specified'")
         main = self.model[ffs]['_main']
         if self.is_readonly_node(main):
             raise NodeIsReadonly(main, 'main')
@@ -671,7 +674,7 @@ class Engine:
                 self.send(node, {
                     'msg': 'set_properties',
                     'ffs': ffs,
-                    'properties': {'ffs:one_per_machine': 1}
+                    'properties': {'ffs:one_per_machine': 'on'}
                 })
         return {'ok': True}
 
@@ -758,7 +761,6 @@ class Engine:
         self.node_ffs_infos[sender] = ffs_list
         if len(self.node_ffs_infos) == len(self.node_config):
             self.build_model()
-            self.startup_done = True
             self.logger.info("Startup complete")
             os = self.count_outgoing_snapshots()
             self.config.inform(
@@ -802,6 +804,8 @@ class Engine:
         #print("stage 8")
         self._capture_replicated_without_any_snapshots()
         #print("stage 9")
+        #this is handled post start up since it uses the actual client_cmds
+        self.startup_done = True
         self._create_missing_one_per_machine()
 
     def _check_invalid_properties(self):
@@ -831,22 +835,25 @@ class Engine:
             if not self.is_ffs_moving(ffs) and not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
                 main = self.model[ffs]['_main']
                 main_info = self.model[ffs][main]
-                for node, node_info in self.model[ffs].items():
+                for node, node_info in sorted(self.model[ffs].items()):
                     if node != main and not node.startswith('_'):
                         for prop in [
                                 'ffs:snapshot_interval',
-                                'ffs:priority']:
+                                'ffs:priority',
+                                'ffs:one_per_machine',
+                        ]:
                             node_prop = node_info['properties'].get(prop, '-')
-                            if node_prop != '-':
-                                main_prop = main_info[
-                                    'properties'].get(prop, '-')
+                            #if node_prop != '-':
+                            main_prop = main_info[
+                                'properties'].get(prop, '-')
+                            if main_prop != node_prop:
                                 if main_prop == '-':
-                                    self.fault("%s set on %s on %s, but not on main (%s)." % (
-                                        prop, ffs, node, main))
-                                elif main_prop != node_prop:
+                                    self.fault("%s=%s set on %s on %s, but not on main (%s, =%s)." % (
+                                        prop, node_prop, ffs, node, main, main_prop))
+                                else:
                                     if not self.is_readonly_node(node):
                                         self.send(node, {'msg': 'set_properties', 'ffs': ffs,
-                                                         'properties': {prop: main_prop}})
+                                                        'properties': {prop: main_prop}})
 
     def _handle_remove_asap(self):
         for ffs in self.model:
@@ -1176,12 +1183,12 @@ class Engine:
                         self._send_snapshot(main, node, ffs, sn)
 
     def _capture_replicated_without_any_snapshots(self):
-        for ffs, node_fss_info in self.model.items():
+        for ffs, node_ffs_info in self.model.items():
             if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs) or self.is_ffs_remove_asap_all(ffs):
                 continue
-            main = node_fss_info['_main']
-            main_snapshots = node_fss_info[main]['snapshots']
-            has_replicates = [x for x in node_fss_info if x !=
+            main = node_ffs_info['_main']
+            main_snapshots = node_ffs_info[main]['snapshots']
+            has_replicates = [x for x in node_ffs_info if x !=
                               main and not x.startswith('_')]
             if has_replicates:
                 sendable_snapshots = self.config.decide_snapshots_to_send(
@@ -1193,7 +1200,31 @@ class Engine:
                         self.do_capture(ffs, False)
     
     def _create_missing_one_per_machine(self):
-        pass
+        to_create =[]
+        for ffs, node_ffs_info in sorted(self.model.items()):
+            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs) or self.is_ffs_remove_asap_all(ffs):
+                continue
+            main = node_ffs_info['_main']
+            if self.model[ffs][main].get('properties',{}).get('ffs:one_per_machine', 'off') == 'on':
+                for machine in sorted(node_ffs_info):
+                    if not machine.startswith('_'):
+                        sub_ffs_name = ffs + '/' + self.node_config[machine]['hostname']
+                        targets = [machine] + sorted([x for x in node_ffs_info if x != machine and not x.startswith('_')])
+                        if sub_ffs_name in self.model:
+                            targets = [x for x in targets if x not in self.model[sub_ffs_name]]
+                        if targets:
+                            if not machine in targets:
+                                to_create.append((self.client_add_targets, {
+                                    'ffs': sub_ffs_name,
+                                    'targets': targets,
+                                 'shu': 'addt'}))
+                            else:
+                                to_create.append((self.client_new, {
+                                    'ffs': sub_ffs_name,
+                                    'targets': targets,
+                                 'shu': 'new'}))
+        for cmd, msg in to_create:  # can't have the model change during the iteration
+            cmd(msg)
 
 
     def get_ffs_priority(self, ffs):
@@ -1292,8 +1323,10 @@ class Engine:
                 'properties': {'ffs:moving_to': '-'}
             })
             self.model[ffs]['_main'] = self.model[ffs]['_moving']
-        if props.get('ffs:one_per_machine', False):
-            self._capture_replicated_without_any_snapshots()
+        if props.get('ffs:one_per_machine', 'off') == 'on':
+            # doing it here makes sure we have captured one_per_machine at least
+            # once
+            self._create_missing_one_per_machine()
 
 
     def node_new_done(self, msg):
@@ -1333,7 +1366,8 @@ class Engine:
                             self._send_snapshot(main, node, ffs, sn)
                 else:  # this ffs was never captured, but we want to sync the status quo.
                     self.do_capture(ffs, False)
-
+        self._create_missing_one_per_machine()
+        
     def node_capture_done(self, msg):
         sender = msg['from']
         if 'ffs' not in msg:

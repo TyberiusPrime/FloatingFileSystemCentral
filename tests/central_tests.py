@@ -35,11 +35,7 @@ class EngineTests(unittest.TestCase):
             if k in msg and not k in supposed:
                 del msg[k]
         self.assertMsgEqual(msg, supposed)
-
-    def strip_send_snapshot_target_stuff(self, msg):
-        msg = msg.copy()
-        return msg
-
+    
     def assertMsgEqual(self, msgA, msgB):
         def strip_storage(msg):
             msg = msg.copy()
@@ -83,7 +79,8 @@ class EngineTests(unittest.TestCase):
                    quick_ffs_definition,
                    config=None,
                    additional_node_config=None,
-                   sender_cls=FakeMessageSender):
+                   sender_cls=FakeMessageSender, 
+                   number_hostnames=False):
         """Helper to get a startuped-engine running quickly.
         Just pass in a definition of
         {host: {
@@ -98,10 +95,10 @@ class EngineTests(unittest.TestCase):
         })
         """
         nodes = collections.OrderedDict()
-        for name in quick_ffs_definition:
+        for ii, name in enumerate(sorted(quick_ffs_definition)):
             nodes[name] = {
                 'storage_prefix': '/' + name,
-                'hostname': name,
+                'hostname': "node_%i_%s" % (ii, name) if number_hostnames else name,
                 'public_key': b'#no such key'
             }
             if additional_node_config and name in additional_node_config:
@@ -7381,6 +7378,461 @@ class PriorityTests(PostStartupTests):
         self.assertEqual(e.get_ffs_priority('one/two/four'), '200')
         self.assertEqual(e.get_ffs_priority('one/five'), '100')
 
+    def test_prio_distribution_on_add_targets(self):
+        e, outgoing_messages = self.get_engine({
+                'alpha': {},
+                'beta': {
+                    '_one': ['1', ('ffs:priority', 123)]
+                },
+        })
+        assert len(outgoing_messages) == 0
+        e.client_add_targets({'ffs': 'one', 'targets': ['alpha']})
+        assert len(outgoing_messages) == 1
+        outgoing_messages.clear()
+        e.incoming_node({
+            'msg': 'new_done',
+            'ffs': 'one',
+            'from': 'alpha',
+            'properties': {
+                'ffs:main': 'off',
+                'readonly': 'on',
+                'ffs:priority': '123',
+            }
+        })
+        assert len(outgoing_messages) == 1 # that's the snapshot
+        assert outgoing_messages[0]['msg'] == 'send_snapshot'
+
+            
+class TestOnePerMachine(PostStartupTests):
+    def test_one_per_machine(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {
+                'one': ['1'],
+                '_one/node_0_alpha': ['1'],
+            },
+            'beta': {
+                '_one': ['1'],
+                'one/node_0_alpha': ['1'],
+                '_one/node_1_beta': ['1'],
+            },
+            'gamma': {
+                'one': ['1'],
+                'one/node_0_alpha': ['1'],
+            },
+            
+        }, number_hostnames=True)
+        e.incoming_client({
+            "msg": 'set_one_per_machine',
+            'ffs': 'one',
+            'ffs:one_per_machine': '1'
+        })
+        self.assertMsgEqual(
+            outgoing_messages[0], {
+                'msg': 'set_properties',
+                'to': 'alpha',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'on'
+                }
+            })
+        self.assertMsgEqual(
+            outgoing_messages[1], {
+                'msg': 'set_properties',
+                'to': 'beta',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'on'
+                }
+            })
+        outgoing_messages.clear()
+        e.incoming_node({
+            "msg": 'set_properties_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'properties': {
+                'ffs:one_per_machine': 'on'
+            }
+        })
+        #now in the moment we're getting one back we create the others 
+        self.assertMsgEqual(
+            outgoing_messages[0], {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'one/node_1_beta',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[1], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_1_beta',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[2], {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[3], {
+                'to': 'beta',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[4], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'on',
+                    'readonly': 'off',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      
+        assert len(outgoing_messages) ==  5
+        outgoing_messages.clear()
+        e.incoming_node({
+            "msg": 'set_properties_done',
+            'from': 'alpha',
+            'ffs': 'one',
+            'properties': {
+                'ffs:one_per_machine': 'on'
+            }
+        })
+        assert len(outgoing_messages) ==  0
+        e.incoming_node({
+            'msg': 'new_done',
+            'ffs': 'one/node_2_gamma',
+            'from': 'gamma',
+            'properties': {
+                'ffs:main': 'on',
+                'readonly': 'off'
+            }
+        })
+        assert len(outgoing_messages) ==  0
+        e.incoming_node({
+            'msg': 'new_done',
+            'ffs': 'one/node_1_beta',
+            'from': 'gamma',
+            'properties': {
+                'ffs:main': 'off',
+                'readonly': 'on'
+            }
+        })
+        assert outgoing_messages[0]['msg'] == 'send_snapshot'
+        assert outgoing_messages[0]['to'] == 'beta'
+        assert outgoing_messages[0]['target_node'] == 'gamma'
+        assert len(outgoing_messages) ==  1
+        e.incoming_node({
+            'msg': 'new_done',
+            'ffs': 'one/node_1_beta',
+            'from': 'alpha',
+            'properties': {
+                'ffs:main': 'off',
+                'readonly': 'on'
+            }
+        })
+        assert len(outgoing_messages) ==  2
+        assert outgoing_messages[1]['msg'] == 'send_snapshot'
+        assert outgoing_messages[1]['to'] == 'beta'
+        assert outgoing_messages[1]['target_node'] == 'alpha'
+        
+        e.incoming_node({
+            "msg": 'set_properties_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'properties': {
+                'ffs:one_per_machine': 'on'
+            }
+        })
+        assert len(outgoing_messages) ==  2
+        
+
+    def test_one_per_machine_inconsistent(self):  #master wins
+        e, outgoing_messages = self.get_engine({
+            'beta': {
+                '_one': ['1', ('ffs:one_per_machine', 'off')]
+            },
+            'gamma': {
+                'one': ['1', ('ffs:one_per_machine', 'on')]
+            },
+            'alpha': {
+                'one': ['1', ('ffs:one_per_machine', 'off')],
+                '_one/alpha': ['1'],
+            },
+        })
+        assert len(outgoing_messages) == 1
+        self.assertMsgEqual(
+            outgoing_messages[0], {
+                'to': 'gamma',
+                'msg': 'set_properties',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'off',
+                },
+            })
+
+    def test_one_per_machine_startup(self):
+        e, outgoing_messages = self.get_engine({
+            'alpha': {
+                'one': ['1'],
+                '_one/node_0_alpha': ['1'],
+            },
+            'beta': {
+                '_one': ['1', ('ffs:one_per_machine', 'on')],
+                'one/node_0_alpha': ['1'],
+                '_one/node_1_beta': ['1'],
+            },
+            'gamma': {
+                'one': ['1'],
+                'one/node_0_alpha': ['1'],
+            },
+            
+        }, number_hostnames=True)
+        
+        self.assertMsgEqual(
+            outgoing_messages[0], {
+                'msg': 'set_properties',
+                'to': 'alpha',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'on'
+                }
+            })
+        self.assertMsgEqual(
+            outgoing_messages[0], {
+                'to': 'alpha',
+                'msg': 'set_properties',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'on',
+                },
+            })
+        self.assertMsgEqual(
+            outgoing_messages[1], {
+                'to': 'gamma',
+                'msg': 'set_properties',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:one_per_machine': 'on',
+                },
+            })
+        self.assertMsgEqual(
+            outgoing_messages[2], {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'one/node_1_beta',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[3], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_1_beta',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[4], {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[5], {
+                'to': 'beta',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+        self.assertMsgEqual(
+            outgoing_messages[6], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'on',
+                    'readonly': 'off',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+
+        assert len(outgoing_messages) == 7
+        outgoing_messages.clear()
+        e.incoming_node({
+            "msg": 'set_properties_done',
+            'from': 'beta',
+            'ffs': 'one',
+            'properties': {
+                'ffs:one_per_machine': 'on'
+            }
+        })
+        #this does trigger nothing
+        assert len(outgoing_messages) == 0
+        
+    def test_adding_target_afterward(self):
+      e, outgoing_messages = self.get_engine({
+            'alpha': {
+                'one': ['1', ('ffs:one_per_machine', 'on')],
+                '_one/node_0_alpha': ['1'],
+                'one/node_1_beta': ['1'],
+            },
+            'beta': {
+                '_one': ['1', ('ffs:one_per_machine', 'on')],
+                'one/node_0_alpha': ['1'],
+                '_one/node_1_beta': ['1'],
+            },
+          'gamma': {
+          },
+        }, number_hostnames=True)
+      assert len(outgoing_messages) == 0
+      e.client_add_targets({'ffs': 'one', 'targets': ['gamma']})
+      assert len(outgoing_messages) == 1
+      self.assertMsgEqual(
+            outgoing_messages[0], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                    'ffs:one_per_machine': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      outgoing_messages.clear()
+      e.incoming_node({
+            'msg': 'new_done',
+            'ffs': 'one',
+            'from': 'gamma',
+            'properties': {
+                'ffs:main': 'off',
+                'readonly': 'on',
+                'ffs:one_per_machine': 'on',
+            }
+    })
+      self.assertMsgEqualMinusSnapshot(
+           outgoing_messages[0], {
+               'ffs': 'one',
+                'to': 'beta',
+                'msg': 'send_snapshot',
+                'target_ffs': 'one',
+                'target_host': 'node_2_gamma',
+                'target_node': 'gamma',
+                'snapshot': '1',
+    })
+      
+      self.assertMsgEqual(
+            outgoing_messages[1], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_0_alpha',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      self.assertMsgEqual(
+            outgoing_messages[2], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_1_beta',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      
+      self.assertMsgEqual(
+            outgoing_messages[3], {
+                'to': 'alpha',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      self.assertMsgEqual(
+            outgoing_messages[4], {
+                'to': 'beta',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'off',
+                    'readonly': 'on',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+
+      self.assertMsgEqual(
+            outgoing_messages[5], {
+                'to': 'gamma',
+                'msg': 'new',
+                'ffs': 'one/node_2_gamma',
+                'properties': {
+                    'ffs:main': 'on',
+                    'readonly': 'off',
+                },
+                'owner': e.config.get_chown_user('two'),
+                'rights': e.config.get_chmod_rights('two'),
+            })
+      assert len(outgoing_messages) == 6
 
 if __name__ == '__main__':
     unittest.main()
