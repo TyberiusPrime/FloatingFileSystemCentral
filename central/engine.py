@@ -175,9 +175,6 @@ class Engine:
             return self.client_set_snapshot_interval(msg)
         elif command == 'set_priority':
             return self.client_set_priority(msg)
-        elif command == 'set_one_per_machine':
-            return self.client_set_one_per_machine(msg)
-
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -384,7 +381,7 @@ class Engine:
             props = self.config.get_default_properties().copy()
             props.update(self.config.get_enforced_properties())
             props.update({'ffs:main': 'off', 'readonly': 'on'})
-            properties_to_clone_to_new_targets = ['ffs:priority', 'ffs:one_per_machine']
+            properties_to_clone_to_new_targets = ['ffs:priority']
             main_props = self.model[ffs][self.model[ffs]['_main']]['properties']
             for k in properties_to_clone_to_new_targets:
                 if k in main_props:
@@ -655,42 +652,7 @@ class Engine:
                     'properties': {'ffs:priority': priority}
                 })
         return {'ok': True}
-
-    @needs_startup()
-    def client_set_one_per_machine(self, msg):
-        if 'ffs' not in msg:
-            raise CodingError("no ffs specified'")
-        ffs = msg['ffs']
-        if not isinstance(ffs, str):
-            raise ValueError("ffs parameter must be a string")
-        if ffs not in self.model:
-            raise ValueError("Nonexistant ffs specified")
-        main = self.model[ffs]['_main']
-        if self.is_readonly_node(main):
-            raise NodeIsReadonly(main, 'main')
-        if self.model[ffs][main].get('properties', {}).get('ffs:one_per_machine', 'off') == 'on':
-            raise ValueError("one_per_machine already set on " + ffs)
-        for an_ffs in self.model:
-            a_main = self.model[an_ffs]['_main']
-            one_per_machine_value = self.model[an_ffs][a_main].get('properties', {}).get('ffs:one_per_machine', 'off')
-            if ffs.startswith(an_ffs + '/'):
-                if one_per_machine_value  == 'on':
-                    raise ValueError("Parent was already one_per_machine: %s" % (an_ffs))
-            if an_ffs.startswith(ffs + '/'):
-                if one_per_machine_value  == 'on':
-                    raise ValueError("Child was already one_per_machine: %s" % (an_ffs))
-
-
-        # store on every node in order to remain stored on move
-        for node in sorted(self.model[ffs]):
-            if not node.startswith('_'):
-                self.send(node, {
-                    'msg': 'set_properties',
-                    'ffs': ffs,
-                    'properties': {'ffs:one_per_machine': 'on'}
-                })
-        return {'ok': True}
-
+    
     def is_readonly_node(self, node):
         return self.config.get_nodes()[node].get('readonly_node', False)
 
@@ -819,7 +781,6 @@ class Engine:
         #print("stage 9")
         #this is handled post start up since it uses the actual client_cmds
         self.startup_done = True
-        self._create_missing_one_per_machine()
 
     def _check_invalid_properties(self):
         for ffs in self.model:
@@ -853,7 +814,6 @@ class Engine:
                         for prop in [
                                 'ffs:snapshot_interval',
                                 'ffs:priority',
-                                'ffs:one_per_machine',
                         ]:
                             node_prop = node_info['properties'].get(prop, '-')
                             #if node_prop != '-':
@@ -1211,34 +1171,6 @@ class Engine:
                         "Replicated, but never snapshoted - capturing %s" % ffs)
                     if not self.is_readonly_node(main):
                         self.do_capture(ffs, False)
-    
-    def _create_missing_one_per_machine(self):
-        to_create =[]
-        for ffs, node_ffs_info in sorted(self.model.items()):
-            if self.is_ffs_moving(ffs) or self.is_ffs_renaming(ffs) or self.is_ffs_remove_asap_all(ffs):
-                continue
-            main = node_ffs_info['_main']
-            if self.model[ffs][main].get('properties',{}).get('ffs:one_per_machine', 'off') == 'on':
-                for machine in sorted(node_ffs_info):
-                    if not machine.startswith('_'):
-                        sub_ffs_name = ffs + '/' + machine
-                        targets = [machine] + sorted([x for x in node_ffs_info if x != machine and not x.startswith('_')])
-                        if sub_ffs_name in self.model:
-                            targets = [x for x in targets if x not in self.model[sub_ffs_name]]
-                        if targets:
-                            if not machine in targets:
-                                to_create.append((self.client_add_targets, {
-                                    'ffs': sub_ffs_name,
-                                    'targets': targets,
-                                 'shu': 'addt'}))
-                            else:
-                                to_create.append((self.client_new, {
-                                    'ffs': sub_ffs_name,
-                                    'targets': targets,
-                                 'shu': 'new'}))
-        for cmd, msg in to_create:  # can't have the model change during the iteration
-            cmd(msg)
-
 
     def get_ffs_priority(self, ffs):
         main = self.model[ffs]['_main']
@@ -1336,11 +1268,7 @@ class Engine:
                 'properties': {'ffs:moving_to': '-'}
             })
             self.model[ffs]['_main'] = self.model[ffs]['_moving']
-        if props.get('ffs:one_per_machine', 'off') == 'on':
-            # doing it here makes sure we have captured one_per_machine at least
-            # once
-            self._create_missing_one_per_machine()
-
+        
 
     def node_new_done(self, msg):
         node = msg['from']
@@ -1379,7 +1307,6 @@ class Engine:
                             self._send_snapshot(main, node, ffs, sn)
                 else:  # this ffs was never captured, but we want to sync the status quo.
                     self.do_capture(ffs, False)
-        self._create_missing_one_per_machine()
         
     def node_capture_done(self, msg):
         sender = msg['from']
@@ -1407,8 +1334,7 @@ class Engine:
             main = self.model[ffs]['_main']
             for node in sorted(self.node_config):
                 if node != main and node in self.model[ffs] and not self.model[ffs][node].get('removing', False):
-                    postfix = self.model[ffs][node][
-                        'properties'].get('ffs:postfix_only', True)
+                    postfix = self.model[ffs][node].get('properties', {}).get('ffs:postfix_only', True)
                     if postfix is True or snapshot.endswith('-' + postfix):
                         self._send_snapshot(main, node, ffs, snapshot)
             if not self.is_ffs_moving(ffs):
