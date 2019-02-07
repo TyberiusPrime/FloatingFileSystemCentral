@@ -46,7 +46,7 @@ class Config(DefaultConfig):
                 "storage_prefix": "/mm/ffs",
                 "public_key": b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDIjVSaY586Lq03HgF47MjEh+Kt7dZsxkrnzaQ+pQq3wAJMV2by4M1aSUb3ETmHkHdgD2Eda3uMFM4wNR3BnBMKSkcwJqcGLPAASOBXhEVgEOIZ7lNy34UZAdUMsm7HmnulTj75dsw5e/WwDVZfDY6+kSnL7ZuyNJtkR/j0YlN6TivYMoPw7OJIJWozFeUStIoG98kzwRH/Psv2NMQoQ51fOlkfJ+sIGxMGjDE2AlyGCX0+cbERAnmYakzuPt9NNa19p9I9aGz2qltW6xXk/yJ4iaWsyECc4tFw8uL4QlMVzLH5CY+FKKlxSLZTEOdLZ8Xu/5CNWgRCdwU/RbHLfgnN ffs@pcmt283",
             },
-            "pcmt289": {
+            "clara": {
                 "hostname": "pcmt289",
                 "storage_prefix": "/clara/ffs",
                 "public_key": b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQChvNerKvw9OC19HxOuugSaIoKU6cS/w8/3UxQUPLuvZ6jfybId96+ErJ23sbergJZAcVi3p6ONDMgcMu+73UKhA8JFSziVymbIIoNwafP8+YSa9WCD97yjHLcTCOJq1BEHXZ0yfKzEo/5HHTNogM7H1krwOqHdJzIEcz6lgeKBjuwACvuICCdGP9M50NfKJMV8WxHmc+oWoONJnvpILm4YuTfQ22Wi+XNEN2KjiSknH6vNnRZrtO4yVs0OUUow/Wr8bQOm7Ox/4QK4pl2PtNOJ9qV8zIvkruIxfI4T5tKHDZMrFAUIY9VAntUggKXQNsigxuEMs8gowSZGeeQgdzFF ffs@pcmt289",
