@@ -1,13 +1,15 @@
-
 class StartupNotDone(Exception):
     """To client, when the engine is still booting up"""
+
     pass
 
 
 class EngineFaulted(Exception):
     """to client, when the engine is in ManualInterventionNeeded state"""
+
     pass
-    
+
+
 class SSHConnectFailed(Exception):
     pass
 
@@ -51,6 +53,9 @@ class InvalidTarget(KeyError):
 class RestartError(Exception):
     pass
 
+
 class NodeIsReadonly(Exception):
-    def __init__(self, node, kind=''):
-        Exception.__init__(self, "%s%s is readonly" % (node, '(%s)' % kind if kind else ''))
+    def __init__(self, node, kind=""):
+        Exception.__init__(
+            self, "%s%s is readonly" % (node, "(%s)" % kind if kind else "")
+        )

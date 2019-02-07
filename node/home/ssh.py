@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import sys
 import os
+
 try:
     import node
 except SyntaxError as e:
@@ -22,31 +23,31 @@ import atexit
 import pprint
 import logging
 import logging.handlers
+
 logger = logging.getLogger("Node")
-handler = logging.handlers.RotatingFileHandler("/home/ffs/node.log", maxBytes=10000000, backupCount=1)
+handler = logging.handlers.RotatingFileHandler(
+    "/home/ffs/node.log", maxBytes=10000000, backupCount=1
+)
 logger.addHandler(handler)
 
-cmd_line = os.environ.get('SSH_ORIGINAL_COMMAND', '')
-if cmd_line.startswith('scp'):
+cmd_line = os.environ.get("SSH_ORIGINAL_COMMAND", "")
+if cmd_line.startswith("scp"):
     # needed for manual deploy of node.py when node.py has been broken.
     # this is also why this is at the very beginning of this file
-    if cmd_line not in ('scp -t /home/ffs/node.py', 'scp -t /home/ffs/ssh.py'):
+    if cmd_line not in ("scp -t /home/ffs/node.py", "scp -t /home/ffs/ssh.py"):
         raise ValueError("invalid scp target")
     os.system(cmd_line)
     sys.exit()
 
 
-def fail(message=''):
-    print(json.dumps({
-        'error': 'unkown_error',
-        'content': message
-    }))
+def fail(message=""):
+    print(json.dumps({"error": "unkown_error", "content": message}))
     sys.exit(55)
 
 
 def onexit():
     try:
-        #group_to_kill = os.getpgid(os.getpid())
+        # group_to_kill = os.getpgid(os.getpid())
         # os.killpg(, signal.SIGTERM)
         if node is not False:
             for p in node.child_processes:
@@ -66,16 +67,17 @@ def on_sighup(dummy_signum, dummy_frame):  # SSH connection was terminated.
 def on_sig_term(dummy_signum, dummy_frame):  # SSH connection was terminated.
     sys.exit(0)
 
+
 atexit.register(onexit)
 signal.signal(signal.SIGHUP, on_sighup)
-#signal.signal(signal.SIGTERM, on_sig_term)
+# signal.signal(signal.SIGTERM, on_sig_term)
 
 if True:
-    if cmd_line.startswith('rprsync'):  # robust parallel rsync
+    if cmd_line.startswith("rprsync"):  # robust parallel rsync
         logger.info(cmd_line)
         node.shell_cmd_rprsync(cmd_line)
     else:
-        json_input = ''
+        json_input = ""
         j = sys.stdin.read()
         while j:
             json_input += j
@@ -85,15 +87,16 @@ if True:
             logger.info(pprint.pformat(j))
 
             result = node.dispatch(j)
-            sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
-            if 'error' in result:
+            sys.stdout.buffer.write(json.dumps(result).encode("utf-8"))
+            if "error" in result:
                 sys.exit(1)
             else:
                 sys.exit(0)
 
         except Exception as e:  # pylint: disable=W0703
             import traceback
+
             tb = traceback.format_exc()
-            result = {"error": 'exception', 'content': str(e), 'traceback': tb}
-            sys.stdout.buffer.write(json.dumps(result).encode('utf-8'))
+            result = {"error": "exception", "content": str(e), "traceback": tb}
+            sys.stdout.buffer.write(json.dumps(result).encode("utf-8"))
             sys.exit(1)
