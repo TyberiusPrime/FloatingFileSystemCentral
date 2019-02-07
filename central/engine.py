@@ -175,6 +175,8 @@ class Engine:
             return self.client_set_snapshot_interval(msg)
         elif command == 'set_priority':
             return self.client_set_priority(msg)
+        elif command == 'set_one_per_machine':
+            return self.client_set_one_per_machine(msg)
 
         else:
             raise ValueError("invalid message from client, ignoring")
@@ -649,6 +651,30 @@ class Engine:
                 })
         return {'ok': True}
 
+    @needs_startup()
+    def client_set_one_per_machine(self, msg):
+        if 'ffs' not in msg:
+            raise CodingError("no ffs specified'")
+        ffs = msg['ffs']
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        if 'priority' not in msg:
+            raise CodingError("no priority specified'")
+        main = self.model[ffs]['_main']
+        if self.is_readonly_node(main):
+            raise NodeIsReadonly(main, 'main')
+        # store on every node in order to remain stored on move
+        for node in sorted(self.model[ffs]):
+            if not node.startswith('_'):
+                self.send(node, {
+                    'msg': 'set_properties',
+                    'ffs': ffs,
+                    'properties': {'ffs:one_per_machine': 1}
+                })
+        return {'ok': True}
+
     def is_readonly_node(self, node):
         return self.config.get_nodes()[node].get('readonly_node', False)
 
@@ -776,6 +802,7 @@ class Engine:
         #print("stage 8")
         self._capture_replicated_without_any_snapshots()
         #print("stage 9")
+        self._create_missing_one_per_machine()
 
     def _check_invalid_properties(self):
         for ffs in self.model:
@@ -1164,6 +1191,10 @@ class Engine:
                         "Replicated, but never snapshoted - capturing %s" % ffs)
                     if not self.is_readonly_node(main):
                         self.do_capture(ffs, False)
+    
+    def _create_missing_one_per_machine(self):
+        pass
+
 
     def get_ffs_priority(self, ffs):
         main = self.model[ffs]['_main']
@@ -1261,6 +1292,9 @@ class Engine:
                 'properties': {'ffs:moving_to': '-'}
             })
             self.model[ffs]['_main'] = self.model[ffs]['_moving']
+        if props.get('ffs:one_per_machine', False):
+            self._capture_replicated_without_any_snapshots()
+
 
     def node_new_done(self, msg):
         node = msg['from']
