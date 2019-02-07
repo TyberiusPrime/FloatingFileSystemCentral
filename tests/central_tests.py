@@ -6896,12 +6896,15 @@ class ClientFacingTests(PostStartupTests):
 
 
 class FailureTests(PostStartupTests):
+    @unittest.expectedFailure
     def test_deploy_failed(self):
         raise NotImplementedError("Make sure complaint is spot on")
 
+    @unittest.expectedFailure
     def test_ssh_connect_failed(self):
         raise NotImplementedError()
 
+    @unittest.expectedFailure
     def test_rsync_went_away_because_receiving_host_died(self):
         raise NotImplementedError(
             """   ssh_message_que:154 Node processing error in job_id return 137 {'error': 'rsync_failure', 'ssh_process               _return_code': 1, 'content': "stdout:\nb''\n\nstderr:\nb'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --om               it-dir-times -ltx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /               martha/ffs/.ffs_sync_clones/1522834093.737729_aecc9d2d8fd5a0a0f2881ca8511a1fa7/results/ ffs@rose:/rose/ffs/e/20161012_AG_Mermoud_               SMARCAD_H3K9Me3_ChIP_mouse_ES/results/\\n rsync returncode: 255packet_write_wait: Connection to 192.168.153.1 port 223: Broken pi               pe\\r\\nrsync: [sender] write error: Broken pipe (32)\\nrsync error: unexplained error (code 255) at io.c(820) [sender=3.1.1]\\n'               ", 'from': 'martha'} No message in msg, outgoing was: {'ffs': 'e/20161012_AG_Mermoud_SMARCAD_H3K9Me3_ChIP_mouse_ES',
@@ -6939,6 +6942,7 @@ class FailureTests(PostStartupTests):
         })
         self.assertFalse('alpha' in e.model['one'])
 
+    @unittest.expectedFailure
     def test_permission_denied(self):
         raise NotImplementedError("Complain with 'ssh no worky")
 
