@@ -1221,7 +1221,7 @@ class Engine:
             if self.model[ffs][main].get('properties',{}).get('ffs:one_per_machine', 'off') == 'on':
                 for machine in sorted(node_ffs_info):
                     if not machine.startswith('_'):
-                        sub_ffs_name = ffs + '/' + self.node_config[machine]['hostname']
+                        sub_ffs_name = ffs + '/' + machine
                         targets = [machine] + sorted([x for x in node_ffs_info if x != machine and not x.startswith('_')])
                         if sub_ffs_name in self.model:
                             targets = [x for x in targets if x not in self.model[sub_ffs_name]]

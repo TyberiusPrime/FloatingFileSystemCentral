@@ -7408,16 +7408,16 @@ class TestOnePerMachine(PostStartupTests):
         e, outgoing_messages = self.get_engine({
             'alpha': {
                 'one': ['1'],
-                '_one/node_0_alpha': ['1'],
+                '_one/alpha': ['1'],
             },
             'beta': {
                 '_one': ['1'],
-                'one/node_0_alpha': ['1'],
-                '_one/node_1_beta': ['1'],
+                'one/alpha': ['1'],
+                '_one/beta': ['1'],
             },
             'gamma': {
                 'one': ['1'],
-                'one/node_0_alpha': ['1'],
+                'one/alpha': ['1'],
             },
             
         }, number_hostnames=True)
@@ -7458,7 +7458,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[0], {
                 'to': 'alpha',
                 'msg': 'new',
-                'ffs': 'one/node_1_beta',
+                'ffs': 'one/beta',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7470,7 +7470,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[1], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_1_beta',
+                'ffs': 'one/beta',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7482,7 +7482,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[2], {
                 'to': 'alpha',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7494,7 +7494,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[3], {
                 'to': 'beta',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7506,7 +7506,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[4], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'on',
                     'readonly': 'off',
@@ -7528,7 +7528,7 @@ class TestOnePerMachine(PostStartupTests):
         assert len(outgoing_messages) ==  0
         e.incoming_node({
             'msg': 'new_done',
-            'ffs': 'one/node_2_gamma',
+            'ffs': 'one/gamma',
             'from': 'gamma',
             'properties': {
                 'ffs:main': 'on',
@@ -7538,7 +7538,7 @@ class TestOnePerMachine(PostStartupTests):
         assert len(outgoing_messages) ==  0
         e.incoming_node({
             'msg': 'new_done',
-            'ffs': 'one/node_1_beta',
+            'ffs': 'one/beta',
             'from': 'gamma',
             'properties': {
                 'ffs:main': 'off',
@@ -7551,7 +7551,7 @@ class TestOnePerMachine(PostStartupTests):
         assert len(outgoing_messages) ==  1
         e.incoming_node({
             'msg': 'new_done',
-            'ffs': 'one/node_1_beta',
+            'ffs': 'one/beta',
             'from': 'alpha',
             'properties': {
                 'ffs:main': 'off',
@@ -7602,16 +7602,16 @@ class TestOnePerMachine(PostStartupTests):
         e, outgoing_messages = self.get_engine({
             'alpha': {
                 'one': ['1'],
-                '_one/node_0_alpha': ['1'],
+                '_one/alpha': ['1'],
             },
             'beta': {
                 '_one': ['1', ('ffs:one_per_machine', 'on')],
-                'one/node_0_alpha': ['1'],
-                '_one/node_1_beta': ['1'],
+                'one/alpha': ['1'],
+                '_one/beta': ['1'],
             },
             'gamma': {
                 'one': ['1'],
-                'one/node_0_alpha': ['1'],
+                'one/alpha': ['1'],
             },
             
         }, number_hostnames=True)
@@ -7647,7 +7647,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[2], {
                 'to': 'alpha',
                 'msg': 'new',
-                'ffs': 'one/node_1_beta',
+                'ffs': 'one/beta',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7659,7 +7659,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[3], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_1_beta',
+                'ffs': 'one/beta',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7671,7 +7671,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[4], {
                 'to': 'alpha',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7683,7 +7683,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[5], {
                 'to': 'beta',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7695,7 +7695,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[6], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'on',
                     'readonly': 'off',
@@ -7721,13 +7721,13 @@ class TestOnePerMachine(PostStartupTests):
       e, outgoing_messages = self.get_engine({
             'alpha': {
                 'one': ['1', ('ffs:one_per_machine', 'on')],
-                '_one/node_0_alpha': ['1'],
-                'one/node_1_beta': ['1'],
+                '_one/alpha': ['1'],
+                'one/beta': ['1'],
             },
             'beta': {
                 '_one': ['1', ('ffs:one_per_machine', 'on')],
-                'one/node_0_alpha': ['1'],
-                '_one/node_1_beta': ['1'],
+                'one/alpha': ['1'],
+                '_one/beta': ['1'],
             },
           'gamma': {
           },
@@ -7774,7 +7774,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[1], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_0_alpha',
+                'ffs': 'one/alpha',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7786,7 +7786,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[2], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_1_beta',
+                'ffs': 'one/beta',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7799,7 +7799,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[3], {
                 'to': 'alpha',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7811,7 +7811,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[4], {
                 'to': 'beta',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'off',
                     'readonly': 'on',
@@ -7824,7 +7824,7 @@ class TestOnePerMachine(PostStartupTests):
             outgoing_messages[5], {
                 'to': 'gamma',
                 'msg': 'new',
-                'ffs': 'one/node_2_gamma',
+                'ffs': 'one/gamma',
                 'properties': {
                     'ffs:main': 'on',
                     'readonly': 'off',
@@ -7839,14 +7839,14 @@ class TestOnePerMachine(PostStartupTests):
             'alpha': {
                 'one': ['1'],
                 'one/a': ['1', ('ffs:one_per_machine', 'on')],
-                '_one/a/node_0_alpha': ['1'],
-                'one/a/node_1_beta': ['1'],
+                '_one/a/alpha': ['1'],
+                'one/a/beta': ['1'],
             },
             'beta': {
                 '_one': ['1'],
                 '_one/a': ['1', ('ffs:one_per_machine', 'on')],
-                'one/a/node_0_alpha': ['1'],
-                '_one/a/node_1_beta': ['1'],
+                'one/a/alpha': ['1'],
+                '_one/a/beta': ['1'],
             },
         }, number_hostnames=True)
       assert len(outgoing_messages) == 0
@@ -7855,7 +7855,7 @@ class TestOnePerMachine(PostStartupTests):
           e.client_set_one_per_machine({'ffs': 'one/a'})
       self.assertRaises(ValueError, inner)
       def inner():
-          e.client_set_one_per_machine({'ffs': 'one/a/node_0_alpha'})
+          e.client_set_one_per_machine({'ffs': 'one/a/alpha'})
       self.assertRaises(ValueError, inner)
       def inner():
           e.client_set_one_per_machine({'ffs': 'one'})
