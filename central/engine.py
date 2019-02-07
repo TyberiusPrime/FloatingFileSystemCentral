@@ -668,6 +668,19 @@ class Engine:
         main = self.model[ffs]['_main']
         if self.is_readonly_node(main):
             raise NodeIsReadonly(main, 'main')
+        if self.model[ffs][main].get('properties', {}).get('ffs:one_per_machine', 'off') == 'on':
+            raise ValueError("one_per_machine already set on " + ffs)
+        for an_ffs in self.model:
+            a_main = self.model[an_ffs]['_main']
+            one_per_machine_value = self.model[an_ffs][a_main].get('properties', {}).get('ffs:one_per_machine', 'off')
+            if ffs.startswith(an_ffs + '/'):
+                if one_per_machine_value  == 'on':
+                    raise ValueError("Parent was already one_per_machine: %s" % (an_ffs))
+            if an_ffs.startswith(ffs + '/'):
+                if one_per_machine_value  == 'on':
+                    raise ValueError("Child was already one_per_machine: %s" % (an_ffs))
+
+
         # store on every node in order to remain stored on move
         for node in sorted(self.model[ffs]):
             if not node.startswith('_'):

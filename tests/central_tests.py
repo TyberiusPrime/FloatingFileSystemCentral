@@ -7834,5 +7834,32 @@ class TestOnePerMachine(PostStartupTests):
             })
       assert len(outgoing_messages) == 6
 
+    def test_recursion(self):
+      e, outgoing_messages = self.get_engine({
+            'alpha': {
+                'one': ['1'],
+                'one/a': ['1', ('ffs:one_per_machine', 'on')],
+                '_one/a/node_0_alpha': ['1'],
+                'one/a/node_1_beta': ['1'],
+            },
+            'beta': {
+                '_one': ['1'],
+                '_one/a': ['1', ('ffs:one_per_machine', 'on')],
+                'one/a/node_0_alpha': ['1'],
+                '_one/a/node_1_beta': ['1'],
+            },
+        }, number_hostnames=True)
+      assert len(outgoing_messages) == 0
+      
+      def inner():
+          e.client_set_one_per_machine({'ffs': 'one/a'})
+      self.assertRaises(ValueError, inner)
+      def inner():
+          e.client_set_one_per_machine({'ffs': 'one/a/node_0_alpha'})
+      self.assertRaises(ValueError, inner)
+      def inner():
+          e.client_set_one_per_machine({'ffs': 'one'})
+      self.assertRaises(ValueError, inner) 
+
 if __name__ == '__main__':
     unittest.main()
