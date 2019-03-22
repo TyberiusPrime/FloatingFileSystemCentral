@@ -102,7 +102,7 @@ class Config(DefaultConfig):
         )
         debug_logger.setFormatter(formatter)
         console_logger.setFormatter(formatter)
-        error_logger.setFormater(formatter)
+        error_logger.setFormatter(formatter)
         logger.addHandler(debug_logger)
         logger.addHandler(console_logger)
         logger.addHandler(error_logger)
