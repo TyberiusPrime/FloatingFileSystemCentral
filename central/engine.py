@@ -190,6 +190,8 @@ class Engine:
             return self.client_set_snapshot_interval(msg)
         elif command == "set_priority":
             return self.client_set_priority(msg)
+        elif command == "service_inspect_model":
+            return self.client_service_inspect_model(msg)
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -703,11 +705,16 @@ class Engine:
                 )
         return {"ok": True}
 
+    @needs_startup(True)
+    def client_service_inspect_model(self, _msg):
+        return self.model
+
     def is_readonly_node(self, node):
         return self.config.get_nodes()[node].get("readonly_node", False)
 
     def is_ffs_moving(self, ffs):
         if "_moving" in self.model[ffs]:
+            self.config.inform("is_moving(%s) == True because of _moving" % ffs)
             return True
         if self.is_ffs_renaming(ffs):  # can be only one..
             return False
@@ -718,6 +725,7 @@ class Engine:
             return False
         moving_to = self.model[ffs][main]["properties"].get("ffs:moving_to", "-")
         if moving_to != "-":
+            self.config.inform("is_moving(%s) == True because of moving_to: %s " % (ffs, moving_to))
             self.model[ffs]["_moving"] = moving_to
             return True
         return False
@@ -856,6 +864,7 @@ class Engine:
         # print("stage 9")
         # this is handled post start up since it uses the actual client_cmds
         self.startup_done = True
+        self.config.inform("startup done")
 
     def _check_invalid_properties(self):
         for ffs in self.model:
