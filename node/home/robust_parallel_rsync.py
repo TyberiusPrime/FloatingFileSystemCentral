@@ -122,6 +122,7 @@ def parallel_chown_chmod_and_rsync(cmd):
                 if (
                     os.path.isdir(fd)
                     and not os.path.ismount(fd)
+                    and not os.path.islink(fd)
                     and not d  # which is only true if we're sending from a non-clone
                     in excluded_dirs
                 ):  # but since we're sending from a clone, we need to rely on the engine to tell us what to exclude

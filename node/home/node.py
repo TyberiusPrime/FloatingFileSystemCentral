@@ -294,7 +294,7 @@ def msg_remove_snapshot(msg):
     snapshot_name = msg["snapshot"]
     combined = "%s@%s" % (full_ffs_path, snapshot_name)
     if combined not in list_snapshots():
-        raise ValueError("invalid snapshot")
+        raise ValueError("invalid snapshot %s" %(combined,))
     try:
         check_call(["sudo", "zfs", "destroy", combined])
     except subprocess.CalledProcessError as e:
