@@ -14,7 +14,7 @@ class Config(DefaultConfig):
             "amy": {
                 "hostname": "amy",  # so we use the 10gb interface
                 "storage_prefix": "/amy/ffs",
-                "public_key": b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCqZJ8e3c5VQFysAKrkbZJ7RD1SPs1LOHfdYtCH5LubJBEp/SC9EIhfq4YWSLaq/QQiGB/YKtLfAfpth1bz4Iw3LHqoi2jrC1bNSaZnsoJ40qTehVxJCJoFlyHB+UoNoPXvnVR/o189Xiitz0iRDFVZ1QrvAfL0ddorskCkPV2adhV1TQDS9qkHa/uUhDjmIOzLXZYVcryjNzLBk0hp5nn7N6ghJifsAFjVvQYGwuQu3ldLlVTn7SY5Qy80D0sF6ch0kA9DfACzcP/1m3+cPlD3XvKOLoDCXzMEEc3AYFR/vlSzdMgVK4VWpdh9BOKgJRoFBCQbyPAbn7mho03Yo40H ffs@pcmt391",
+                "public_key": b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCi2cog0uWovQ+/iXwPDdx9/umOVPz1n2GbR/kNkZNKKYVncuI47ROXYv232l9dLcWGfKIBYio4039ulc+xvkwSwA5MOEqXTKad9gpS74eE//ydZUcbrlmF3rQoKNj+oeV/+2JKj7LpTlS23YgvA4xShhLiigOT9b8soIeFL1UlEqh0lgczQhgPaSbjxyRan8KKaJ2rQkC6bKxppsV/i6ENlb17hepzZBrRtvSQQ3dUBxrkQ/76Xe2Fr7bKX9BQiHCAw9KTmuofr+cVRG7jV4r1g7wmqQkHvJoncXP9Us72XBW7hmNg1mhjWI0+4n48ZRnIrFolAksvpIIuKoXg4Xtz ffs@pcmt391",
             },
             "rose": {  # what to call the machine
                 "hostname": "rose",  #
@@ -49,10 +49,10 @@ class Config(DefaultConfig):
             "clara": {
                 "hostname": "pcmt289",
                 "storage_prefix": "/clara/ffs",
-                "public_key": b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQChvNerKvw9OC19HxOuugSaIoKU6cS/w8/3UxQUPLuvZ6jfybId96+ErJ23sbergJZAcVi3p6ONDMgcMu+73UKhA8JFSziVymbIIoNwafP8+YSa9WCD97yjHLcTCOJq1BEHXZ0yfKzEo/5HHTNogM7H1krwOqHdJzIEcz6lgeKBjuwACvuICCdGP9M50NfKJMV8WxHmc+oWoONJnvpILm4YuTfQ22Wi+XNEN2KjiSknH6vNnRZrtO4yVs0OUUow/Wr8bQOm7Ox/4QK4pl2PtNOJ9qV8zIvkruIxfI4T5tKHDZMrFAUIY9VAntUggKXQNsigxuEMs8gowSZGeeQgdzFF ffs@pcmt289",
+                'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHnQYh3xT9OSJMDFZvQgBcAPM3/rakCRt6bHhzXa2JHDvhfLvM+Q5yEOUMUAD6ELiAqdqvfBIf7bqtHqa69KMaLr91cIvRrRAZUAelGPhk+HNOXcC8Q9pEbWuQZ6OADzDNkgd/FmqyDpVqKl6hF0B6i2WAzJdrmu7rOPS4wL0Sy9qpPSqyAbifi4gMnWZemiv0tNbmTBT1E6QkBAks9hQKIGCGXZUphOU2ryS+p9sP2IIRSKOCIPR19TUsO5WFOY5xZrUpoWXsEQenLDvExi62ZZINxGrEZtXV5zh2/+r/h1QufPSl1MkVZDIuGCgrEzR4vXtRktdIi5k9Ldcr+TX/ ffs@pcmt289',
             },
         }
-        if False:
+        if True:
             result.update(
                 {
                     "wilfred": {
@@ -140,7 +140,8 @@ class Config(DefaultConfig):
             ["/machine/opt/infrastructure/client/call_mattermost.py"],
             stdin=subprocess.PIPE,
         )
-        p.communicate(message.encode("utf-8"))
+        #p.communicate(message.encode("utf-8"))
+        p.stdin.close()
 
     def decide_targets(self, ffs):
         if ffs.startswith("20"):

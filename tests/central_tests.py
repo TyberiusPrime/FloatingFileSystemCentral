@@ -6051,6 +6051,25 @@ class PriorityTests(PostStartupTests):
         assert len(outgoing_messages) == 1  # that's the snapshot
         assert outgoing_messages[0]["msg"] == "send_snapshot"
 
+class BattleTests(PostStartupTests):
+    def test_remote_has_an_additional_snapshot(self):
+        e, outgoing_messages = self.get_engine(
+            {
+                "alpha": {"_one": ["b"], "_one/a": ['e',"c"]},
+                "beta": {"one": ["b"], "one/a": ["e",'d','c']},
+            }
+        )
+        self.assertEqual(len(outgoing_messages), 1)
+        self.assertMsgEqual(
+            outgoing_messages[0],
+            {
+                "msg": "remove_snapshot",
+                "to": "beta",
+                "ffs": "one/a",
+                "snapshot": "d",
+            },
+        )
 
 if __name__ == "__main__":
     unittest.main()
+
