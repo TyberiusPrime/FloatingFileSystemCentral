@@ -225,6 +225,20 @@ class Config(DefaultConfig):
     def get_chown_user(self, dummy_ffs):
         return "finkernagel"
 
+    def get_ssh_cmd(self):
+        return [
+            "ssh",
+            "-p",
+            "223",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-i",
+            "/home/ffs/.ssh/id_rsa",
+            '-v',
+        ]  # default ssh command, #-i is necessary for 'sudo rsync'
+
+    
+
 
 config = Config()
 all = [config]

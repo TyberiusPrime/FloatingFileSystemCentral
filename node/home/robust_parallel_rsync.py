@@ -73,6 +73,7 @@ def do_rsync(args):
     rsync_cmd = [
         "sudo",
         "rsync",
+        "--verbose",
         "--rsync-path=rprsync",
         "--delete",
         "--delay-updates",

@@ -17,8 +17,8 @@ def check_call(cmd):
     return True
 
 
-def check_output(cmd):
-    return subprocess.check_output(cmd)
+def check_output(cmd, timeout=None):
+    return subprocess.check_output(cmd, timeout=timeout)
 
 
 def zfs_output(cmd_line):
@@ -242,7 +242,10 @@ def msg_capture_if_changed(msg):
             full_ffs_path,
         ]
         try:
-            ctx = check_output(cmd).strip()
+            try:
+                ctx = check_output(cmd, 120).strip()
+            except subprocess.TimeoutExpired: # if it takes this long, just assume it's the real mccoy
+                ctx = True
             if ctx:
                 changed = True
             else:
