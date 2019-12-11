@@ -201,14 +201,13 @@ class OutgoingMessages:
             )
         except Exception as e:
             import traceback
-
             self.logger.error(
-                "Node processing error in job_id return %s %s %s, outgoing was: %s",
-                job_id,
-                result,
-                e,
-                format_msg(m.msg),
-            )
+                    "Node processing error in job_id return %s %s %s, outgoing was: %s",
+                    job_id,
+                    result,
+                    e,
+                    format_msg(m.msg),
+                )
             self.logger.error(traceback.format_exc())
         self.outgoing[m.node_name].remove(m)
         self.send_if_possible()

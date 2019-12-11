@@ -18,7 +18,17 @@ def check_call(cmd):
 
 
 def check_output(cmd, timeout=None):
-    return subprocess.check_output(cmd, timeout=timeout)
+    if timeout:
+        cmd = ['timeout', str(timeout)] + cmd
+        try:
+            return subprocess.check_output(cmd, timeout=timeout)
+        except subprocess.CalledProcessError as e:
+            if '124' in str(e):
+                raise subprocess.TimeoutExpired()
+            else:
+                raise
+    else:
+        return subprocess.check_output(cmd, timeout=timeout)
 
 
 def zfs_output(cmd_line):
@@ -269,6 +279,7 @@ def msg_remove(msg):
     full_ffs_path = find_ffs_prefix(msg) + ffs
     if full_ffs_path not in list_ffs(msg["storage_prefix"], False, True):
         return {"msg": "remove_failed", "reason": "target_does_not_exists", "ffs": ffs}
+    check_call(["sudo", "zfs", "set", "ffs:remove_asap=on", full_ffs_path])
     p = subprocess.Popen(
         ["sudo", "zfs", "destroy", full_ffs_path, "-r"],
         stdout=subprocess.PIPE,
@@ -278,8 +289,7 @@ def msg_remove(msg):
     if p.returncode == 0:
         return {"msg": "remove_done", "ffs": ffs}
     else:
-        if b"target is busy" in stderr:
-            check_call(["sudo", "zfs", "set", "ffs:remove_asap=on", full_ffs_path])
+        if b"target is busy" in stderr or b'dataset is busy' in stderr:
             return {"msg": "remove_failed", "reason": "target_is_busy", "ffs": ffs}
         else:
             return {
