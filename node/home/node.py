@@ -154,9 +154,31 @@ def ensure_zfs_mounted(zfs_name):
         if get_zfs_property(zfs_parent, "readonly") == "on":
             restore_ro = True
             check_call(["sudo", "zfs", "set", "readonly=off", zfs_parent])
-        check_call(["sudo", "zfs", "mount", zfs_name])
-        if restore_ro:
-            check_call(["sudo", "zfs", "set", "readonly=on", zfs_parent])
+        try:
+            check_call(["sudo", "zfs", "mount", zfs_name])
+        finally:
+            if restore_ro:
+                check_call(["sudo", "zfs", "set", "readonly=on", zfs_parent])
+
+
+def ensure_zfs_unmounted(zfs_name):
+    if os.path.ismount("/" + zfs_name):
+        zfs_parent = os.path.split(zfs_name)[0]
+        restore_ro = False
+        if get_zfs_property(zfs_parent, "readonly") == "on":
+            restore_ro = True
+            check_call(["sudo", "zfs", "set", "readonly=off", zfs_parent])
+        try:
+            check_call(["sudo", "zfs", "unmount", zfs_name])
+        except subprocess.CalledProcessError:
+            check_call(["sudo", "umount", "-lf", "/" + zfs_name])
+            try:
+                check_call(['rmdir', '/' + zfs_name])
+            except subprocess.CalledProcessError:
+                pass
+        finally:
+            if restore_ro:
+                check_call(["sudo", "zfs", "set", "readonly=on", zfs_parent])
 
 
 def msg_set_properties(msg):
@@ -613,8 +635,14 @@ def msg_rename(msg):
     full_new_path = find_ffs_prefix(msg) + new_name
     if full_new_path in lf:
         raise ValueError("new_name already exists")
+
+    ensure_zfs_unmounted(full_ffs_path)
     check_call(["sudo", "zfs", "rename", full_ffs_path, full_new_path])
     check_call(["sudo", "zfs", "set", "ffs:renamed_from=%s" % (ffs,), full_new_path])
+    try:
+        ensure_zfs_mounted(full_new_path)
+    except subprocess.CalledProcessError:
+        pass
     return {"msg": "rename_done", "ffs": ffs, "new_name": new_name}
 
 
