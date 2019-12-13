@@ -19,11 +19,11 @@ def check_call(cmd):
 
 def check_output(cmd, timeout=None):
     if timeout:
-        cmd = ['timeout', str(timeout)] + cmd
+        cmd = ["timeout", str(timeout)] + cmd
         try:
             return subprocess.check_output(cmd, timeout=timeout)
         except subprocess.CalledProcessError as e:
-            if '124' in str(e):
+            if "124" in str(e):
                 raise subprocess.TimeoutExpired()
             else:
                 raise
@@ -254,7 +254,7 @@ def msg_capture_if_changed(msg):
         try:
             try:
                 ctx = check_output(cmd, 120).strip()
-            except subprocess.TimeoutExpired: # if it takes this long, just assume it's the real mccoy
+            except subprocess.TimeoutExpired:  # if it takes this long, just assume it's the real mccoy
                 ctx = True
             if ctx:
                 changed = True
@@ -289,7 +289,7 @@ def msg_remove(msg):
     if p.returncode == 0:
         return {"msg": "remove_done", "ffs": ffs}
     else:
-        if b"target is busy" in stderr or b'dataset is busy' in stderr:
+        if b"target is busy" in stderr or b"dataset is busy" in stderr:
             return {"msg": "remove_failed", "reason": "target_is_busy", "ffs": ffs}
         else:
             return {
@@ -307,7 +307,7 @@ def msg_remove_snapshot(msg):
     snapshot_name = msg["snapshot"]
     combined = "%s@%s" % (full_ffs_path, snapshot_name)
     if combined not in list_snapshots():
-        raise ValueError("invalid snapshot %s" %(combined,))
+        raise ValueError("invalid snapshot %s" % (combined,))
     try:
         check_call(["sudo", "zfs", "destroy", combined])
     except subprocess.CalledProcessError as e:
@@ -359,9 +359,29 @@ def msg_chown_and_chmod(msg):
         "^([ugoa]+[+=-][rwxXst]*,?)+$", msg["rights"]
     ):
         raise ValueError("invalid rights - needs to look like 0777")
-    check_call(["sudo", "chown", user, "/" + full_ffs_path + sub_path, "-R"])
-    check_call(["sudo", "chmod", msg["rights"], "/" + full_ffs_path + sub_path, "-R"])
+    check_call_and_ignore_read_only_fs(
+        ["sudo", "chown", user, "/" + full_ffs_path + sub_path, "-R"]
+    )
+    check_call_and_ignore_read_only_fs(
+        ["sudo", "chmod", msg["rights"], "/" + full_ffs_path + sub_path, "-R"]
+    )
     return {"msg": "chown_and_chmod_done", "ffs": ffs}
+
+
+def check_call_and_ignore_read_only_fs(cmd, *args, **kwargs):
+    p = subprocess.Popen(cmd, stderr=subprocess.PIPE, *args, **kwargs)
+    stdout, stderr = p.communicate()
+    if p.returncode == 1:
+        lines = stderr.strip().split(b"\n")
+        lines = [l for l in lines if not b"Read-only file system" in l]
+        if lines:
+            raise subprocess.CalledProcessError(cmd, p.returncode, stdout, stderr)
+        else:
+            return True
+    elif p.returncode == 0:
+        return True
+    else:
+        raise subprocess.CalledProcessError(cmd, p.returncode, stdout, stderr)
 
 
 def clean_up_clones(storage_prefix):

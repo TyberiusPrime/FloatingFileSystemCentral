@@ -2104,6 +2104,84 @@ class NodeTests(unittest.TestCase):
         )
         self.assertFalse("clone_name" in out_msg)
 
+    def test_chown_on_nested_readonly_works(self):
+        """This tests that you can chown&chmod on an ffs that has other ffs that are not main on this machine nested in it"""
+        subprocess.check_call(
+            ["sudo", "zfs", "create", NodeTests.get_test_prefix() + "from_11"]
+        )
+
+        subprocess.check_call(
+            ["sudo", "zfs", "create", NodeTests.get_test_prefix() + "from_11/nested"]
+        )
+        subprocess.check_call(
+            [
+                "sudo",
+                "zfs",
+                "create",
+                NodeTests.get_test_prefix() + "from_11/nested/non_ro",
+            ]
+        )
+        subprocess.check_call(
+            ["sudo", "zfs", "create", NodeTests.get_test_prefix() + "from_11/nested/ro"]
+        )
+        subprocess.check_call(
+            [
+                "sudo",
+                "chmod",
+                "777",
+                "/" + NodeTests.get_test_prefix() + "from_11",
+                "-R",
+            ]
+        )
+
+        write_file("/" + NodeTests.get_test_prefix() + "from_11/nested/test", "hello")
+        write_file(
+            "/" + NodeTests.get_test_prefix() + "from_11/nested/non_ro/test", "hello"
+        )
+        write_file(
+            "/" + NodeTests.get_test_prefix() + "from_11/nested/ro/test", "hello"
+        )
+        chmod("/" + NodeTests.get_test_prefix() + "from_11/nested/test", "000")
+        chmod("/" + NodeTests.get_test_prefix() + "from_11/nested/non_ro/test", "000")
+        chmod("/" + NodeTests.get_test_prefix() + "from_11/nested/ro/test", "000")
+        subprocess.check_call(
+            [
+                "sudo",
+                "zfs",
+                "set",
+                "readonly=on",
+                NodeTests.get_test_prefix() + "from_11/nested/ro",
+            ]
+        )
+        in_msg = {
+            "msg": "chown_and_chmod",
+            "ffs": "from_11",
+            "sub_path": "/nested",
+            "user": "nobody",
+            "rights": "uog+rwX",
+        }
+        out_msg = self.dispatch(in_msg)
+        self.assertNotError(out_msg)
+        self.assertEqual(
+            get_file_rights("/" + NodeTests.get_test_prefix() + "from_11/nested/test")
+            & 0o777,
+            0o666,
+        )
+        self.assertEqual(
+            get_file_rights(
+                "/" + NodeTests.get_test_prefix() + "from_11/nested/non_ro/test"
+            )
+            & 0o777,
+            0o666,
+        )
+        self.assertEqual(
+            get_file_rights(
+                "/" + NodeTests.get_test_prefix() + "from_11/nested/ro/test"
+            )
+            & 0o777,
+            0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
