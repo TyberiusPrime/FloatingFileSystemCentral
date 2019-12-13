@@ -362,6 +362,9 @@ def msg_chown_and_chmod(msg):
     check_call_and_ignore_read_only_fs(
         ["sudo", "chown", user, "/" + full_ffs_path + sub_path, "-R"]
     )
+
+    # can't use the find | xargs variant - xargs will stop on first error
+    # and we have to at least ignore the read-only-filesystem errors
     check_call_and_ignore_read_only_fs(
         ["sudo", "chmod", msg["rights"], "/" + full_ffs_path + sub_path, "-R"]
     )
@@ -375,13 +378,13 @@ def check_call_and_ignore_read_only_fs(cmd, *args, **kwargs):
         lines = stderr.strip().split(b"\n")
         lines = [l for l in lines if not b"Read-only file system" in l]
         if lines:
-            raise subprocess.CalledProcessError(cmd, p.returncode, stdout, stderr)
+            raise subprocess.CalledProcessError(p.returncode, cmd, stdout, stderr)
         else:
             return True
     elif p.returncode == 0:
         return True
     else:
-        raise subprocess.CalledProcessError(cmd, p.returncode, stdout, stderr)
+        raise subprocess.CalledProcessError(p.returncode, cmd, stdout, stderr)
 
 
 def clean_up_clones(storage_prefix):
