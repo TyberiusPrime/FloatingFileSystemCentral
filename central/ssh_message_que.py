@@ -78,14 +78,18 @@ class OutgoingMessages:
                 msg.msg["msg"] == "set_properties"
             ):  # do these first, they might be user set_interval/set_priority requests
                 order = 4
-            elif msg.msg["msg"] == "new":
+            elif (
+                msg.msg["msg"] == "chown_and_chmod"
+            ):  # these are also user/interactive requests
                 order = 5
-            elif msg.msg["msg"] == "capture":
+            elif msg.msg["msg"] == "new":
                 order = 6
-            elif msg.msg["msg"] == "send_snapshot":
+            elif msg.msg["msg"] == "capture":
                 order = 7
-            elif msg.msg["msg"] == "remove_snapshot":
+            elif msg.msg["msg"] == "send_snapshot":
                 order = 8
+            elif msg.msg["msg"] == "remove_snapshot":
+                order = 9
             prio = int(msg.msg.get("priority", 1000))
             return (order, prio)
 
@@ -201,13 +205,14 @@ class OutgoingMessages:
             )
         except Exception as e:
             import traceback
+
             self.logger.error(
-                    "Node processing error in job_id return %s %s %s, outgoing was: %s",
-                    job_id,
-                    result,
-                    e,
-                    format_msg(m.msg),
-                )
+                "Node processing error in job_id return %s %s %s, outgoing was: %s",
+                job_id,
+                result,
+                e,
+                format_msg(m.msg),
+            )
             self.logger.error(traceback.format_exc())
         self.outgoing[m.node_name].remove(m)
         self.send_if_possible()

@@ -10,6 +10,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from central import engine, ssh_message_que, default_config
 
 
+if sys.version_info[0] == 2:
+    raise ValueError("ffs needs python3")
+
 class FakeMessageSender:
     def __init__(self):
         self.outgoing = []
@@ -6001,14 +6004,21 @@ class PriorityTests(PostStartupTests):
                 {},
                 {"msg": "set_properties", "ffs": "b", "properties": {"a": "true"}},
             ),
+                ssh_message_que.MessageInProgress(
+                "node1",
+                {},
+                {"msg": "chown_and_chmod", "ffs": "b", },
+            ),
+
         ]
         ordered = list(o.prioritize(msgs))
         self.assertEqual(ordered[0], msgs[5])
-        self.assertEqual(ordered[1], msgs[3])
-        self.assertEqual(ordered[2], msgs[2])
-        self.assertEqual(ordered[3], msgs[4])
-        self.assertEqual(ordered[4], msgs[1])
-        self.assertEqual(ordered[5], msgs[0])
+        self.assertEqual(ordered[1], msgs[6])
+        self.assertEqual(ordered[2], msgs[3])
+        self.assertEqual(ordered[3], msgs[2])
+        self.assertEqual(ordered[4], msgs[4])
+        self.assertEqual(ordered[5], msgs[1])
+        self.assertEqual(ordered[6], msgs[0])
 
     def test_prio_inheritance(self):
         e, outgoing_messages = self.get_engine(
