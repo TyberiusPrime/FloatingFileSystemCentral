@@ -23,6 +23,7 @@ from .exceptions import (
     InvalidTarget,
     RestartError,
     NodeIsReadonly,
+    NoMainAvailable,
 )
 
 
@@ -210,7 +211,11 @@ class Engine:
         result = {}
         if not full:
             for ffs, ffs_info in self.model.items():
-                result[ffs] = [ffs_info["_main"]] + [
+                try:
+                    main = [self._get_main(ffs)]
+                except NoMainAvailable:
+                    main = ["NoMainAvailable"]
+                result[ffs] = main + [
                     x
                     for x in ffs_info
                     if x != ffs_info["_main"] and not x.startswith("_")
@@ -218,7 +223,7 @@ class Engine:
         else:
             for ffs, ffs_info in self.model.items():
                 result[ffs] = {
-                    "targets": [ffs_info["_main"]]
+                    "targets": [str(ffs_info["_main"])]
                     + [
                         x
                         for x in ffs_info
@@ -376,7 +381,7 @@ class Engine:
             )
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
-        if target == self.model[ffs]["_main"]:
+        if target == self._get_main(ffs):
             raise ValueError("Remove failed, target is main - not removing")
 
         # little harm in sending it again if we're already removing
@@ -398,6 +403,7 @@ class Engine:
 
         targets = [self.config.find_node(x) for x in msg["targets"]]
         self.check_targets_have_parent(ffs, targets)
+        self._get_main(ffs)  # NoMainAvailable on no main
         targets = sorted(set(targets))
         if not targets:
             raise ValueError("Empty target list")
@@ -461,6 +467,7 @@ class Engine:
             )
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
+        self._get_main(ffs) # raise NoMainAvailable if so
         postfix = msg.get("postfix", "")
         snapshot = self.do_capture(
             ffs, msg.get("chown_and_chmod", False), postfix, if_changed=if_changed
@@ -469,7 +476,7 @@ class Engine:
 
     def do_capture(self, ffs, chown_and_chmod, postfix="", if_changed=False):
         snapshot = self._name_snapshot(ffs, postfix)
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         if not snapshot in self.config.decide_snapshots_to_send(
             ffs, self.model[ffs][main]["snapshots"] + [snapshot]
         ):
@@ -519,7 +526,7 @@ class Engine:
             )
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         if self.is_readonly_node(main):
             raise NodeIsReadonly(main, "main")
         self.send(
@@ -559,7 +566,7 @@ class Engine:
             raise InvalidTarget("Move failed, invalid target.")
         if target not in self.model[ffs]:
             raise InvalidTarget("Move failed, target does not have this ffs.")
-        current_main = self.model[ffs]["_main"]
+        current_main = self._get_main(ffs)
         if target == current_main:
             raise ValueError("Move failed, target is already main")
         if self.is_ffs_removing_any(ffs):
@@ -659,7 +666,7 @@ class Engine:
         else:
             interval = str(interval)
         # store on evyr node in order to remain stored on move
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         if self.is_readonly_node(main):
             raise NodeIsReadonly(main, "main")
         for node in sorted(self.model[ffs]):
@@ -689,7 +696,7 @@ class Engine:
         if not isinstance(priority, int) and priority != "-":
             raise ValueError("priority parameter must be an integer")
         priority = str(priority)
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         if self.is_readonly_node(main):
             raise NodeIsReadonly(main, "main")
         # store on every node in order to remain stored on move
@@ -720,12 +727,17 @@ class Engine:
             return False
         if self.is_ffs_remove_asap_all(ffs):
             return False
-        main = self.model[ffs]["_main"]
+        try:
+            main = self._get_main(ffs)
+        except NoMainAvailable:
+            return False
         if "_new" in self.model[ffs][main]:
             return False
         moving_to = self.model[ffs][main]["properties"].get("ffs:moving_to", "-")
         if moving_to != "-":
-            self.config.inform("is_moving(%s) == True because of moving_to: %s " % (ffs, moving_to))
+            self.config.inform(
+                "is_moving(%s) == True because of moving_to: %s " % (ffs, moving_to)
+            )
             self.model[ffs]["_moving"] = moving_to
             return True
         return False
@@ -906,7 +918,10 @@ class Engine:
                 and not self.is_ffs_renaming(ffs)
                 and not self.is_ffs_remove_asap_all(ffs)
             ):
-                main = self.model[ffs]["_main"]
+                try:
+                    main = self._get_main(ffs)
+                except NoMainAvailable:
+                    continue
                 main_info = self.model[ffs][main]
                 for node, node_info in sorted(self.model[ffs].items()):
                     if node != main and not node.startswith("_"):
@@ -934,6 +949,8 @@ class Engine:
     def _handle_remove_asap(self):
         for ffs in self.model:
             main = self.model[ffs]["_main"]
+            if main is NoMainAvailable:
+                continue
             for node in sorted(self.model[ffs]):
                 if not node.startswith("_") and not self.is_readonly_node(node):
                     if (
@@ -1052,18 +1069,11 @@ class Engine:
                                 # .continue
                                 pass
                             else:
-                                errors.append(
-                                    "No main, none non-readonly for '%s' on %s"
-                                    % (
-                                        ffs,
-                                        [
-                                            x
-                                            for x in node_ffs_info.keys()
-                                            if not x.startswith("_")
-                                        ],
-                                    )
+                                self.config.inform(
+                                    "No main, all readonly for %s - putting into readonly mode"
+                                    % ffs
                                 )
-                                continue
+                                main = NoMainAvailable  # use as a token
             self.model[ffs]["_main"] = main
             if not any_moving_to:
                 # make sure the right readonly/main properties are set.
@@ -1257,12 +1267,26 @@ class Engine:
 
     def _prune_snapshots(self):
         for ffs in self.model.keys():
-            if not self.is_ffs_renaming(ffs) and not self.is_ffs_remove_asap_all(ffs):
+            if (
+                not self.is_ffs_renaming(ffs)
+                and not self.is_ffs_remove_asap_all(ffs)
+                and self.has_main(ffs)
+            ):
                 self._prune_snapshots_for_ffs(ffs)
+
+    def _get_main(self, ffs):
+        main = self.model[ffs]["_main"]
+        if main is NoMainAvailable:
+            raise NoMainAvailable()
+        return main
+
+    def has_main(self, ffs):
+        main = self.model[ffs]["_main"]
+        return main is not NoMainAvailable
 
     def _prune_snapshots_for_ffs(self, ffs, restrict_to_node=None):
         node_fss_info = self.model[ffs]
-        main_node = node_fss_info["_main"]
+        main_node = self._get_main(ffs)
         main_snapshots = node_fss_info[main_node]["snapshots"]
         if not main_snapshots:
             return
@@ -1317,7 +1341,7 @@ class Engine:
 
         def get_prio(ffs_node_info_tup):
             ffs, node_fss_info = ffs_node_info_tup
-            main = node_fss_info["_main"]
+            main = self._get_main(ffs)
             prio = int(node_fss_info[main]["properties"].get("ffs:priority", 1000))
             return prio
 
@@ -1327,9 +1351,10 @@ class Engine:
             if not self.is_ffs_moving(ffs)
             and not self.is_ffs_renaming(ffs)
             and not self.is_ffs_remove_asap_all(ffs)
+            and self.has_main(ffs)
         ]
         for ffs, node_fss_info in sorted(ffs_to_consider, key=get_prio):
-            main = node_fss_info["_main"]
+            main = self._get_main(ffs)
             main_snapshots = node_fss_info[main]["snapshots"]
             if (
                 len([x for x in node_fss_info if x != main and not x.startswith("_")])
@@ -1371,9 +1396,10 @@ class Engine:
                 self.is_ffs_moving(ffs)
                 or self.is_ffs_renaming(ffs)
                 or self.is_ffs_remove_asap_all(ffs)
+                or not self.has_main(ffs)
             ):
                 continue
-            main = node_ffs_info["_main"]
+            main = self._get_main(ffs)
             main_snapshots = node_ffs_info[main]["snapshots"]
             has_replicates = [
                 x for x in node_ffs_info if x != main and not x.startswith("_")
@@ -1390,7 +1416,7 @@ class Engine:
                         self.do_capture(ffs, False)
 
     def get_ffs_priority(self, ffs):
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         prio = self.model[ffs][main]["properties"].get("ffs:priority", None)
         if prio is None:
             if "/" in ffs:
@@ -1456,10 +1482,7 @@ class Engine:
                     msg,
                     InconsistencyError,
                 )
-            if (
-                props.get("ffs:main", False) == "off"
-                and node == self.model[ffs]["_main"]
-            ):
+            if props.get("ffs:main", False) == "off" and node == self._get_main(ffs):
                 # move step 4 done, happens after successful capture & replication & main=off on old main.
                 # set main=on on new main.
                 self.config.inform("Move step 4 done: %s" % ffs)
@@ -1497,7 +1520,7 @@ class Engine:
             self.is_ffs_moving(ffs) and props.get("ffs:main", False) == "on"
         ):
             self.send(
-                self.model[ffs]["_main"],
+                self._get_main(ffs),
                 {
                     "msg": "set_properties",
                     "ffs": ffs,
@@ -1529,7 +1552,7 @@ class Engine:
             "upcoming_snapshots": [],
             "properties": msg["properties"],
         }
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
 
         # This happens if we were actually a add_new_target
         if node != main:
@@ -1556,7 +1579,7 @@ class Engine:
         ffs = msg["ffs"]
         if ffs not in self.model:
             self.fault("capture_done from ffs not in model.", msg, InconsistencyError)
-        main = self.model[ffs]["_main"]
+        main = self._get_main(ffs)
         if main != sender:
             self.fault(
                 "Capture message received from non main node", msg, InconsistencyError
@@ -1571,7 +1594,7 @@ class Engine:
                 self.fault("Snapshot was already in model", msg, CodingError)
             self.model[ffs][sender]["snapshots"].append(snapshot)
 
-            main = self.model[ffs]["_main"]
+            main = self._get_main(ffs)
             for node in sorted(self.node_config):
                 if (
                     node != main
@@ -1642,7 +1665,7 @@ class Engine:
         ):
             self.config.inform(("Move step 3 done: %s" % ffs))
             self.send(
-                self.model[ffs]["_main"],
+                self._get_main(ffs),
                 {
                     "msg": "set_properties",
                     "ffs": ffs,
@@ -1663,7 +1686,7 @@ class Engine:
             self.fault("remove_done from ffs not in model.", msg, InconsistencyError)
         if node not in self.model[ffs]:
             raise InconsistencyError("remove_done from node not in ffs for this model")
-        if self.model[ffs]["_main"] == node:
+        if self._get_main(ffs) == node:
             self.fault("remove_done from main!", msg, InconsistencyError)
         del self.model[ffs][node]
 
@@ -1747,7 +1770,7 @@ class Engine:
 
     def get_snapshot_interval(self, ffs):
         info = self.model[ffs]
-        main = info["_main"]
+        main = self._get_main(ffs)
         interval = info[main]["properties"].get("ffs:snapshot_interval", "-")
         if interval == "-":
             return False
@@ -1768,7 +1791,7 @@ class Engine:
                         self.logger.info(
                             "Checking snapshot interval for %s, interval=%ss", ffs, iv
                         )
-                        main = ffs_info["_main"]
+                        main = self._get_main(ffs)
                         do_snapshot = False
                         if ffs_info[main]["upcoming_snapshots"]:
                             # never auto snapshot while we're lagging behind.

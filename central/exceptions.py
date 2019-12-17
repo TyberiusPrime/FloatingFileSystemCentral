@@ -54,6 +54,10 @@ class RestartError(Exception):
     pass
 
 
+class NoMainAvailable(Exception):
+    pass
+
+
 class NodeIsReadonly(Exception):
     def __init__(self, node, kind=""):
         Exception.__init__(

@@ -136,7 +136,7 @@ class ClientTests(unittest.TestCase):
     def client_wait_for_startup(cls):
         start = time.time()
         while True:
-            stdout = cls.run_expect_ok(["service", "is_started"])
+            stdout = cls.run_expect_ok(["service_is_started"])
             q = json.loads(stdout.decode("utf-8"))
             if q["started"]:
                 break
@@ -148,7 +148,7 @@ class ClientTests(unittest.TestCase):
     def client_wait_for_empty_que(cls):
         start = time.time()
         while True:
-            stdout = cls.run_expect_ok(["service", "que"])
+            stdout = cls.run_expect_ok(["service_que"])
             q = json.loads(stdout.decode("utf-8"))
             if not any(q.values()):
                 break
@@ -874,7 +874,7 @@ class ClientTests(unittest.TestCase):
         self.run_expect_ok(["add_targets", "capture_test4/", "B"])
 
     def test_capture_all_if_changed(self):
-        self.run_expect_ok(["service", "capture_all_if_changed"])
+        self.run_expect_ok(["service_capture_all_if_changed"])
         self.client_wait_for_empty_que()
         # a simple ok from the engine is enough for me
         # the rest is tested by central_tests and node_tests

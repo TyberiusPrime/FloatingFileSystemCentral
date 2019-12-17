@@ -13,6 +13,7 @@ from central import engine, ssh_message_que, default_config
 if sys.version_info[0] == 2:
     raise ValueError("ffs needs python3")
 
+
 class FakeMessageSender:
     def __init__(self):
         self.outgoing = []
@@ -397,9 +398,7 @@ class StartupTests(EngineTests):
         self.assertRaises(engine.ManualInterventionNeeded, inner)
         self.assertTrue(e.faulted)
 
-    def test_orphan_target_from_other_ffs_raises_inconsitency(self):
-        # there's at least one node that used to be the main for an ffs missing
-        # from the configuration
+    def test_no_main_available(self):
         e, outgoing_messages = self.ge()
         self.assertFalse(e.startup_done)
         e.incoming_client({"msg": "startup"})
@@ -412,18 +411,47 @@ class StartupTests(EngineTests):
                 "from": "beta",
                 "ffs": {
                     "one": {
-                        "snapshots": [],
+                        "snapshots": ["a"],
                         "properties": {"readonly": "on", "ffs:main": "off"},
                     }
                 },
             }
         )
 
-        def inner():
-            e.incoming_node({"msg": "ffs_list", "from": "alpha", "ffs": {}})
+        e.incoming_node(
+            {
+                "msg": "ffs_list",
+                "from": "alpha",
+                "ffs": {
+                    "one": {
+                        "snapshots": [],
+                        "properties": {"readonly": "on", "ffs:main": "off"},
+                    }
+                },
+            }
+        )
+        self.assertFalse(e.faulted)
 
-        self.assertRaises(engine.ManualInterventionNeeded, inner)
-        self.assertTrue(e.faulted)
+        def inner():
+            e.incoming_client({"msg": "capture", "ffs": "one"})
+
+        self.assertRaises(engine.NoMainAvailable, inner)
+
+        # should work
+        self.assertTrue(len(outgoing_messages) == 0)
+        e.incoming_client({"msg": "new", "ffs": "one/b", "targets": ["alpha"]})
+        self.assertTrue(len(outgoing_messages) == 1)
+        self.assertMsgEqual(
+            outgoing_messages[0],
+            {
+                "msg": "new",
+                "to": "alpha",
+                "ffs": "one/b",
+                "properties": {"ffs:main": "on", "readonly": "off"},
+                "owner": e.config.get_chown_user("two"),
+                "rights": e.config.get_chmod_rights("two"),
+            },
+        )
 
     def test_no_main_but_remove_asap_on_all(self):
         #
@@ -6004,12 +6032,9 @@ class PriorityTests(PostStartupTests):
                 {},
                 {"msg": "set_properties", "ffs": "b", "properties": {"a": "true"}},
             ),
-                ssh_message_que.MessageInProgress(
-                "node1",
-                {},
-                {"msg": "chown_and_chmod", "ffs": "b", },
+            ssh_message_que.MessageInProgress(
+                "node1", {}, {"msg": "chown_and_chmod", "ffs": "b",},
             ),
-
         ]
         ordered = list(o.prioritize(msgs))
         self.assertEqual(ordered[0], msgs[5])
@@ -6061,26 +6086,21 @@ class PriorityTests(PostStartupTests):
         assert len(outgoing_messages) == 1  # that's the snapshot
         assert outgoing_messages[0]["msg"] == "send_snapshot"
 
+
 class BattleTests(PostStartupTests):
     def test_remote_has_an_additional_snapshot(self):
         e, outgoing_messages = self.get_engine(
             {
-                "alpha": {"_one": ["b"], "_one/a": ['e',"c"]},
-                "beta": {"one": ["b"], "one/a": ["e",'d','c']},
+                "alpha": {"_one": ["b"], "_one/a": ["e", "c"]},
+                "beta": {"one": ["b"], "one/a": ["e", "d", "c"]},
             }
         )
         self.assertEqual(len(outgoing_messages), 1)
         self.assertMsgEqual(
             outgoing_messages[0],
-            {
-                "msg": "remove_snapshot",
-                "to": "beta",
-                "ffs": "one/a",
-                "snapshot": "d",
-            },
+            {"msg": "remove_snapshot", "to": "beta", "ffs": "one/a", "snapshot": "d",},
         )
 
 
 if __name__ == "__main__":
     unittest.main()
-
