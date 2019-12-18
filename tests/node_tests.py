@@ -42,6 +42,79 @@ def run_rsync(cmd, encode=True, show_errors=True):
     return p.returncode, stdout, stderr
 
 
+def run_rsync_but_kill_first_ssh(cmd, encode=True, show_errors=True, kill_first_x=1):
+    """only used by the test_unexpected_closure test"""
+    import threading
+    import psutil
+    import time
+
+    def killer(pid, kill_counter):
+        start = time.time()
+        ffs_uid = os.getuid()  # since the tests run as ffs
+        wasnot = set()
+        remaining = kill_counter
+        while True:
+            leave = False
+            if time.time() > start + 5:
+                print("timeout")
+                break
+            for proc in psutil.process_iter():
+                if proc.pid in wasnot:
+                    continue
+                try:
+                    cmd_line = "---".join(proc.cmdline())
+                    # if "sync" in cmd_line:
+                    # print('consider', proc.cmdline())
+                    # print("")
+                    if (
+                        proc.uids()[0] == ffs_uid
+                        and "rsync" in cmd_line
+                        and "--server" in cmd_line
+                        and "/tmp/RPsTests/unexpected_closure_to/." in cmd_line
+                        and not "/bin/sh" in cmd_line
+                        and not "ssh---" in cmd_line
+                        and proc.parent()
+                        and proc.parent().cmdline()[0] != ("/bin/sh")
+                    ):
+                        # print("killing", proc.pid, proc.cmdline())
+                        proc.kill()
+                        # time.sleep(5)
+                        remaining -= 1
+                        if remaining == 0:
+                            leave = True
+                        break
+                    else:
+                        wasnot.add(proc.pid)  # no sense in checking these repeatedly
+                except psutil.NoSuchProcess:
+                    continue
+            if leave:
+                break
+
+    cmd["no_sudo"] = True
+    if encode:
+        cmd = json.dumps(cmd)
+    p = subprocess.Popen(
+        "../node/home/robust_parallel_rsync.py",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    t = threading.Thread(target=killer, args=(p.pid, kill_first_x))
+    t.start()
+    p.stdin.write(cmd.encode("utf-8"))
+    p.stdin.close()
+    p.wait()
+    stdout = p.stdout.read()
+    p.stdout.close()
+    stderr = p.stderr.read()
+    p.stderr.close()
+    if p.returncode != 0 and show_errors:
+        print(stdout.decode("utf-8"))
+        print(stderr.decode("utf-8"))
+    t.join()
+    return p.returncode, stdout, stderr
+
+
 def read_file(filename):
     with open(filename) as op:
         return op.read()
@@ -658,6 +731,46 @@ class RPsTests(unittest.TestCase):
         # {'ssh_process_return_code': 1, 'from': 'rose', 'error': 'rsync_failure', 'content': 'stdout:\nb\'\'\n\nstderr:\nb\'rsync\\n\\nsudo rsync --rsync-path=rprsync --delete --delay-updates --omit-dir-times -ltxx -perms --super --owner --group --recursive -e ssh -p 223 -o StrictHostKeyChecking=no -i /home/ffs/.ssh/id_rsa /rose/ffs/.ffs_sync_clones/1524556033.364719_2960bee1fc431d24d3b020e185b65454/web/ ffs@amy:/amy/ffs/e/20150616_AG_Stiewe_Katharina_Politt_CRISPR_p53_Amplicon_HCT116/web/\\n rsync returncode: 11rsync: mkdir "/amy/ffs/e/20150616_AG_Stiewe_Katharina_Politt_CRISPR_p53_Amplicon_HCT116/web" failed: File exists (17)\\nrsync error: error in file IO (code 11) at main.c(674) [Receiver=3.1.1]\\n\''} No message in msg, outgoing was: {'excluded_subdirs': [],
         # it think this is a race condition - the first rsync - parent folder without recursive (A) is still running, the child-folder recursive (B) checks whether the dir is there (false), A creates the dir, B  tries to create it again, boom
         raise NotImplementedError("I don't know how to trigger this.")
+
+    def test_unexpected_closure(self):
+        """Simulate a ssh connection loss ('unexpected close' from rsync's perspective
+        by killing the remote rsync process"""
+        source_path = "/tmp/RPsTests/unexpected_closure_from"
+        target_path = "/tmp/RPsTests/unexpected_closure_to"
+        self.ensure_path(source_path)
+        self.ensure_path(target_path)
+        size = 1000 * 1024 * 1
+        write_file(os.path.join(source_path, "file1"), "A" * size)
+        rc, stdout, stderr = run_rsync_but_kill_first_ssh(
+            {
+                "source_path": source_path,
+                "target_path": target_path,
+                "target_host": "127.0.0.1",
+                "target_ssh_cmd": target_ssh_cmd,
+                "target_user": "ffs",
+                "bwlimit": "1M",  # should give us about 3 seconds to kill the process.
+                "no_sudo": True,
+            },
+            kill_first_x=3,  # more than we have attempts at least...
+            show_errors=False,
+        )
+        self.assertEqual(rc, 2)
+        self.assertFalse(os.path.exists(os.path.join(target_path, "file1")))
+
+        rc, stdout, stderr = run_rsync_but_kill_first_ssh(
+            {
+                "source_path": source_path,
+                "target_path": target_path,
+                "target_host": "127.0.0.1",
+                "target_ssh_cmd": target_ssh_cmd,
+                "target_user": "ffs",
+                "bwlimit": "1M",  # should give us about 3 seconds to kill the process.
+                "no_sudo": True,
+            },
+            kill_first_x=3 - 1,  # so the last one succeeds
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(read_file(os.path.join(target_path, "file1")), "A" * size)
 
 
 def touch(filename):

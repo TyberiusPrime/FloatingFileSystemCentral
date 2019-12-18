@@ -234,7 +234,7 @@ class Config(DefaultConfig):
             "StrictHostKeyChecking=no",
             "-i",
             "/home/ffs/.ssh/id_rsa",
-            '-v',
+            #'-v',
         ]  # default ssh command, #-i is necessary for 'sudo rsync'
 
     

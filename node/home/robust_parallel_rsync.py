@@ -24,6 +24,7 @@ def print_usage(error):
             'chmod_rights': 'u+rwX,g+rwX,o-rwx',
             'cores': 2,
             'excluded_subdirs': ['a', 'b',...], #optional
+            'bwlimit': "1.5m",
         }
     """
     )
@@ -70,10 +71,12 @@ def do_rsync(args):
                 if p.returncode != 0:
                     return c_cmd, p.returncode, stdout, stderr
 
-    rsync_cmd = [
-        "sudo",
+    rsync_cmd = []
+    if not "no_sudo" in cmd:
+        rsync_cmd.append("sudo",)
+    rsync_cmd = rsync_cmd + [
         "rsync",
-        #"--verbose",
+        # "--verbose",
         "--rsync-path=rprsync",
         "--delete",
         "--delay-updates",
@@ -90,6 +93,8 @@ def do_rsync(args):
         rsync_cmd.append("--recursive")
     else:
         rsync_cmd.append("--dirs")
+    if "bwlimit" in cmd:  # bwlimit is used in testing.
+        rsync_cmd.append("--bwlimit=%s" % cmd["bwlimit"])
     for d in excluded_subdirs:
         rsync_cmd.append("--exclude=%s" % d)
     if "target_ssh_cmd" in cmd:
@@ -103,10 +108,21 @@ def do_rsync(args):
             shlex.quote(os.path.join(cmd["target_path"], sub_dir)),
         )
     )
-    p = subprocess.Popen(rsync_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = p.communicate()
-    stdout += ("\n" + " ".join(rsync_cmd)).encode("utf8", errors="replace")
-    stdout += b"\n rsync returncode: " + str(p.returncode).encode("utf-8")
+    if "no_sudo" in cmd:
+        rsync_cmd[-1] += "@@@no_sudo="
+    retries = 3  # actually total number of transmission attempts
+    while retries > 0:
+        p = subprocess.Popen(rsync_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = p.communicate()
+        stdout += ("\n" + " ".join(rsync_cmd)).encode("utf8", errors="replace")
+        stdout += b"\n rsync returncode: " + str(p.returncode).encode("utf-8")
+        if p.returncode == 0:
+            break
+        import time
+
+        time.sleep(1)  # probably smart to wait a second.
+        retries -= 1
+
     return "rsync", p.returncode, stdout, stderr
 
 
@@ -139,11 +155,11 @@ def parallel_chown_chmod_and_rsync(cmd):
     # otherwise there's a race condition that might be triggered
     # because the sub-dir rsyncs see 'dir does not exist', but till they get around to
     # create it, it does, and then they explode
-    it = iter_subdirs()
-    first = next(it)
-    do_rsync(first)
+    it = list(iter_subdirs())
+    first = it[0]
+    result = [do_rsync(first)]
     p = multiprocessing.Pool(cores)
-    result = p.map(do_rsync, it)
+    result.extend(p.map(do_rsync, it[1:]))
     p.close()
     p.join()
     # result = map(chown_chmod_and_rsync, list(iter_subdirs()))

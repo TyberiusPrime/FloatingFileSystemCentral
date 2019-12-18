@@ -688,8 +688,9 @@ def shell_cmd_rprsync(cmd_line):
     target_path = cmd_line[cmd_line.find("/") :]
     chmod_after = False
     todo = []
-    if "@" in cmd_line:
-        parts = cmd_line.split("@")
+    do_sudo = True
+    if "@@@" in cmd_line:
+        parts = cmd_line.split("@@@")
         target_path = parts[0][parts[0].find("/") :]
         for p in parts[1:]:
             if p.startswith("chmod="):
@@ -704,6 +705,8 @@ def shell_cmd_rprsync(cmd_line):
             # chmod_before = True
             elif p.startswith("chmod_after"):
                 chmod_after = True
+            elif p.startswith('no_sudo'):
+                do_sudo =False
             else:
                 raise ValueError("Invalid @ command")
 
@@ -715,9 +718,12 @@ def shell_cmd_rprsync(cmd_line):
         except PermissionError:  # target directory is without +X
             check_call(["sudo", "chmod", "oug+rwX", target_path])
             reset_rights = True
-    real_cmd = cmd_line.replace("rprsync", "sudo rsync")
-    if "@" in real_cmd:
-        real_cmd = real_cmd[: real_cmd.find("@")]
+    if do_sudo:
+        real_cmd = cmd_line.replace("rprsync", "sudo rsync")
+    else:
+        real_cmd = cmd_line.replace("rprsync", "rsync")
+    if "@@@" in real_cmd:
+        real_cmd = real_cmd[: real_cmd.find("@@@")]
     p = subprocess.Popen(real_cmd, shell=True)
     p.communicate()
     if todo and chmod_after:
