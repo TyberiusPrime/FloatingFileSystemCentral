@@ -2295,6 +2295,63 @@ class NodeTests(unittest.TestCase):
             0,
         )
 
+    def test_rollback(self):
+        subprocess.check_call(
+            ["sudo", "zfs", "create", NodeTests.get_test_prefix() + "from_12"]
+        )
+        subprocess.check_call(
+            [
+                "sudo",
+                "chmod",
+                "777",
+                "/" + NodeTests.get_test_prefix() + "from_12",
+                "-R",
+            ]
+        )
+        write_file("/" + NodeTests.get_test_prefix() + "from_12/test", "A")
+        subprocess.check_call(
+            ["sudo", "zfs", "snapshot", NodeTests.get_test_prefix() + "from_12@first"]
+        )
+        write_file("/" + NodeTests.get_test_prefix() + "from_12/test", "B")
+        subprocess.check_call(
+            ["sudo", "zfs", "snapshot", NodeTests.get_test_prefix() + "from_12@second"]
+        )
+        write_file("/" + NodeTests.get_test_prefix() + "from_12/test", "C")
+        msg = self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "second"})
+        print(msg)
+        self.assertEqual(
+            msg,
+            {
+                "msg": "rollback_done",
+                "ffs": "from_12",
+                "snapshots": ["first", "second"],
+            },
+        )
+
+        self.assertEqual(
+            read_file("/" + NodeTests.get_test_prefix() + "from_12/test"), "B"
+        )
+        self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "first"})
+        self.assertEqual(
+            read_file("/" + NodeTests.get_test_prefix() + "from_12/test"), "A"
+        )
+        self.assertEqual(
+            node.list_snapshots_for_ffs(NodeTests.get_test_prefix() + "from_12"),
+            ["first"],
+        )
+
+        def inner():
+            self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "second"})
+
+        self.assertRaises(ValueError, inner)
+
+        def inner():
+            self.dispatch(
+                {"msg": "rollback", "ffs": "from_12_no_such_ffs", "snapshot": "second"}
+            )
+
+        self.assertRaises(ValueError, inner)
+
 
 if __name__ == "__main__":
     unittest.main()

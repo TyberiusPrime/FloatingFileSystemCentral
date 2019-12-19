@@ -173,7 +173,7 @@ def ensure_zfs_unmounted(zfs_name):
         except subprocess.CalledProcessError:
             check_call(["sudo", "umount", "-lf", "/" + zfs_name])
             try:
-                check_call(['rmdir', '/' + zfs_name])
+                check_call(["rmdir", "/" + zfs_name])
             except subprocess.CalledProcessError:
                 pass
         finally:
@@ -646,6 +646,21 @@ def msg_rename(msg):
     return {"msg": "rename_done", "ffs": ffs, "new_name": new_name}
 
 
+def msg_rollback(msg):
+    ffs = msg["ffs"]
+    full_ffs_path = find_ffs_prefix(msg) + ffs
+    lf = list_ffs(msg["storage_prefix"], False, True)
+    if full_ffs_path not in lf:
+        raise ValueError("invalid ffs")
+    if not "snapshot" in msg:
+        raise ValueError("no snapshot set")
+    snapshot = msg["snapshot"]
+    if not snapshot in list_snapshots_for_ffs(full_ffs_path):
+        raise ValueError("Snapshot not found")
+    check_call(["sudo", "zfs", "rollback", "%s@%s" % (full_ffs_path, snapshot), "-r"])
+    return {"msg": "rollback_done", "ffs": ffs, "snapshots": list_snapshots_for_ffs(full_ffs_path)}
+
+
 def iterate_parent_paths(path):
     parts = path.split("/")
     for i in reversed(range(2, len(parts) + 1)):
@@ -705,8 +720,8 @@ def shell_cmd_rprsync(cmd_line):
             # chmod_before = True
             elif p.startswith("chmod_after"):
                 chmod_after = True
-            elif p.startswith('no_sudo'):
-                do_sudo =False
+            elif p.startswith("no_sudo"):
+                do_sudo = False
             else:
                 raise ValueError("Invalid @ command")
 
@@ -780,6 +795,8 @@ def dispatch(msg):
             result = msg_deploy(msg)
         elif msg["msg"] == "rename":
             result = msg_rename(msg)
+        elif msg["msg"] == "rollback":
+            result = msg_rollback(msg)
 
         else:
             result = {"error": "message_not_understood"}

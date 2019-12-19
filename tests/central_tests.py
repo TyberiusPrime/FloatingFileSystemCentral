@@ -6067,9 +6067,9 @@ class PriorityTests(PostStartupTests):
         e, outgoing_messages = self.get_engine(
             {"alpha": {}, "beta": {"_one": ["1", ("ffs:priority", 123)]}}
         )
-        assert len(outgoing_messages) == 0
+        self.assertTrue(len(outgoing_messages) == 0)
         e.client_add_targets({"ffs": "one", "targets": ["alpha"]})
-        assert len(outgoing_messages) == 1
+        self.assertTrue(len(outgoing_messages) == 1)
         outgoing_messages.clear()
         e.incoming_node(
             {
@@ -6083,8 +6083,106 @@ class PriorityTests(PostStartupTests):
                 },
             }
         )
-        assert len(outgoing_messages) == 1  # that's the snapshot
-        assert outgoing_messages[0]["msg"] == "send_snapshot"
+        self.assertTrue(len(outgoing_messages) == 1)  # that's the snapshot
+        self.assertTrue(outgoing_messages[0]["msg"] == "send_snapshot")
+
+
+class RollbackTests(EngineTests):
+    def test_rollback(self):
+        e, outgoing_messages = self.get_engine(
+            {"beta": {"_one": ["1", "2"],}, "alpha": {"one": ["1", "2"]},}
+        )
+        self.assertEqual(len(outgoing_messages), 0)
+        snapshots = e.incoming_client({"msg": "list_snapshots", "ffs": "one"})
+        self.assertEqual(snapshots, {"ok": True, "snapshots": ["1", "2"]})
+        self.assertEqual(len(outgoing_messages), 0)
+        e.incoming_client({"msg": "rollback", "ffs": "one", "snapshot": "2"})
+        self.assertEqual(len(outgoing_messages), 2)
+        self.assertMsgEqual(
+            outgoing_messages[0],
+            {"msg": "rollback", "to": "alpha", "ffs": "one", "snapshot": "2",},
+        )
+        self.assertMsgEqual(
+            outgoing_messages[1],
+            {"msg": "rollback", "to": "beta", "ffs": "one", "snapshot": "2",},
+        )
+
+    def test_rollback_input_checking(self):
+        e, outgoing_messages = self.get_engine(
+            {
+                "beta": {"_one": ["1", "2"], "two": ["1"], "three": ["1"],},
+                "alpha": {
+                    "one": ["1", "2"],
+                    "_two": ["1"],
+                    "_three": ["1"],
+                    "_four": ["1"],
+
+                    'five': ['1'],
+                    '_six': ['1'],
+                },
+                "gamma": {"four": ["1"], '_five': ['1']},
+            },
+            additional_node_config={"gamma": {"readonly_node": True}},
+        )
+        self.assertEqual(len(outgoing_messages), 0)
+
+        def inner():
+            e.incoming_client({"msg": "list_snapshots", "ffs": "nosuchffs"})
+
+        self.assertRaises(ValueError, inner)
+
+        def inner():
+            e.incoming_client({"msg": "rollback", "ffs": "nosuchffs"})
+
+        self.assertRaises(ValueError, inner)
+
+        def inner():
+            e.incoming_client(
+                {"msg": "rollback", "ffs": "one", "snapshot": "no_such_snapshot"}
+            )
+
+        self.assertRaises(ValueError, inner)
+
+        e.incoming_client({"msg": "rename", "ffs": "one", "new_name": "oneX"})
+
+        def inner():
+            e.incoming_client({"msg": "rollback", "ffs": "one", "snapshot": "2"})
+
+        self.assertRaises(ValueError, inner)
+
+        e.incoming_client({"msg": "move_main", "ffs": "two", "target": "beta"})
+
+        def inner():
+            e.incoming_client({"msg": "rollback", "ffs": "two", "snapshot": "1"})
+
+        self.assertRaises(ValueError, inner)
+
+        outgoing_messages.clear()
+        e.incoming_client({"msg": "remove_target", "ffs": "three", "target": "beta"})
+        outgoing_messages.clear()
+        e.incoming_client({"msg": "rollback", "ffs": "three", "snapshot": "1"})
+        self.assertEqual(len(outgoing_messages), 1) # only send to alpha, not to beta
+
+        self.assertRaises(ValueError, inner)
+
+        outgoing_messages.clear()
+        e.incoming_client({"msg": "rollback", "ffs": "four", "snapshot": "1"})
+        self.assertEqual(len(outgoing_messages), 1) # only send to main, not to ro node gamma
+
+        def inner():
+            e.incoming_client({"msg": "rollback", "ffs": "five", "snapshot": "1"})
+
+        self.assertRaises(engine.NodeIsReadonly, inner)
+
+        outgoing_messages.clear()
+        e.incoming_client({"msg": "add_targets", 'ffs': 'six', 'targets': ['beta']})
+        self.assertEqual(len(outgoing_messages), 1) # only send to main, not to ro node gamma
+
+        def inner():
+            e.incoming_client({"msg": "rollback", "ffs": "six", "snapshot": "1"})
+
+        self.assertRaises(engine.NewInProgress, inner)
+
 
 
 class BattleTests(PostStartupTests):

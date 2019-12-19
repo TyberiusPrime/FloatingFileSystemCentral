@@ -150,6 +150,8 @@ class Engine:
             self.node_rename_done(msg)
         elif msg["msg"] == "chown_and_chmod_done":
             self.node_chown_and_chmod_done(msg)
+        elif msg["msg"] == "rollback_done":
+            self.node_rollback_done(msg)
         else:
             self.fault("Invalid msg from node: %s" % msg)
 
@@ -191,6 +193,10 @@ class Engine:
             return self.client_set_snapshot_interval(msg)
         elif command == "set_priority":
             return self.client_set_priority(msg)
+        elif command == "list_snapshots":
+            return self.client_list_snapshots(msg)
+        elif command == "rollback":
+            return self.client_rollback(msg)
         elif command == "service_inspect_model":
             return self.client_service_inspect_model(msg)
         else:
@@ -467,7 +473,7 @@ class Engine:
             )
         if self.is_ffs_renaming(ffs):
             raise RenameInProgress()
-        self._get_main(ffs) # raise NoMainAvailable if so
+        self._get_main(ffs)  # raise NoMainAvailable if so
         postfix = msg.get("postfix", "")
         snapshot = self.do_capture(
             ffs, msg.get("chown_and_chmod", False), postfix, if_changed=if_changed
@@ -712,6 +718,60 @@ class Engine:
                 )
         return {"ok": True}
 
+    @needs_startup()
+    def client_list_snapshots(self, msg):
+        if "ffs" not in msg:
+            raise CodingError("no ffs specified'")
+        ffs = msg["ffs"]
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        main = self._get_main(ffs)
+        snapshots = self.model[ffs][main]["snapshots"]
+        return {"ok": True, "snapshots": snapshots}
+
+    @needs_startup()
+    def client_rollback(self, msg):
+        if "ffs" not in msg:
+            raise CodingError("no ffs specified'")
+        if "snapshot" not in msg:
+            raise CodingError("no snapshot specified'")
+        ffs = msg["ffs"]
+        snapshot = msg["snapshot"]
+        if not isinstance(ffs, str):
+            raise ValueError("ffs parameter must be a string")
+        if ffs not in self.model:
+            raise ValueError("Nonexistant ffs specified")
+        main = self._get_main(ffs)
+        snapshots = self.model[ffs][main]["snapshots"]
+        if not snapshot in snapshots:
+            raise ValueError("invalid snapshot specified")
+        if self.is_readonly_node(
+            main
+        ):  # don't check the others - they'll be cleaned up eventually
+            raise NodeIsReadonly(main, "main")
+        if self.is_ffs_moving(ffs):
+            raise MoveInProgress()
+        # if self.is_ffs_removing_any(ffs):
+        # raise RemoveInProgress()
+        if "_renaming" in self.model[ffs]:
+            raise RenameInProgress()
+        if self.is_ffs_new_any(ffs): 
+            # otherwise we might try to sync a snapshot that no longer exists 
+            # but the news hasn't reached our model yet
+            raise NewInProgress()
+        for node in sorted(self.model[ffs]):
+            if not node.startswith("_"):
+                if not self.is_readonly_node(node) and not self.is_ffs_removing(
+                    ffs, node
+                ):
+                    self.send(
+                        node, {"msg": "rollback", "ffs": ffs, "snapshot": snapshot}
+                    )
+
+        return {"ok": True, "snapshots": snapshots}
+
     @needs_startup(True)
     def client_service_inspect_model(self, _msg):
         return self.model
@@ -751,6 +811,9 @@ class Engine:
             ]
         )
 
+    def is_ffs_removing(self, ffs, node):
+        return self.model[ffs][node].get("removing", False)
+
     def is_ffs_remove_asap_all(self, ffs):
         # no properties - we're moving, removing, something, anyhow not valid
         # to test
@@ -770,6 +833,9 @@ class Engine:
                 if not node.startswith("_")
             ]
         )
+
+    def is_ffs_new(self, ffs, node):
+        return self.model[ffs][node].get("_new", False)
 
     def is_ffs_renaming(self, ffs):
         return "_renaming" in self.model[ffs]
@@ -1907,6 +1973,14 @@ class Engine:
 
     def node_chown_and_chmod_done(self, msg):
         pass
+
+    def node_rollback_done(self, msg):
+        node = msg["from"]
+        ffs = msg["ffs"]
+        if node == self._get_main(ffs):
+            self.model[ffs]["snapshots"] = msg["snapshots"]
+        else:
+            pass  # ignored
 
     def shutdown(self):
         self.sender.shutdown()
