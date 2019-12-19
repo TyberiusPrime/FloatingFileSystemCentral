@@ -56,7 +56,6 @@ def run_rsync_but_kill_first_ssh(cmd, encode=True, show_errors=True, kill_first_
         while True:
             leave = False
             if time.time() > start + 5:
-                print("timeout")
                 break
             for proc in psutil.process_iter():
                 if proc.pid in wasnot:
@@ -415,8 +414,8 @@ class RPsTests(unittest.TestCase):
                 "target_user": "ffs",
             }
         )
-        print(stdout)
-        print(stderr)
+        #print(stdout)
+        #print(stderr)
         self.assertEqual(rc, 0)
         self.assertEqual(read_file(os.path.join(target_path, "file1")), "hello")
         self.assertEqual(read_file(os.path.join(target_path, "1", "file2")), "hello1")
@@ -2318,7 +2317,7 @@ class NodeTests(unittest.TestCase):
         )
         write_file("/" + NodeTests.get_test_prefix() + "from_12/test", "C")
         msg = self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "second"})
-        print(msg)
+
         self.assertEqual(
             msg,
             {
@@ -2340,17 +2339,15 @@ class NodeTests(unittest.TestCase):
             ["first"],
         )
 
-        def inner():
-            self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "second"})
+        msg = self.dispatch({"msg": "rollback", "ffs": "from_12", "snapshot": "second"})
+        self.assertTrue("error" in msg)
+        self.assertTrue("Snapshot not found" in msg["traceback"])
 
-        self.assertRaises(ValueError, inner)
-
-        def inner():
-            self.dispatch(
-                {"msg": "rollback", "ffs": "from_12_no_such_ffs", "snapshot": "second"}
-            )
-
-        self.assertRaises(ValueError, inner)
+        msg = self.dispatch(
+            {"msg": "rollback", "ffs": "from_12_no_such_ffs", "snapshot": "first"}
+        )
+        self.assertTrue("error" in msg)
+        self.assertTrue("invalid ffs" in msg["traceback"])
 
 
 if __name__ == "__main__":

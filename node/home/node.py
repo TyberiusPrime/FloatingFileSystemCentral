@@ -104,9 +104,25 @@ def list_snapshots():
         .split("\n")
     ]
 
+def list_snapshots_for_ffs_unordered(zfs):
+    # nice idea, but does not guarantee order
+    return os.listdir("/" + zfs + "/.zfs/snapshot")
 
 def list_snapshots_for_ffs(zfs):
-    return os.listdir("/" + zfs + "/.zfs/snapshot")
+    """Using zfs list gurantees olderst->newest order"""
+    full= [
+        x.split("\t")[0]
+        for x in zfs_output(
+            ["sudo", "zfs", "list", "-t", "snapshot", "-H", "-s", "creation", 
+                zfs]
+        )
+        .strip()
+        .split("\n")
+    ]
+    # now cut to just snapshot names
+    return [x[x.find("@")+1:] for x in full]
+
+
 
 
 def get_snapshots(ffs, storage_prefix):
@@ -239,7 +255,7 @@ def msg_capture(msg):
     if full_ffs_path not in list_ffs(msg["storage_prefix"], False, True):
         raise ValueError("invalid ffs")
     combined = "%s@%s" % (full_ffs_path, snapshot_name)
-    if snapshot_name in list_snapshots_for_ffs(full_ffs_path):
+    if snapshot_name in list_snapshots_for_ffs_unordered(full_ffs_path):
         raise ValueError("Snapshot already exists")
     if "chown_and_chmod" in msg and msg["chown_and_chmod"]:
         msg["sub_path"] = "/"
@@ -256,7 +272,7 @@ def msg_capture_if_changed(msg):
     if full_ffs_path not in list_ffs(msg["storage_prefix"], False, True):
         raise ValueError("invalid ffs")
     combined = "%s@%s" % (full_ffs_path, snapshot_name)
-    sn_list = list_snapshots_for_ffs(full_ffs_path)
+    sn_list = list_snapshots_for_ffs_unordered(full_ffs_path)
     if snapshot_name in sn_list:
         raise ValueError("Snapshot already exists")
     if "chown_and_chmod" in msg and msg["chown_and_chmod"]:
@@ -656,7 +672,7 @@ def msg_rollback(msg):
         raise ValueError("no snapshot set")
     snapshot = msg["snapshot"]
     if not snapshot in list_snapshots_for_ffs(full_ffs_path):
-        raise ValueError("Snapshot not found")
+        raise ValueError("Snapshot not found %s" % (list_snapshots_for_ffs(full_ffs_path)))
     check_call(["sudo", "zfs", "rollback", "%s@%s" % (full_ffs_path, snapshot), "-r"])
     return {"msg": "rollback_done", "ffs": ffs, "snapshots": list_snapshots_for_ffs(full_ffs_path)}
 
