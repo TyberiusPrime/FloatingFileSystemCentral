@@ -51,6 +51,11 @@ class Config(DefaultConfig):
                 "storage_prefix": "/clara/ffs",
                 'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDHnQYh3xT9OSJMDFZvQgBcAPM3/rakCRt6bHhzXa2JHDvhfLvM+Q5yEOUMUAD6ELiAqdqvfBIf7bqtHqa69KMaLr91cIvRrRAZUAelGPhk+HNOXcC8Q9pEbWuQZ6OADzDNkgd/FmqyDpVqKl6hF0B6i2WAzJdrmu7rOPS4wL0Sy9qpPSqyAbifi4gMnWZemiv0tNbmTBT1E6QkBAks9hQKIGCGXZUphOU2ryS+p9sP2IIRSKOCIPR19TUsO5WFOY5xZrUpoWXsEQenLDvExi62ZZINxGrEZtXV5zh2/+r/h1QufPSl1MkVZDIuGCgrEzR4vXtRktdIi5k9Ldcr+TX/ ffs@pcmt289',
             },
+            'fr': {
+                'hostname': 'pcmt230.imt.uni-marburg.de',
+                'storage_prefix': '/fr/ffs',
+                'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLZr6eGWB7j+mzBzmIY6eqa2fv0J+CfrzVPbp8QpnVV+/VF/WTY7SsyB7nIEni8ofj4HSx/HZsnMVLC3Kg2dDkamWjo5V5YIA+qAUmr2H6vCK/Xxq+80juZatjUQw9Zkr69o838yyhvM82eV0mR0wKhcVbljWi+p9EMZ+W7t0utwWdRa5FRaRVHS+91d2DX73eblnOmeH8J+kOeOuEuPhFkIs+yaCuon89/V4eGkUGgKsCPbYeilv4Lf9sc8C+9RXJKzwoudxSXZYZfGBMl846NCg+GIdNPmi5QboW0rTWtnXeZjNumUuBc4HjQes0uQu1fv6sDN/uHsdHBDkRksfH ffs@pcmt230.imt.uni-marburg.de',
+            },
         }
         if False:
             result.update(
