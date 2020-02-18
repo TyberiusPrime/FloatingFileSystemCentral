@@ -116,7 +116,9 @@ class Engine:
         if "msg" not in msg:
             if "content" in msg and "error" in msg:
                 if "Connection refused" in msg["content"]:
-                    raise SSHConnectFailed()
+                    self.fault("SSH interconnect failed", msg)
+                else:
+                    self.fault("Unknown error in message", msg)
             self.fault("No message in msg", msg)
         if "from" not in msg:
             self.fault("No from in message - should not happen", msg)

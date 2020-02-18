@@ -110,7 +110,7 @@ def do_rsync(args):
     )
     if "no_sudo" in cmd:
         rsync_cmd[-1] += "@@@no_sudo="
-    retries = 3  # actually total number of transmission attempts
+    retries = 3  # actually total number of transmission attempst
     while retries > 0:
         p = subprocess.Popen(rsync_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
