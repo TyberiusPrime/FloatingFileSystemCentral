@@ -6116,11 +6116,10 @@ class RollbackTests(EngineTests):
                     "_two": ["1"],
                     "_three": ["1"],
                     "_four": ["1"],
-
-                    'five': ['1'],
-                    '_six': ['1'],
+                    "five": ["1"],
+                    "_six": ["1"],
                 },
-                "gamma": {"four": ["1"], '_five': ['1']},
+                "gamma": {"four": ["1"], "_five": ["1"]},
             },
             additional_node_config={"gamma": {"readonly_node": True}},
         )
@@ -6161,13 +6160,15 @@ class RollbackTests(EngineTests):
         e.incoming_client({"msg": "remove_target", "ffs": "three", "target": "beta"})
         outgoing_messages.clear()
         e.incoming_client({"msg": "rollback", "ffs": "three", "snapshot": "1"})
-        self.assertEqual(len(outgoing_messages), 1) # only send to alpha, not to beta
+        self.assertEqual(len(outgoing_messages), 1)  # only send to alpha, not to beta
 
         self.assertRaises(ValueError, inner)
 
         outgoing_messages.clear()
         e.incoming_client({"msg": "rollback", "ffs": "four", "snapshot": "1"})
-        self.assertEqual(len(outgoing_messages), 1) # only send to main, not to ro node gamma
+        self.assertEqual(
+            len(outgoing_messages), 1
+        )  # only send to main, not to ro node gamma
 
         def inner():
             e.incoming_client({"msg": "rollback", "ffs": "five", "snapshot": "1"})
@@ -6175,14 +6176,15 @@ class RollbackTests(EngineTests):
         self.assertRaises(engine.NodeIsReadonly, inner)
 
         outgoing_messages.clear()
-        e.incoming_client({"msg": "add_targets", 'ffs': 'six', 'targets': ['beta']})
-        self.assertEqual(len(outgoing_messages), 1) # only send to main, not to ro node gamma
+        e.incoming_client({"msg": "add_targets", "ffs": "six", "targets": ["beta"]})
+        self.assertEqual(
+            len(outgoing_messages), 1
+        )  # only send to main, not to ro node gamma
 
         def inner():
             e.incoming_client({"msg": "rollback", "ffs": "six", "snapshot": "1"})
 
         self.assertRaises(engine.NewInProgress, inner)
-
 
 
 class BattleTests(PostStartupTests):
@@ -6198,6 +6200,36 @@ class BattleTests(PostStartupTests):
             outgoing_messages[0],
             {"msg": "remove_snapshot", "to": "beta", "ffs": "one/a", "snapshot": "d",},
         )
+
+    def test_not_sycing_zfs_diff_snapshots(self):
+        e, outgoing_messages = self.get_engine(
+            {
+                "alpha": {"_one": ["b"], "_one/a": ["e", "zfs-diff-123"]},
+                "beta": {"one": ["b"], "one/a": ["e"]},
+            }
+        )
+        self.assertEqual(len(outgoing_messages), 0)
+
+    def test_nested_below_no_main(self):
+        e, outgoing_messages = self.get_engine(
+            {
+                "alpha": {"one": ["b"], "_one/a": ["e", "f"]},
+                "beta": {"one": ["b"], "one/a": ["e"]},
+            }
+        )
+        assert True
+     
+    def test_client_list_ffs_full_no_main(self):
+        e, outgoing_messages = self.get_engine(
+            {
+                "alpha": {"one": ["b"], "_one/a": ["e", "f"]},
+                "beta": {"one": ["b"], "one/a": ["e"]},
+            }
+        )
+        x = e.client_list_ffs({"full": True})
+        assert 'one' in x
+        assert 'one/a' in x
+
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ class Config(DefaultConfig):
                 'public_key': b'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLZr6eGWB7j+mzBzmIY6eqa2fv0J+CfrzVPbp8QpnVV+/VF/WTY7SsyB7nIEni8ofj4HSx/HZsnMVLC3Kg2dDkamWjo5V5YIA+qAUmr2H6vCK/Xxq+80juZatjUQw9Zkr69o838yyhvM82eV0mR0wKhcVbljWi+p9EMZ+W7t0utwWdRa5FRaRVHS+91d2DX73eblnOmeH8J+kOeOuEuPhFkIs+yaCuon89/V4eGkUGgKsCPbYeilv4Lf9sc8C+9RXJKzwoudxSXZYZfGBMl846NCg+GIdNPmi5QboW0rTWtnXeZjNumUuBc4HjQes0uQu1fv6sDN/uHsdHBDkRksfH ffs@pcmt230.imt.uni-marburg.de',
             },
         }
-        if False:
+        if True:
             result.update(
                 {
                     "wilfred": {

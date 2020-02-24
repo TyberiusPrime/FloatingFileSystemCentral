@@ -224,24 +224,24 @@ class Engine:
                 except NoMainAvailable:
                     main = ["NoMainAvailable"]
                 result[ffs] = main + [
-                    x
-                    for x in ffs_info
-                    if x != ffs_info["_main"] and not x.startswith("_")
+                    x for x in ffs_info if x != main[0] and not x.startswith("_")
                 ]
         else:
             for ffs, ffs_info in self.model.items():
+                try:
+                    main = [self._get_main(ffs)]
+                except NoMainAvailable:
+                    main = ["NoMainAvailable"]
                 result[ffs] = {
-                    "targets": [str(ffs_info["_main"])]
-                    + [
-                        x
-                        for x in ffs_info
-                        if x != ffs_info["_main"] and not x.startswith("_")
-                    ]
+                    "targets": main
+                    + [x for x in ffs_info if x != main[0] and not x.startswith("_")]
                 }
                 result[ffs]["properties"] = {
                     node: self.model[ffs][node].get("properties", {})
                     for node in result[ffs]["targets"]
+                    if node != "NoMainAvailable"
                 }
+
         return result
 
     def client_list_targets(self):
@@ -759,8 +759,8 @@ class Engine:
         # raise RemoveInProgress()
         if "_renaming" in self.model[ffs]:
             raise RenameInProgress()
-        if self.is_ffs_new_any(ffs): 
-            # otherwise we might try to sync a snapshot that no longer exists 
+        if self.is_ffs_new_any(ffs):
+            # otherwise we might try to sync a snapshot that no longer exists
             # but the news hasn't reached our model yet
             raise NewInProgress()
         for node in sorted(self.model[ffs]):
@@ -1397,12 +1397,12 @@ class Engine:
                         node_fss_info[node]["snapshots"].remove(snapshot)
 
     def _send_missing_snapshots(self):
-        """Once we have prased the ffs_lists into our model (see _parse_main_and_readonly),
+        """Once we have parsed the ffs_lists into our model (see _parse_main_and_readonly),
         and pruned the snapshots that we could,
         we send out replication requestes for the missing snapshots.
 
         We only send prev snapshots if there's an unbroken line to the current one.
-        otherwise we'd have to discuss how and whether to roll back the state first
+        Otherwise we'd have to discuss how and whether to roll back the state first
         and rollback to the current snapshot later, and rolling back
         eats later snapshots
         """
@@ -1424,6 +1424,13 @@ class Engine:
         for ffs, node_fss_info in sorted(ffs_to_consider, key=get_prio):
             main = self._get_main(ffs)
             main_snapshots = node_fss_info[main]["snapshots"]
+
+            # zfs-diff snapshots, are temporaries created by 'zfs diff'
+            # (or possibly our capture-if-changed?)
+            # and not meant to be snapshotted.
+            main_snapshots = [
+                x for x in main_snapshots if not x.startswith("zfs-diff-")
+            ]
             if (
                 len([x for x in node_fss_info if x != main and not x.startswith("_")])
                 == 0
@@ -1489,7 +1496,10 @@ class Engine:
         if prio is None:
             if "/" in ffs:
                 parent = ffs[: ffs.rfind("/")]
-                return self.get_ffs_priority(parent)
+                try:
+                    return self.get_ffs_priority(parent)
+                except NoMainAvailable:
+                    return None
         return prio
 
     def _send_snapshot(self, sending_node, receiving_node, ffs, snapshot_name):
