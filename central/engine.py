@@ -210,7 +210,8 @@ class Engine:
 
     def client_service_capture_all_if_changed(self):
         for ffs in sorted(self.model):
-            self.do_capture(ffs, False, "", if_changed=True)
+            if self.has_main(ffs):
+                self.do_capture(ffs, False, "", if_changed=True)
         return {"ok": True}
 
     @needs_startup(True)

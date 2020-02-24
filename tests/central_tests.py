@@ -6218,7 +6218,7 @@ class BattleTests(PostStartupTests):
             }
         )
         assert True
-     
+
     def test_client_list_ffs_full_no_main(self):
         e, outgoing_messages = self.get_engine(
             {
@@ -6227,9 +6227,10 @@ class BattleTests(PostStartupTests):
             }
         )
         x = e.client_list_ffs({"full": True})
-        assert 'one' in x
-        assert 'one/a' in x
+        assert "one" in x
+        assert "one/a" in x
 
+        e.client_service_capture_all_if_changed()
 
 
 if __name__ == "__main__":
