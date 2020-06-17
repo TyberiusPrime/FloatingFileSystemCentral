@@ -97,9 +97,12 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
         import zmq.auth
 
         if not os.path.exists(self.keys_dir):
-            os.mkdir(self.keys_dir)
+            Path(self.keys_dir).mkdir()
         if not os.path.exists(self.key_filename):
             zmq.auth.create_certificates(self.keys_dir, "server")
+        Path(self.keys_dir).chmod(0o700)
+        for fn in Path(self.keys_dir).glob("*"):
+            fn.chmod(0o600)
 
     def load_keys(self):
         import zmq.auth
