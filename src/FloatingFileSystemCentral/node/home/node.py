@@ -631,7 +631,8 @@ def msg_deploy(msg):
         os.chdir("/home/ffs")
         with open("/home/ffs/node.zip", "wb") as op:
             op.write(base64.decodebytes(msg["node.zip"].encode("utf-8")))
-        op.flush()
+            op.flush()
+        time.sleep(1)
         with zipfile.ZipFile("/home/ffs/node.zip") as zf:
             zf.extractall()
         clean_up_clones(msg["storage_prefix"])
