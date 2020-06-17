@@ -40,6 +40,7 @@ import atexit
 import json
 
 log.startLogging(sys.stdout)
+startup_dir = Path(os.getcwd()).absolute()
 
 
 restart = False
@@ -83,7 +84,7 @@ def on_shutdown():
 class EncryptedZmqREPConnection(ZmqREPConnection):
     def __init__(self, factory, endpoint=None, identity=None):
         ZmqREPConnection.__init__(self, factory, None, identity)
-        self.keys_dir = "certificates"
+        self.keys_dir = "/etc/ffs/certificates"
         self.key_filename = os.path.join(self.keys_dir, "server.key_secret")
         self.make_keys()
         public_key, secret_key = self.load_keys()
@@ -97,7 +98,7 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
         import zmq.auth
 
         if not os.path.exists(self.keys_dir):
-            Path(self.keys_dir).mkdir()
+            Path(self.keys_dir).mkdir(exists_ok=True)
         if not os.path.exists(self.key_filename):
             zmq.auth.create_certificates(self.keys_dir, "server")
         Path(self.keys_dir).chmod(0o700)
@@ -194,7 +195,9 @@ def main():
     finally:
         auth.stop()
     if restart:
-        os.execv(sys.executable, ["python3"] + sys.argv)
+        #os.chdir(startup_dir)
+        #os.execv(sys.executable, ["python3"] + sys.argv)
+        sys.exit(1) # systemd does our restarting for us
 
 
 if __name__ == "__main__":

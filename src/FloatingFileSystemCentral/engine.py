@@ -6,6 +6,7 @@ import shutil
 import os
 import re
 from collections import OrderedDict
+from pathlib import Path
 from . import ssh_message_que
 from . import default_config
 from .exceptions import (
@@ -65,6 +66,7 @@ class Engine:
                 sender = ssh_message_que.OutgoingMessages(
                     self.logger, self, self.config.get_ssh_cmd()
                 )
+        self.node_dir = Path(__file__).parent / "node"
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
@@ -74,14 +76,14 @@ class Engine:
         self.zpool_stati = {}
         self.error_callback = lambda x: False
         self.write_authorized_keys()
-        self.deployment_zip_filename = os.path.join("node", "node.zip")
+        self.deployment_zip_filename = self.node_dir / "node" / "node.zip"
         self.build_deployment_zip()
         self.deployment_count = 0
 
     def write_authorized_keys(self):
-        if not os.path.exists(os.path.join("node", "home", ".ssh")):
-            os.makedirs(os.path.join("node", "home", ".ssh"))
-        fn = os.path.join("node", "home", ".ssh", "authorized_keys")
+        if not os.path.exists(os.path.join(self.node_dir, "home", ".ssh")):
+            os.makedirs(os.path.join(self.node_dir, "home", ".ssh"))
+        fn = os.path.join(self.node_dir, "home", ".ssh", "authorized_keys")
         if os.path.exists(fn):
             os.unlink(fn)
         with open(fn, "wb") as op:
@@ -94,7 +96,9 @@ class Engine:
 
     def build_deployment_zip(self):
         shutil.make_archive(
-            self.deployment_zip_filename[:-4], "zip", os.path.join("node", "home")
+            str(self.deployment_zip_filename)[:-4],
+            "zip",
+            os.path.join(self.node_dir, "home"),
         )
 
     def send(self, node_name, message):
