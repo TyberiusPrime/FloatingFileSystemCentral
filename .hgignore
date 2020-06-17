@@ -12,3 +12,4 @@ migration/*
 helpers/star/*
 certificates/*
 .eggs/*
+src/FloatingFileSystemCentral.egg-info/

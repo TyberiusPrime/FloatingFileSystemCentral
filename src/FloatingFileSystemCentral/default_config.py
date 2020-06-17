@@ -11,7 +11,9 @@ class DefaultConfig:
         raise NotImplementedError("Overwrite get_nodes in your config")
 
     def decide_targets(self, dummy_ffs):
-        return ["mm"]
+        import random
+
+        return random.choice(list(self.get_nodes()))[0]
 
     def find_node(self, incoming_name):
         for node, node_info in self.get_nodes().items():
