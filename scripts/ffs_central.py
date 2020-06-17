@@ -10,7 +10,8 @@ from twisted.internet import reactor, task, error
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqREPConnection
 import hashlib
 import logging
-from central import default_config
+from pathlib import Path
+from FloatingFileSystemCentral import default_config
 
 if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
     config_file = sys.argv[1]
@@ -21,7 +22,7 @@ if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
     config_file = os.path.abspath(config_file)
 else:
     config_file = "/etc/ffs/central_config.py"
-    # from central import config
+    # from central import config_file
 
 import importlib.util
 
@@ -31,8 +32,8 @@ spec.loader.exec_module(config)
 
 cfg = default_config.CheckedConfig(config.config)
 logger = cfg.get_logging()
-from central import engine
-from central import ssh_message_que
+from FloatingFileSystemCentral import engine
+from FloatingFileSystemCentral import ssh_message_que
 from twisted.python import log
 import pwd
 import atexit
@@ -47,18 +48,15 @@ file_changed_hash = None
 
 def check_if_changed():
     global restart
-    excluded = ["cmd.py"]
-    included = [__file__, "node/home/node.py", "node/home/ssh.py"]
-    included.extend(
-        [os.path.join("central", x) for x in os.listdir("central") if x.endswith(".py")]
-    )
+    excluded = []
+    module_path = Path(sys.modules["FloatingFileSystemCentral"].__path__[0])
+    included = list(module_path.glob("**/*.py"))
+
     global file_changed_hash
     h = hashlib.md5()
-    for fn in os.listdir(".") + included:
-        if fn.endswith(".py") and fn not in excluded:
-            with open(fn, "rb") as op:
-                d = op.read()
-                h.update(d)
+    for fn in included:
+        if fn.suffix == ".py" and fn.name not in excluded:
+            h.update(fn.read_bytes())
     if file_changed_hash is not None and file_changed_hash != h.hexdigest():
         # restart = True  # as a service, just die and let systemd pick you up
         if cfg.restart_on_code_changes():
