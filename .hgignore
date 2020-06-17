@@ -11,3 +11,4 @@ client/certificates/*
 migration/*
 helpers/star/*
 certificates/*
+.eggs/*

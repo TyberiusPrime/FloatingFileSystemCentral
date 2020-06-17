@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: FloatingFileSystemCentral
+Version: 0.0.post0.dev155+h3c441304e9ba.dirty
+Summary: Central managing engine for our floating filesystems.
+Home-page: UNKNOWN
+Author: Florian Finkernagel
+Author-email: finkernagel@imt.uni-marburg.de
+License: mit
+Description: UNKNOWN
+Platform: any
+Classifier: Development Status :: 4 - Beta
+Classifier: Programming Language :: Python
+Requires-Python: >=3.5
+Provides-Extra: doc
+Provides-Extra: testing

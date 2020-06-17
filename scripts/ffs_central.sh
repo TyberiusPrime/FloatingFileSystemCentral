@@ -5,7 +5,7 @@ cmd=$1
 #python3 ffs_central.py "$@"
 #EOF
 if [ "$(whoami)" != "ffs" ]; then
-    sudo -u ffs /usr/bin/python3 ffs_central.py $@ 
+    sudo -u ffs python3 ffs_central.py $@ 
 else
-    /usr/bin/python3 ffs_central.py $@ 
+    python3 ffs_central.py $@ 
 fi

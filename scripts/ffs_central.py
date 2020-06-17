@@ -19,13 +19,16 @@ if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
     if not config_file.endswith(".py"):
         raise ValueError("Could not import config, config file is not python")
     config_file = os.path.abspath(config_file)
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("config", config_file)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
 else:
-    from central import config
+    config_file = "/etc/ffs/central_config.py"
+    # from central import config
+
+import importlib.util
+
+spec = importlib.util.spec_from_file_location("config", config_file)
+config = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(config)
+
 cfg = default_config.CheckedConfig(config.config)
 logger = cfg.get_logging()
 from central import engine
