@@ -51,7 +51,9 @@ def check_if_changed():
     global restart
     excluded = []
     module_path = Path(sys.modules["FloatingFileSystemCentral"].__path__[0])
-    included = list(module_path.glob("**/*.py"))
+    included = list(module_path.glob("**/*.py")) + list(
+        Path("/etc/ffs").glob("**/*.py")
+    )
 
     global file_changed_hash
     h = hashlib.md5()
@@ -195,9 +197,9 @@ def main():
     finally:
         auth.stop()
     if restart:
-        #os.chdir(startup_dir)
-        #os.execv(sys.executable, ["python3"] + sys.argv)
-        sys.exit(1) # systemd does our restarting for us
+        # os.chdir(startup_dir)
+        # os.execv(sys.executable, ["python3"] + sys.argv)
+        sys.exit(1)  # systemd does our restarting for us
 
 
 if __name__ == "__main__":
