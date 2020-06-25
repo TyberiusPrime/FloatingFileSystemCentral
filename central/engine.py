@@ -799,7 +799,7 @@ class Engine:
         moving_to = self.model[ffs][main]["properties"].get("ffs:moving_to", "-")
         if moving_to != "-":
             self.config.inform(
-                "is_moving(%s) == True because of moving_to: %s " % (ffs, moving_to)
+                "is_moving(%s) == True because of moving_to: %s (main was %s)" % (ffs, moving_to, main)
             )
             self.model[ffs]["_moving"] = moving_to
             return True
