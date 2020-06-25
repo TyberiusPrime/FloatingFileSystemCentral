@@ -473,6 +473,8 @@ def msg_send_snapshot(msg):
     subprocess.Popen(
         ["sudo", "zfs", "create", clone_dir], stderr=subprocess.PIPE
     ).communicate()  # ignore the error on this one.
+    # don't auto snapshot this one.
+    subprocess.Popen(['sudo','zfs','set','com.sun:auto-snapshot=false', clone_dir]).communicate()
 
     # step 0 - prepare a clone to rsync from
     if msg.get(
