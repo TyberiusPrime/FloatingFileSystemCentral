@@ -59,7 +59,7 @@ def get_zfs_property(zfs_name, property_name):
 
 def zpool_disk_info():
     """Retrieve serial -> disk size info for a given zpool"""
-    raw = subprocess.check_output(['sudo', -'n','zpool','status','-P','-L']).decode('utf-8')
+    raw = subprocess.check_output(['sudo', '-n','zpool','status','-P','-L']).decode('utf-8')
     devs = re.findall("/dev/[^ ]+", raw)
     output = {}
     for dev in devs:
