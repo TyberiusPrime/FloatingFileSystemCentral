@@ -59,7 +59,7 @@ def get_zfs_property(zfs_name, property_name):
 
 def zpool_disk_info():
     """Retrieve serial -> disk size info for a given zpool"""
-    raw = subprocess.check_output(['sudo','zpool','status','-P','-L']).decode('utf-8')
+    raw = subprocess.check_output(['sudo', -'n','zpool','status','-P','-L']).decode('utf-8')
     devs = re.findall("/dev/[^ ]+", raw)
     output = {}
     for dev in devs:
@@ -406,7 +406,10 @@ def msg_remove_snapshot(msg):
 
 def msg_zpool_status(msg):
     status = check_output(["sudo", "zpool", "status"]).decode("utf-8")
-    disks = zpool_disk_info()
+    try:
+        disks = zpool_disk_info()
+    except subprocess.CalledProcessError:
+        disks = {'failed_to_retrieve_disk_list_check_sudoers': 0}
     return {"msg": "zpool_status", "status": status, 'disks': disks}
 
 
