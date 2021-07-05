@@ -1,14 +1,20 @@
 import pwd  # pylint: disable=C0413
 import os
-
-os.chdir(os.path.abspath(os.path.dirname(__file__)))
+import sys
+sys.path.insert(0,
+    os.path.abspath(os.path.dirname(__file__)) + '/src/'
+)
+os.chdir(
+    os.path.abspath(os.path.dirname(__file__)) + '/src/FloatingFileSystemCentral'
+)
 import subprocess
 
 user = pwd.getpwuid(os.getuid())[0]
 if user != "ffs":
     print(os.getuid())
     raise ValueError("Must be started as user ffs - use ffs.sh - was %s" % user)
-import central.config as config
+from FloatingFileSystemCentral import config
+#import central.config as config
 
 cfg = config.Config()
 for node_name in sorted(cfg.get_nodes()):

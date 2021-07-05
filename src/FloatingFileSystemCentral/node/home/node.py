@@ -63,9 +63,10 @@ def zpool_disk_info():
     devs = re.findall("/dev/[^ ]+", raw)
     output = {}
     for dev in devs:
-        dev = re.sub("\\d+$",'', dev)
-        dev = re.sub("p\\d+$",'', dev)
-        dev = re.sub("-part\\d+$",'', dev)
+        if dev.startswith('nvme'):
+            dev = re.sub("p\\d+$",'', dev)
+        else:
+            dev = re.sub("\\d+$",'', dev)
         udev = udev_adm_info(dev)
         serial_pretty = udev.get('SCSI_IDENT_SERIAL', '???')
         size = get_disk_size_bytes(dev)
