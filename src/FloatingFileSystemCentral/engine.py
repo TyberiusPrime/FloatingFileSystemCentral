@@ -74,6 +74,7 @@ class Engine:
         self.faulted = False
         self.trigger_message = None
         self.zpool_stati = {}
+        self.zpool_disks = {}
         self.error_callback = lambda x: False
         self.write_authorized_keys()
         self.deployment_zip_filename = self.node_dir / "node" / "node.zip"
@@ -205,6 +206,8 @@ class Engine:
             return self.client_rollback(msg)
         elif command == "service_inspect_model":
             return self.client_service_inspect_model(msg)
+        elif command == "service_disks":
+            return self.client_service_disks(msg)
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -783,6 +786,10 @@ class Engine:
     def client_service_inspect_model(self, _msg):
         return self.model
 
+    @needs_startup(True)
+    def client_service_disks(self, _msg):
+        return self.zpool_disks
+
     def is_readonly_node(self, node):
         return self.config.get_nodes()[node].get("readonly_node", False)
 
@@ -1093,7 +1100,7 @@ class Engine:
                             main = node
                             # no break, - need to check for multiple
                         else:
-                            self.fault("Multiple mains for %s" % ffs)
+                            self.fault("Multiple mains for %s - at least %s and %s" % (ffs, main, node))
                     if props.get("ffs:moving_to", "-") != "-":
                         if any_moving_to is not None:
                             self.fault("Multiple moving_to for %s" % ffs)
@@ -1589,16 +1596,19 @@ class Engine:
                         )
                     self.model[ffs]["_move_snapshot"] = self.do_capture(ffs, False)
                 else:  # move step 7 done, remove our _moving flag
-                    self.config.inform("Move step 7 (final step) done: %s" % ffs)
-                    del self.model[ffs]["_moving"]
-                    del self.model[ffs]["_move_snapshot"]
-                    if self.is_ffs_moving(ffs):
-                        self.fault(
-                            "Still moving after set_properties moving_to = -, Something is fishy ",
-                            msg,
-                            CodingError,
-                        )
-                    self._prune_snapshots_for_ffs(ffs)
+                    if node != self.model[ffs]['_moving']: # that's the target... we need the one from the old main.
+                        self.config.inform("Move step 7 (final step) done: %s" % ffs)
+                        del self.model[ffs]["_moving"]
+                        del self.model[ffs]["_move_snapshot"]
+                        if self.is_ffs_moving(ffs):
+                            self.fault(
+                                "Still moving after set_properties moving_to = -, Something is fishy ",
+                                msg,
+                                CodingError,
+                            )
+                        self._prune_snapshots_for_ffs(ffs)
+                    else:
+                        self.config.inform("Not move step 7 response")
         elif (  # happens after ffs:main=off on the old main.
             self.is_ffs_moving(ffs) and props.get("ffs:main", False) == "on"
         ):
@@ -1831,6 +1841,7 @@ class Engine:
             if status["DEGRADED"] or status["UNAVAIL"]:
                 self.error_callback("Zpool status: %s - %s" % (node, status))
         self.zpool_stati[node] = status
+        self.zpool_disks[node] = msg['disks']
 
     def do_zpool_status_check(self):
         do_not_send_to = set()

@@ -57,6 +57,41 @@ def get_zfs_property(zfs_name, property_name):
     return _get_zfs_properties(zfs_name)[property_name]
 
 
+def zpool_disk_info():
+    """Retrieve serial -> disk size info for a given zpool"""
+    raw = subprocess.check_output(['sudo','zpool','status','-P','-L']).decode('utf-8')
+    devs = re.findall("/dev/[^- 0-9]+", raw)
+    output = {}
+    for dev in devs:
+        udev = udev_adm_info(dev)
+        serial_pretty = udev.get('SCSI_IDENT_SERIAL', '???')
+        size = get_disk_size_bytes(dev)
+        output[serial_pretty] = size
+    return output
+
+def udev_adm_info(dev):
+    """query udevadm output for a disk"""
+    raw = subprocess.check_output(['udevadm','info','--query=all', '--name', dev]).decode('utf-8')
+    out = {}
+    for line in raw.split("\n"):
+        if line.startswith("E:"):
+            line = line[3:]
+            key, value = line.split("=", 2)
+            out[key] = value
+    return out
+
+def get_disk_size_bytes(dev):
+    """query lsblk for disk size"""
+    raw = subprocess.check_output(['lsblk','-io','TYPE,SIZE', '--bytes', dev]).decode('utf-8')
+    for line in raw.split("\n"):
+        if line.startswith('disk'):
+            _d, size = line.split()
+            try:
+                return int(size)
+            except ValueError:
+                return -1
+    return -2
+
 def list_zfs():
     zfs_list = zfs_output(["sudo", "zfs", "list", "-H"]).strip().split("\n")
     zfs_list = [x.split("\t")[0] for x in zfs_list]
@@ -367,7 +402,8 @@ def msg_remove_snapshot(msg):
 
 def msg_zpool_status(msg):
     status = check_output(["sudo", "zpool", "status"]).decode("utf-8")
-    return {"msg": "zpool_status", "status": status}
+    disks = zpool_disk_info()
+    return {"msg": "zpool_status", "status": status, 'disks': disks}
 
 
 def list_all_users():
