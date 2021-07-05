@@ -63,6 +63,7 @@ def zpool_disk_info():
     devs = re.findall("/dev/[^ ]+", raw)
     output = {}
     for dev in devs:
+        dev = re.sub("\\d+$",'', dev)
         dev = re.sub("p\\d+$",'', dev)
         dev = re.sub("-part\\d+$",'', dev)
         udev = udev_adm_info(dev)
