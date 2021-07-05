@@ -206,8 +206,8 @@ class Engine:
             return self.client_rollback(msg)
         elif command == "service_inspect_model":
             return self.client_service_inspect_model(msg)
-        elif command == "service_disks":
-            return self.client_service_disks(msg)
+        elif command == "service_list_disks":
+            return self.client_service_list_disks(msg)
         else:
             raise ValueError("invalid message from client, ignoring")
 
@@ -787,7 +787,7 @@ class Engine:
         return self.model
 
     @needs_startup(True)
-    def client_service_disks(self, _msg):
+    def client_service_list_disks(self, _msg):
         return self.zpool_disks
 
     def is_readonly_node(self, node):

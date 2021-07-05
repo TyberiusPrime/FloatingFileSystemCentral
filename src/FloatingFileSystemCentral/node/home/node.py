@@ -63,9 +63,9 @@ def zpool_disk_info():
     devs = re.findall("/dev/[^ ]+", raw)
     output = {}
     for dev in devs:
-        if dev.startswith('nvme'):
+        if '/nvme' in dev: # nvme devices have their 'partition' encoded pN at the end
             dev = re.sub("p\\d+$",'', dev)
-        else:
+        else: # asume it's an old style /dev/sdxN
             dev = re.sub("\\d+$",'', dev)
         udev = udev_adm_info(dev)
         serial_pretty = udev.get('SCSI_IDENT_SERIAL', '???')
