@@ -12,6 +12,7 @@ import hashlib
 import logging
 from pathlib import Path
 from FloatingFileSystemCentral import default_config
+import gzip
 
 if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
     config_file = sys.argv[1]
@@ -179,8 +180,15 @@ def main():
                 cfg.complain("Exception occured handling %s: %s" % (j, repr(e)))
                 reply = {"error": "exception", "content": repr(e)}
             logger.info("Reply to client: (%i) %s", len(repr(reply)), repr(reply)[:80])
-            reply = json.dumps(reply)
+            try:
+                reply = json.dumps(reply)
+            except Exception as e:
+                reply = json.dumps({"error": "could not json dumps " + str(e)})
             reply = reply.encode("utf-8")
+            if len(reply) > 1024*1024:
+                #logger.info("Compressing")
+                reply = gzip.compress(reply)
+            #logger.info("encoded size: %i %s", len(reply))
             s.reply(msgId, reply)
             if restart:
                 reactor.stop()

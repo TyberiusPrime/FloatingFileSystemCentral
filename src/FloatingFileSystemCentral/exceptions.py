@@ -55,7 +55,11 @@ class RestartError(Exception):
 
 
 class NoMainAvailable(Exception):
-    pass
+    def __str__(self):
+        return 'NoMainAvailable'
+    def __repr__(self):
+        return 'NoMainAvailable()'
+
 
 
 class NodeIsReadonly(Exception):

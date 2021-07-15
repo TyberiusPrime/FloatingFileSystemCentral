@@ -784,7 +784,14 @@ class Engine:
 
     @needs_startup(True)
     def client_service_inspect_model(self, _msg):
-        return self.model
+        import copy
+        res = copy.deepcopy(self.model)
+        if '_main' in res:
+            res['_main'] = str(res['_main'])
+        for k, v in res.items():
+            if isinstance(v, dict) and '_main' in v:
+                v['_main'] = str(v['_main'])
+        return res
 
     @needs_startup(True)
     def client_service_list_disks(self, _msg):
