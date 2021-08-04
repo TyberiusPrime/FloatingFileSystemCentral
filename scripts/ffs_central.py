@@ -187,7 +187,7 @@ def main():
             reply = reply.encode("utf-8")
             if len(reply) > 1024*1024:
                 #logger.info("Compressing")
-                reply = gzip.compress(reply)
+                reply = b'GZIP' + gzip.compress(reply)
             #logger.info("encoded size: %i %s", len(reply))
             s.reply(msgId, reply)
             if restart:
