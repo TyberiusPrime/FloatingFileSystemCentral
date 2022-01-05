@@ -10,6 +10,9 @@ class DefaultConfig:
             return self._nodes
         raise NotImplementedError("Overwrite get_nodes in your config")
 
+    def get_keys_dir(self):
+        return "/etc/ffs/certificates"
+
     def decide_targets(self, dummy_ffs):
         import random
 
@@ -52,8 +55,7 @@ class DefaultConfig:
         return 0.0
 
     def get_concurrent_rsync_limit(self):
-        """How many rsync send_snapshots may run per sending system at a time?
-        """
+        """How many rsync send_snapshots may run per sending system at a time?"""
         return 2
 
     def get_zpool_frequency_check(self):
@@ -80,9 +82,7 @@ class DefaultConfig:
         return set([x for x in snapshots])
 
     def decide_snapshots_to_keep(self, dummy_ffs_name, snapshots):
-        """Decide which snapshots to keep.
-
-        """
+        """Decide which snapshots to keep."""
         return snapshots
 
     def get_enforced_properties(self):
@@ -334,17 +334,17 @@ def keep_snapshots_time_policy(
     <hours>  hours,
     <days>  days,
     <weeks>  weeks,
-    <months>  months, 
+    <months>  months,
     <years>  years
     each.
 
     if allow_one_snapshot_to_fill_multiple_intervals is set,
-        you get the smallest possible number of snapshots 
+        you get the smallest possible number of snapshots
         to fullfill the intervals
         otherwise each interval get's a unique snapshot (if availabel)
 
     For testing, now can be set to a unix timestamp.
-     
+
     This is a heler for your own decide_snapshots_to_keep method
 
     """
