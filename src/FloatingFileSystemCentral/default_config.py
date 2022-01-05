@@ -201,7 +201,7 @@ class CheckedConfig:
     def get_keys_dir(self):
         return self.config.get_keys_dir()
 
-     @must_return_type(str)
+    @must_return_type(str)
     def get_node_dir(self):
         return self.config.get_node_dir()
 
