@@ -85,7 +85,9 @@ def on_shutdown():
 
 
 class EncryptedZmqREPConnection(ZmqREPConnection):
-    def __init__(self, factory, endpoint=None, identity=None, keys_dir):
+    def __init__(
+        self, factory, endpoint=None, identity=None, keys_dir="/etc/ffs/certificates"
+    ):
         ZmqREPConnection.__init__(self, factory, None, identity)
         self.keys_dir = keys_dir
         self.key_filename = os.path.join(self.keys_dir, "server.key_secret")
@@ -185,10 +187,10 @@ def main():
             except Exception as e:
                 reply = json.dumps({"error": "could not json dumps " + str(e)})
             reply = reply.encode("utf-8")
-            if len(reply) > 1024*1024:
-                #logger.info("Compressing")
-                reply = b'GZIP' + gzip.compress(reply)
-            #logger.info("encoded size: %i %s", len(reply))
+            if len(reply) > 1024 * 1024:
+                # logger.info("Compressing")
+                reply = b"GZIP" + gzip.compress(reply)
+            # logger.info("encoded size: %i %s", len(reply))
             s.reply(msgId, reply)
             if restart:
                 reactor.stop()
