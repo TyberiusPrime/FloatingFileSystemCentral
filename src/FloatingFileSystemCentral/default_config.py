@@ -11,7 +11,13 @@ class DefaultConfig:
         raise NotImplementedError("Overwrite get_nodes in your config")
 
     def get_keys_dir(self):
+        """where is the server_key.secret file"""
         return "/etc/ffs/certificates"
+
+    def get_node_dir(self):
+        """Where can we store the node code before packing it?"""
+        return "/tmp/ffs_nodedir"
+
 
     def decide_targets(self, dummy_ffs):
         import random
@@ -194,6 +200,11 @@ class CheckedConfig:
     @must_return_type(str)
     def get_keys_dir(self):
         return self.config.get_keys_dir()
+
+     @must_return_type(str)
+    def get_node_dir(self):
+        return self.config.get_node_dir()
+
 
     def complain(self, message):
         self.config.complain(message)

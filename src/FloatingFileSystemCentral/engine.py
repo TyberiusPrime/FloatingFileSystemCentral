@@ -66,7 +66,7 @@ class Engine:
                 sender = ssh_message_que.OutgoingMessages(
                     self.logger, self, self.config.get_ssh_cmd()
                 )
-        self.node_dir = Path(__file__).parent / "node"
+        self.node_dir = self.config.get_node_dir()
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
