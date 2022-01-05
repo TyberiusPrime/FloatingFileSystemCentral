@@ -191,6 +191,10 @@ class CheckedConfig:
                 nodes[n]["hostname"] = n
         return nodes.copy()
 
+    @must_return_type(str)
+    def get_keys_dir(self):
+        return self.config.get_keys_dir()
+
     def complain(self, message):
         self.config.complain(message)
 
