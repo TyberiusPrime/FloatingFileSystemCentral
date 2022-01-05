@@ -203,7 +203,7 @@ class CheckedConfig:
 
     @must_return_type(str)
     def get_node_dir(self):
-        return self.config.get_node_dir()
+        return Path(self.config.get_node_dir())
 
 
     def complain(self, message):
