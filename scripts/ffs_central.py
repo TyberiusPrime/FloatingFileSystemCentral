@@ -85,9 +85,9 @@ def on_shutdown():
 
 
 class EncryptedZmqREPConnection(ZmqREPConnection):
-    def __init__(self, factory, endpoint=None, identity=None):
+    def __init__(self, factory, endpoint=None, identity=None, keys_dir):
         ZmqREPConnection.__init__(self, factory, None, identity)
-        self.keys_dir = "/etc/ffs/certificates"
+        self.keys_dir = keys_dir
         self.key_filename = os.path.join(self.keys_dir, "server.key_secret")
         self.make_keys()
         public_key, secret_key = self.load_keys()
@@ -101,7 +101,7 @@ class EncryptedZmqREPConnection(ZmqREPConnection):
         import zmq.auth
 
         if not os.path.exists(self.keys_dir):
-            Path(self.keys_dir).mkdir(exists_ok=True)
+            Path(self.keys_dir).mkdir(exist_ok=True)
         if not os.path.exists(self.key_filename):
             zmq.auth.create_certificates(self.keys_dir, "server")
         Path(self.keys_dir).chmod(0o700)
@@ -143,7 +143,7 @@ def main():
     try:
 
         e = ZmqEndpoint("bind", "tcp://*:%s" % cfg.get_zmq_port())
-        s = EncryptedZmqREPConnection(zf, e)
+        s = EncryptedZmqREPConnection(zf, e, keys_dir=cfg.get_keys_dir())
         our_engine = engine.Engine(cfg, sender=None, dry_run=dry_run)
         if not "--no-code-check" in sys.argv:
             check_if_changed()  # capture hashes
