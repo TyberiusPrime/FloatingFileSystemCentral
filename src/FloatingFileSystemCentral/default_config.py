@@ -203,6 +203,7 @@ class CheckedConfig:
 
     @must_return_type(str)
     def get_node_dir(self):
+        from pathlib import Path
         return Path(self.config.get_node_dir())
 
 
