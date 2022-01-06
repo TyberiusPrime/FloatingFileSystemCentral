@@ -90,10 +90,10 @@ class Engine:
         self._authorized_keys = b"\n".join(out)
 
     def build_deployment_zip(self):
-        import StringIO
+        import io
         import zipfile
 
-        buff = StringIO.BytesIO()
+        buff = io.BytesIO()
         z = zipfile.ZipFile(buff, mode="w")
         for fn in (Path(__file__).parent / "node").glob("*"):
             found = True
