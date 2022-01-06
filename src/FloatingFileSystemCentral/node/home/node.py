@@ -493,7 +493,7 @@ def msg_send_snapshot(msg):
     target_host = msg["target_host"]
     target_user = msg["target_user"]
     target_ssh_cmd = msg["target_ssh_cmd"]
-    if not target_ssh_cmd[0] == "ssh":
+    if not (target_ssh_cmd[0] == "ssh" or target_ssh_cmd[0].endswith('/ssh'):
         raise ValueError("Invalid ssh command - first value must be 'ssh'")
     target_ffs = msg["target_ffs"]
     target_storage_prefix = msg["target_storage_prefix"]
@@ -827,8 +827,8 @@ def check_storage_prefix(msg):
         raise ValueError(
             "ffs:root not set on storage_prefix %s" % msg["storage_prefix"][1:]
         )
-    except subprocess.CalledProcessError:
-        raise ValueError("storage prefix not a ZFS")
+    except subprocess.CalledProcessError as e:
+        raise ValueError("storage prefix not a ZFS / called process error: ", e)
 
 
 def dispatch(msg):
