@@ -87,7 +87,7 @@ class Engine:
                 b'command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n'
                 % pub_key
             )
-        self._authorized_keys = "\n".join(out)
+        self._authorized_keys = b"\n".join(out)
 
     def build_deployment_zip(self):
         import StringIO
