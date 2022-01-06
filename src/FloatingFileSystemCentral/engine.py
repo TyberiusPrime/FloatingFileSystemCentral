@@ -95,7 +95,7 @@ class Engine:
 
         buff = io.BytesIO()
         z = zipfile.ZipFile(buff, mode="w")
-        for fn in (Path(__file__).parent / "node").glob("*"):
+        for fn in (Path(__file__).parent / "node" / "home").glob("*"):
             found = True
             z.writestr(fn.name, fn.read_bytes())
 
@@ -274,7 +274,7 @@ class Engine:
         return res
 
     def client_deploy(self):
-            return {"node.zip": base64.b64encode(self._node_zip).decode("utf-8")}
+        return {"node.zip": base64.b64encode(self._node_zip).decode("utf-8")}
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
