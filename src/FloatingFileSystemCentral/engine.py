@@ -96,8 +96,9 @@ class Engine:
         buff = io.BytesIO()
         z = zipfile.ZipFile(buff, mode="w")
         for fn in (Path(__file__).parent / "node" / "home").glob("*"):
-            found = True
-            z.writestr(fn.name, fn.read_bytes())
+            if fn.is_file():
+                found = True
+                z.writestr(fn.name, fn.read_bytes())
 
         z.writestr("authorized_keys", self._authorized_keys)
         z.close()
