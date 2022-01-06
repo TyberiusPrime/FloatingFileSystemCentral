@@ -66,6 +66,7 @@ class Engine:
                 sender = ssh_message_que.OutgoingMessages(
                     self.logger, self, self.config.get_ssh_cmd()
                 )
+        self.node_dir = Path(self.config.get_node_dir())
         self.sender = sender
         self.node_ffs_infos = {}
         self.model = {}
@@ -76,32 +77,30 @@ class Engine:
         self.zpool_disks = {}
         self.error_callback = lambda x: False
         self.write_authorized_keys()
+        self.deployment_zip_filename = self.node_dir / "node" / "node.zip"
         self.build_deployment_zip()
         self.deployment_count = 0
 
     def write_authorized_keys(self):
-        out = []
-        for node in sorted(self.node_config):
-            pub_key = self.node_config[node]["public_key"]
-            out.append(
-                b'command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n'
-                % pub_key
-            )
-        self._authorized_keys = "\n".join(out)
+        if not os.path.exists(os.path.join(self.node_dir, "home", ".ssh")):
+            os.makedirs(os.path.join(self.node_dir, "home", ".ssh"))
+        fn = os.path.join(self.node_dir, "home", ".ssh", "authorized_keys")
+        if os.path.exists(fn):
+            os.unlink(fn)
+        with open(fn, "wb") as op:
+            for node in sorted(self.node_config):
+                pub_key = self.node_config[node]["public_key"]
+                op.write(
+                    b'command="/home/ffs/ssh.py",no-port-forwarding,no-X11-forwarding,no-agent-forwarding %s\n'
+                    % pub_key
+                )
 
     def build_deployment_zip(self):
-        import StringIO
-        import zipfile
-
-        buff = StringIO.BytesIO()
-        z = zipfile.ZipFile(buff, mode="w")
-        for fn in (Path(__file__).parent / "node").glob("*"):
-            found = True
-            z.writestr(fn.name, fn.read_bytes())
-
-        z.writestr("authorized_keys", self._authorized_keys)
-        z.close()
-        self._node_zip = buff.getvalue()
+        shutil.make_archive(
+            str(self.deployment_zip_filename)[:-4],
+            "zip",
+            os.path.join(self.node_dir, "home"),
+        )
 
     def send(self, node_name, message):
         """allow sending by name"""
@@ -274,7 +273,9 @@ class Engine:
         return res
 
     def client_deploy(self):
-            return {"node.zip": base64.b64encode(self._node_zip).decode("utf-8")}
+        with open(self.deployment_zip_filename, "rb") as op:
+            d = op.read()
+            return {"node.zip": base64.b64encode(d).decode("utf-8")}
 
     def client_startup(self):
         """Request a list of ffs from each and every of our nodes"""
@@ -288,7 +289,9 @@ class Engine:
 
         if self.config.do_deploy():
             msg = {"msg": "deploy"}
-            msg["node.zip"] = base64.b64encode(self._node_zip).decode("utf-8")
+            with open(self.deployment_zip_filename, "rb") as op:
+                d = op.read()
+                msg["node.zip"] = base64.b64encode(d).decode("utf-8")
             for node_name, node_info in sorted(self.node_config.items()):
                 self.send(node_name, msg)
         else:
@@ -782,13 +785,12 @@ class Engine:
     @needs_startup(True)
     def client_service_inspect_model(self, _msg):
         import copy
-
         res = copy.deepcopy(self.model)
-        if "_main" in res:
-            res["_main"] = str(res["_main"])
+        if '_main' in res:
+            res['_main'] = str(res['_main'])
         for k, v in res.items():
-            if isinstance(v, dict) and "_main" in v:
-                v["_main"] = str(v["_main"])
+            if isinstance(v, dict) and '_main' in v:
+                v['_main'] = str(v['_main'])
         return res
 
     @needs_startup(True)
@@ -815,8 +817,7 @@ class Engine:
         moving_to = self.model[ffs][main]["properties"].get("ffs:moving_to", "-")
         if moving_to != "-":
             self.config.inform(
-                "is_moving(%s) == True because of moving_to: %s (main was %s)"
-                % (ffs, moving_to, main)
+                "is_moving(%s) == True because of moving_to: %s (main was %s)" % (ffs, moving_to, main)
             )
             self.model[ffs]["_moving"] = moving_to
             return True
@@ -1106,10 +1107,7 @@ class Engine:
                             main = node
                             # no break, - need to check for multiple
                         else:
-                            self.fault(
-                                "Multiple mains for %s - at least %s and %s"
-                                % (ffs, main, node)
-                            )
+                            self.fault("Multiple mains for %s - at least %s and %s" % (ffs, main, node))
                     if props.get("ffs:moving_to", "-") != "-":
                         if any_moving_to is not None:
                             self.fault("Multiple moving_to for %s" % ffs)
@@ -1605,9 +1603,7 @@ class Engine:
                         )
                     self.model[ffs]["_move_snapshot"] = self.do_capture(ffs, False)
                 else:  # move step 7 done, remove our _moving flag
-                    if (
-                        node != self.model[ffs]["_moving"]
-                    ):  # that's the target... we need the one from the old main.
+                    if node != self.model[ffs]['_moving']: # that's the target... we need the one from the old main.
                         self.config.inform("Move step 7 (final step) done: %s" % ffs)
                         del self.model[ffs]["_moving"]
                         del self.model[ffs]["_move_snapshot"]
@@ -1852,7 +1848,7 @@ class Engine:
             if status["DEGRADED"] or status["UNAVAIL"]:
                 self.error_callback("Zpool status: %s - %s" % (node, status))
         self.zpool_stati[node] = status
-        self.zpool_disks[node] = msg["disks"]
+        self.zpool_disks[node] = msg['disks']
 
     def do_zpool_status_check(self):
         do_not_send_to = set()
